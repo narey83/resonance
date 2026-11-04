@@ -57,7 +57,7 @@ const LoginForm = ({ error, loading, onLoginAttempt }) => {
   };
 
   return (
-    <div className="auth-shell">
+    <div className="auth-shell auth-shell--cinematic">
       <div className="auth-split">
         {/* ── Left brand panel ── */}
         <div
