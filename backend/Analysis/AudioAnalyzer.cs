@@ -94,6 +94,53 @@ namespace resonance.Analysis
             essentia.log.warningActive = False
             import essentia.standard as es
 
+            def attack_strength(audio, low, high):
+                # Compare independent attack bands at 5 ms resolution. A local
+                # scale keeps quiet sections useful without promoting silence.
+                hop = 220
+                filtered = es.HighPass(cutoffFrequency=low)(es.LowPass(cutoffFrequency=high)(audio))
+                energy = np.mean(filtered[:len(filtered)//hop*hop].reshape(-1, hop)**2, axis=1)
+                strength = np.maximum(energy - np.roll(energy, 2), 0)
+                strength[:2] = 0
+                block = 200
+                padded = np.pad(strength, (0, (-len(strength)) % block))
+                peaks = padded.reshape(-1, block).max(axis=1)
+                # Do not wrap the end of a song around to its beginning.
+                local = np.maximum.reduce((np.r_[peaks[0], peaks[:-1]], peaks,
+                                           np.r_[peaks[1:], peaks[-1]]))
+                scale = np.maximum(np.repeat(local, block)[:len(strength)], strength.max()*.01)
+                return strength / np.maximum(scale, 1e-20)
+
+            def attack_support(beats, bass, attack):
+                hits = 0
+                for beat in beats:
+                    index = int(beat * 44100 / 220)
+                    transient = attack[max(0, index-3):min(len(attack), index+4)]
+                    body = bass[max(0, index):min(len(bass), index+18)]
+                    if (len(transient) and len(body) and
+                            transient.max() > .3 and body.max() > .3):
+                        hits += 1
+                return hits / len(beats) if len(beats) else 0
+
+            def prefer_attack_grid(original, candidate, bass, attack):
+                # A phase correction must be backed by measured drum attacks,
+                # not BPM extrapolation. Preserve ambiguous/non-percussive grids.
+                if len(original) < 32 or len(candidate) < 32:
+                    return False
+                period = float(np.median(np.diff(original)))
+                other_period = float(np.median(np.diff(candidate)))
+                if (period <= 0 or abs(other_period / period - 1) > .03 or
+                        candidate[0] < 0 or candidate[-1] > len(attack)*220/44100 + .02 or
+                        abs(candidate[0] - original[0]) > 2 or
+                        abs(candidate[-1] - original[-1]) > 2 or
+                        abs(len(candidate) / len(original) - 1) > .03 or
+                        not np.all(np.diff(candidate) > 0) or
+                        not np.all(np.isfinite(candidate))):
+                    return False
+                before = attack_support(original, bass, attack)
+                after = attack_support(candidate, bass, attack)
+                return after >= .75 and after - before >= .25
+
             SHARP = {'Db':'C#','Eb':'D#','Gb':'F#','Ab':'G#','Bb':'A#'}
             profile, method, max_secs, want = sys.argv[1], sys.argv[2], float(sys.argv[3]), sys.argv[4]
 
@@ -114,6 +161,24 @@ namespace resonance.Analysis
                 if 'bpm' in want:
                     try:
                         bpm, ticks, conf, _, _ = es.RhythmExtractor2013(method=method)(audio)
+                        # Multifeature can lock to offbeats in a dense mix. Test
+                        # an independently tracked drum-attack candidate before
+                        # accepting that phase. No fixed delay is subtracted.
+                        if len(ticks) >= 32:
+                            try:
+                                bass = attack_strength(audio, 35, 180)
+                                attack = attack_strength(audio, 300, 2000)
+                                if attack_support(ticks, bass, attack) <= .75:
+                                    percussion = es.HighPass(cutoffFrequency=300)(
+                                        es.LowPass(cutoffFrequency=2000)(audio))
+                                    candidate = es.BeatTrackerDegara()(percussion)
+                                    if prefer_attack_grid(ticks, candidate, bass, attack):
+                                        ticks = candidate
+                                        # Degara does not report a confidence;
+                                        # do not attach the rejected grid's score.
+                                        conf = 0
+                            except Exception as e:
+                                out['beatAlignmentError'] = str(e)
                         out['bpm'] = float(bpm)
                         out['bpmConfidence'] = float(conf)
                         beats = [float(t) for t in ticks]
