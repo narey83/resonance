@@ -39,10 +39,10 @@ import { getCompleteUploadsQueue } from '../../lib/completeUploadQueue';
 import * as filesLibrary from '../../lib/files';
 import * as transfersLibrary from '../../lib/transfers';
 import AppContext from '../AppContext';
+import ResonanceMark from '../Shared/ResonanceMark';
 import DownloadsTable from './DownloadsTable';
 import FindAlternateModal from './FindAlternateModal';
 import UploadsTable from './UploadsTable';
-import { Loader2 } from 'lucide-react';
 import React, {
   useCallback,
   useContext,
@@ -407,11 +407,7 @@ const Transfers = ({ direction }) => {
         className="transfers-loading"
         role="status"
       >
-        <Loader2
-          aria-hidden="true"
-          className="transfers-loading__spinner"
-          size={40}
-        />
+        <ResonanceMark size={48} />
         <span>
           {direction === 'upload' ? 'Loading uploads…' : 'Loading downloads…'}
         </span>

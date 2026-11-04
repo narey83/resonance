@@ -43,6 +43,7 @@ import {
   formatSeconds,
   isRecentlyIndexed,
 } from '../../../lib/util';
+import ResonanceMark from '../../Shared/ResonanceMark';
 import WaveformPreview from '../../Shared/WaveformPreview';
 import LibraryMenu from './LibraryMenu';
 import { useMixPreview } from './MixCompatibilityPreview';
@@ -1040,7 +1041,7 @@ const TrackTable = ({
 
         {loading && (
           <div className="jb-state">
-            <div className="jb-spinner" />
+            <ResonanceMark size={48} />
             Loading tracks…
           </div>
         )}

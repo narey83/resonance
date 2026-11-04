@@ -40,6 +40,7 @@ import ResonanceMark from '../Shared/ResonanceMark';
 import {
   ArrowDown,
   ArrowUp,
+  ChartNoAxesCombined,
   Check,
   ChevronDown,
   Cpu,
@@ -53,7 +54,6 @@ import {
   Plug,
   PlugZap,
   RefreshCw,
-  Settings2,
   Star,
   Trash2,
   Wifi,
@@ -626,274 +626,268 @@ const StatusStrip = ({
         </span>
       )}
       <div className="status-strip-spacer" />
-      {queuedTransferCounts ? (
-        <nav
-          aria-label="Waiting transfers"
-          className="status-transfer-group"
-        >
-          {[
-            { key: 'uploads', label: 'Uploads', Icon: ArrowUp },
-            { key: 'downloads', label: 'Downloads', Icon: ArrowDown },
-          ].map(({ Icon, key, label }) => (
-            <a
-              aria-label={`${queuedTransferCounts[key].toLocaleString()} ${key} waiting`}
-              className="status-transfer-link"
-              href={`${urlBase}/${key}`}
-              key={key}
-            >
-              <Icon size={14} />
-              <span className="status-transfer-label">{label}</span>
-              <strong>{queuedTransferCounts[key].toLocaleString()}</strong>
-              <span className="status-transfer-waiting">waiting</span>
-            </a>
-          ))}
-        </nav>
-      ) : (
-        queuedCount > 0 && (
-          <span className="status-chip">{queuedCount} transfers queued</span>
-        )
-      )}
       {isLoggedIn && <MetadataLookupWatcher />}
-      {viewControls && (
-        <div className="status-strip-view-controls">
-          <span className="status-strip-view-label">Display size</span>
-          {viewControls}
-        </div>
-      )}
-      <details
-        className="status-details"
-        ref={detailsRef}
-      >
-        <summary aria-label="Status and controls options">
-          <Settings2 size={14} />
-          <span>Options</span> <ChevronDown size={13} />
-        </summary>
-        <div className="status-details-panel">
-          <div className="status-details-heading">Server status</div>
-          {/* Listening port reachability */}
-          {isConnected && portStatus && (
-            <>
-              <div className="status-details-label">
-                Incoming Soulseek connections
-              </div>
+      <div className="status-strip-actions">
+        <details
+          className="status-details"
+          ref={detailsRef}
+        >
+          <summary aria-label="Statistics">
+            <ChartNoAxesCombined size={14} />
+            <span>Statistics</span> <ChevronDown size={13} />
+          </summary>
+          <div className="status-details-panel">
+            <div className="status-details-heading">Server status</div>
+            {/* Listening port reachability */}
+            {isConnected && portStatus && (
+              <>
+                <div className="status-details-label">
+                  Incoming Soulseek connections
+                </div>
+                <button
+                  className="status-strip-btn status-strip-btn--label"
+                  disabled={portStatus === 'checking'}
+                  onClick={runPortCheck}
+                  title={
+                    portStatus === 'checking'
+                      ? 'Checking listening port…'
+                      : portStatus === 'error'
+                        ? 'Port check failed — click to retry'
+                        : portStatus.isOpen && cgnatMismatch
+                          ? `The port test reported port ${portStatus.port} open, but your router's UPnP-mapped IP (${upnp.externalIPAddress}) differs from your internet-facing IP (${networkInfo.ip}) — likely carrier-grade NAT. That single-probe "open" result can't be trusted; incoming connections are probably still unreachable. Click to re-check.`
+                          : `Listening port ${portStatus.port} is ${portStatus.isOpen ? 'open (reachable)' : 'closed (not reachable from the internet)'} — click to re-check`
+                  }
+                  type="button"
+                >
+                  {portStatus.isOpen && cgnatMismatch ? (
+                    <Plug
+                      className="status-icon status-icon--warning"
+                      size={13}
+                      strokeWidth={1.75}
+                    />
+                  ) : portStatus.isOpen ? (
+                    <PlugZap
+                      className="status-icon connected"
+                      size={13}
+                      strokeWidth={1.75}
+                    />
+                  ) : (
+                    <Plug
+                      className="status-icon disconnected"
+                      size={13}
+                      strokeWidth={1.75}
+                    />
+                  )}
+                  <span className="status-strip-text">
+                    {portStatus === 'checking'
+                      ? 'Checking port…'
+                      : portStatus === 'error'
+                        ? 'Check failed — retry'
+                        : portStatus.isOpen
+                          ? cgnatMismatch
+                            ? 'Reachability uncertain'
+                            : 'Reachable — check again'
+                          : 'Not reachable — check again'}
+                  </span>
+                </button>
+              </>
+            )}
+
+            <div className="status-strip-sep" />
+
+            <div className="status-details-label">Shared collection</div>
+            <div className="status-strip-item status-strip-item--shares">
+              <FolderOpen
+                className="status-icon"
+                size={13}
+                strokeWidth={1.75}
+              />
+              <span className="status-strip-text">
+                {fileCount.toLocaleString()} files
+                {directoryCount > 0 &&
+                  `, ${directoryCount.toLocaleString()} folders`}
+              </span>
+              {scanPending && !scanning && (
+                <span className="status-chip pending">Pending</span>
+              )}
               <button
-                className="status-strip-btn status-strip-btn--label"
-                disabled={portStatus === 'checking'}
-                onClick={runPortCheck}
-                title={
-                  portStatus === 'checking'
-                    ? 'Checking listening port…'
-                    : portStatus === 'error'
-                      ? 'Port check failed — click to retry'
-                      : portStatus.isOpen && cgnatMismatch
-                        ? `The port test reported port ${portStatus.port} open, but your router's UPnP-mapped IP (${upnp.externalIPAddress}) differs from your internet-facing IP (${networkInfo.ip}) — likely carrier-grade NAT. That single-probe "open" result can't be trusted; incoming connections are probably still unreachable. Click to re-check.`
-                        : `Listening port ${portStatus.port} is ${portStatus.isOpen ? 'open (reachable)' : 'closed (not reachable from the internet)'} — click to re-check`
-                }
+                aria-label="Rescan shared files"
+                className="status-strip-btn"
+                disabled={scanning || rescanning}
+                onClick={handleRescan}
+                title="Rescan shared files"
                 type="button"
               >
-                {portStatus.isOpen && cgnatMismatch ? (
-                  <Plug
-                    className="status-icon status-icon--warning"
-                    size={13}
-                    strokeWidth={1.75}
-                  />
-                ) : portStatus.isOpen ? (
-                  <PlugZap
-                    className="status-icon connected"
-                    size={13}
-                    strokeWidth={1.75}
-                  />
-                ) : (
-                  <Plug
-                    className="status-icon disconnected"
-                    size={13}
-                    strokeWidth={1.75}
-                  />
-                )}
-                <span className="status-strip-text">
-                  {portStatus === 'checking'
-                    ? 'Checking port…'
-                    : portStatus === 'error'
-                      ? 'Check failed — retry'
-                      : portStatus.isOpen
-                        ? cgnatMismatch
-                          ? 'Reachability uncertain'
-                          : 'Reachable — check again'
-                        : 'Not reachable — check again'}
-                </span>
+                <RefreshCw
+                  className={scanning || rescanning ? 'spinning' : ''}
+                  size={12}
+                  strokeWidth={1.75}
+                />
+                <span>{scanning || rescanning ? 'Scanning…' : 'Rescan'}</span>
               </button>
-            </>
-          )}
+            </div>
 
-          <div className="status-strip-sep" />
-
-          <div className="status-details-label">Shared collection</div>
-          <div className="status-strip-item status-strip-item--shares">
-            <FolderOpen
-              className="status-icon"
-              size={13}
-              strokeWidth={1.75}
-            />
-            <span className="status-strip-text">
-              {fileCount.toLocaleString()} files
-              {directoryCount > 0 &&
-                `, ${directoryCount.toLocaleString()} folders`}
-            </span>
-            {scanPending && !scanning && (
-              <span className="status-chip pending">Pending</span>
+            <div className="status-strip-sep" />
+            <div className="status-details-label">Waiting transfers</div>
+            {queuedTransferCounts ? (
+              <nav
+                aria-label="Waiting transfers"
+                className="status-transfer-group"
+              >
+                {[
+                  { key: 'uploads', label: 'Uploads', Icon: ArrowUp },
+                  { key: 'downloads', label: 'Downloads', Icon: ArrowDown },
+                ].map(({ Icon, key, label }) => (
+                  <a
+                    aria-label={`${queuedTransferCounts[key].toLocaleString()} ${key} waiting`}
+                    className="status-transfer-link"
+                    href={`${urlBase}/${key}`}
+                    key={key}
+                  >
+                    <Icon size={14} />
+                    <span className="status-transfer-label">{label}</span>
+                    <strong>
+                      {queuedTransferCounts[key].toLocaleString()}
+                    </strong>
+                    <span className="status-transfer-waiting">waiting</span>
+                  </a>
+                ))}
+              </nav>
+            ) : (
+              <div className="status-strip-item status-strip-item--queue">
+                <span className="status-strip-text">
+                  {queuedCount > 0
+                    ? `${queuedCount} queued`
+                    : 'No transfers waiting'}
+                </span>
+              </div>
             )}
-            <button
-              aria-label="Rescan shared files"
-              className="status-strip-btn"
-              disabled={scanning || rescanning}
-              onClick={handleRescan}
-              title="Rescan shared files"
-              type="button"
-            >
-              <RefreshCw
-                className={scanning || rescanning ? 'spinning' : ''}
+
+            <div className="status-strip-sep" />
+            <div className="status-details-label">Current transfer speed</div>
+            <div className="status-strip-item status-strip-item--rates">
+              <ArrowDown
+                className="status-icon"
                 size={12}
                 strokeWidth={1.75}
               />
-              <span>{scanning || rescanning ? 'Scanning…' : 'Rescan'}</span>
-            </button>
-          </div>
+              <span className="status-strip-text status-strip-speed">
+                Download: {formatBitrate(dlSpeed)}
+              </span>
+              <ArrowUp
+                className="status-icon"
+                size={12}
+                strokeWidth={1.75}
+              />
+              <span className="status-strip-text status-strip-speed">
+                Upload: {formatBitrate(ulSpeed)}
+              </span>
+            </div>
 
-          <div className="status-strip-sep" />
-          <div className="status-details-label">Waiting transfers</div>
-          <div className="status-strip-item status-strip-item--queue">
-            <span className="status-strip-text">
-              {queuedCount > 0
-                ? `${queuedCount} queued`
-                : 'No transfers waiting'}
-            </span>
-          </div>
-
-          <div className="status-strip-sep" />
-          <div className="status-details-label">Current transfer speed</div>
-          <div className="status-strip-item status-strip-item--rates">
-            <ArrowDown
-              className="status-icon"
-              size={12}
-              strokeWidth={1.75}
-            />
-            <span className="status-strip-text status-strip-speed">
-              Download: {formatBitrate(dlSpeed)}
-            </span>
-            <ArrowUp
-              className="status-icon"
-              size={12}
-              strokeWidth={1.75}
-            />
-            <span className="status-strip-text status-strip-speed">
-              Upload: {formatBitrate(ulSpeed)}
-            </span>
-          </div>
-
-          {/* Free disk space on the downloads volume */}
-          {disk?.totalBytes > 0 && (
-            <>
-              <div className="status-strip-sep" />
-              <div className="status-details-label">Download storage</div>
-              <div
-                className="status-strip-item status-strip-item--disk"
-                title={
-                  disk.downloadsBlocked
-                    ? 'Downloads paused — free space is below the safe limit'
-                    : `${formatBytes(disk.availableBytes)} free of ${formatBytes(disk.totalBytes)} on the downloads volume`
-                }
-              >
-                <HardDrive
-                  className={`status-icon${disk.downloadsBlocked ? ' disconnected' : ''}`}
-                  size={13}
-                  strokeWidth={1.75}
-                />
-                <span className="status-strip-text">
-                  {formatBytes(disk.availableBytes)} free of{' '}
-                  {formatBytes(disk.totalBytes)}
-                </span>
-                {disk.downloadsBlocked && (
-                  <span className="status-chip danger">Downloads paused</span>
-                )}
-              </div>
-            </>
-          )}
-
-          {/* Host CPU and memory */}
-          {system?.hostMemoryTotalBytes > 0 && (
-            <>
-              <div className="status-strip-sep" />
-              <div className="status-details-label">Server resources</div>
-              <div
-                className="status-strip-item status-strip-item--system"
-                title={`Host: ${formatBytes(system.hostMemoryUsedBytes)} of ${formatBytes(system.hostMemoryTotalBytes)} memory in use`}
-              >
-                <Cpu
-                  className="status-icon"
-                  size={13}
-                  strokeWidth={1.75}
-                />
-                <span className="status-strip-text">
-                  CPU:{' '}
-                  {system.hostCpuPercent == null
-                    ? '—'
-                    : `${system.hostCpuPercent.toFixed(0)}%`}{' '}
-                  · Memory: {formatBytes(system.hostMemoryUsedBytes)} of{' '}
-                  {formatBytes(system.hostMemoryTotalBytes)}
-                </span>
-              </div>
-            </>
-          )}
-
-          {networkInfo && (
-            <>
-              <div className="status-strip-sep" />
-              <div className="status-details-label">
-                Server public IP address
-              </div>
-              <div className="status-strip-item">
-                <Globe
-                  className="status-icon"
-                  size={13}
-                  strokeWidth={1.75}
-                />
-                <span className="status-strip-text">{networkInfo.ip}</span>
-                {networkInfo.country && (
-                  <span className="status-strip-text status-strip-muted">
-                    {networkInfo.countryCode}
-                  </span>
-                )}
-                {networkInfo.isp && (
-                  <span className="status-strip-text status-strip-muted">
-                    {networkInfo.isp}
-                  </span>
-                )}
-              </div>
-            </>
-          )}
-
-          {isLoggedIn && onLogout && (
-            <>
-              <div className="status-strip-sep" />
-              <div className="status-details-heading">Your session</div>
-              <div className="status-strip-item">
-                <button
-                  className="status-strip-btn status-strip-btn--label"
-                  onClick={onLogout}
-                  title="Log out"
-                  type="button"
+            {/* Free disk space on the downloads volume */}
+            {disk?.totalBytes > 0 && (
+              <>
+                <div className="status-strip-sep" />
+                <div className="status-details-label">Download storage</div>
+                <div
+                  className="status-strip-item status-strip-item--disk"
+                  title={
+                    disk.downloadsBlocked
+                      ? 'Downloads paused — free space is below the safe limit'
+                      : `${formatBytes(disk.availableBytes)} free of ${formatBytes(disk.totalBytes)} on the downloads volume`
+                  }
                 >
-                  <LogOut
-                    size={12}
+                  <HardDrive
+                    className={`status-icon${disk.downloadsBlocked ? ' disconnected' : ''}`}
+                    size={13}
                     strokeWidth={1.75}
                   />
-                  <span>Log out</span>
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      </details>
+                  <span className="status-strip-text">
+                    {formatBytes(disk.availableBytes)} free of{' '}
+                    {formatBytes(disk.totalBytes)}
+                  </span>
+                  {disk.downloadsBlocked && (
+                    <span className="status-chip danger">Downloads paused</span>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* Host CPU and memory */}
+            {system?.hostMemoryTotalBytes > 0 && (
+              <>
+                <div className="status-strip-sep" />
+                <div className="status-details-label">Server resources</div>
+                <div
+                  className="status-strip-item status-strip-item--system"
+                  title={`Host: ${formatBytes(system.hostMemoryUsedBytes)} of ${formatBytes(system.hostMemoryTotalBytes)} memory in use`}
+                >
+                  <Cpu
+                    className="status-icon"
+                    size={13}
+                    strokeWidth={1.75}
+                  />
+                  <span className="status-strip-text">
+                    CPU:{' '}
+                    {system.hostCpuPercent == null
+                      ? '—'
+                      : `${system.hostCpuPercent.toFixed(0)}%`}{' '}
+                    · Memory: {formatBytes(system.hostMemoryUsedBytes)} of{' '}
+                    {formatBytes(system.hostMemoryTotalBytes)}
+                  </span>
+                </div>
+              </>
+            )}
+
+            {networkInfo && (
+              <>
+                <div className="status-strip-sep" />
+                <div className="status-details-label">
+                  Server public IP address
+                </div>
+                <div className="status-strip-item">
+                  <Globe
+                    className="status-icon"
+                    size={13}
+                    strokeWidth={1.75}
+                  />
+                  <span className="status-strip-text">{networkInfo.ip}</span>
+                  {networkInfo.country && (
+                    <span className="status-strip-text status-strip-muted">
+                      {networkInfo.countryCode}
+                    </span>
+                  )}
+                  {networkInfo.isp && (
+                    <span className="status-strip-text status-strip-muted">
+                      {networkInfo.isp}
+                    </span>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </details>
+        {viewControls && (
+          <div className="status-strip-view-controls">
+            <span className="status-strip-view-label">Display size</span>
+            {viewControls}
+          </div>
+        )}
+        {isLoggedIn && onLogout && (
+          <button
+            className="status-strip-btn status-strip-btn--label status-strip-logout"
+            onClick={onLogout}
+            title="Log out"
+            type="button"
+          >
+            <LogOut
+              size={12}
+              strokeWidth={1.75}
+            />
+            <span>Log out</span>
+          </button>
+        )}
+      </div>
     </div>
   );
 };

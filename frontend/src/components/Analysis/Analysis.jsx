@@ -48,6 +48,7 @@ import {
 import { useKeyFormat } from '../../lib/useKeyFormat';
 import { usePagedList } from '../../lib/usePagedList';
 import BackgroundAnalysisQueue from '../Library/components/BackgroundAnalysisQueue';
+import ResonanceMark from '../Shared/ResonanceMark';
 import AnalysisDetails from './AnalysisDetails';
 import AnalysisFailures from './AnalysisFailures';
 import RowWaveform from './RowWaveform';
@@ -1609,7 +1610,7 @@ const Analysis = ({
   if (loading && folders.length === 0) {
     return (
       <div className="ka-state-center">
-        <div className="ka-spinner" />
+        <ResonanceMark size={48} />
         <span>Loading analysis...</span>
       </div>
     );

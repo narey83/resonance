@@ -2,6 +2,17 @@
 
 Use this page to orient yourself before changing, building or deploying Resonance. `AGENTS.md` remains authoritative for safety and host restrictions.
 
+## Codex over SSH — verified 4 November 2026
+
+Codex CLI is installed and authenticated on `dev-laptop.local`. A direct Codex
+app-server connection over SSH passed initialization and a read-only `hostname`
+command. The desktop app's saved SSH connection/project is **not yet verified**:
+Computer Use cannot operate this app's own settings. Complete the manual step in
+Settings > Connections > SSH by enabling `dev-laptop.local` and choosing a remote
+project folder. See [DEPLOYMENT.md](DEPLOYMENT.md#codex-remote-access--4-november-2026)
+for evidence and agent workflow constraints. This does not change the Mac source
+of truth, deployment authorization requirements or old-server restriction.
+
 ## Web development mode — user instruction, 2 November 2026
 
 The current web instance must run as a **development build with hot reload**.

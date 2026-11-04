@@ -31,6 +31,7 @@ import useDebounce from '../../../hooks/useDebounce';
 import { albumKey, getAlbumPage } from '../../../lib/musicLibrary';
 import { usePagedList } from '../../../lib/usePagedList';
 import { formatIndexedAt, isRecentlyIndexed } from '../../../lib/util';
+import ResonanceMark from '../../Shared/ResonanceMark';
 import AlbumArt from './AlbumArt';
 import LibraryViewHeader from './LibraryViewHeader';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -233,7 +234,7 @@ const AlbumsView = ({
 
       {loading && (
         <div className="jb-state">
-          <div className="jb-spinner" />
+          <ResonanceMark size={48} />
           Loading albums…
         </div>
       )}

@@ -33,8 +33,9 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import LoadingState from './LoadingState';
 import React from 'react';
-import { Loader, Segment } from 'semantic-ui-react';
+import { Segment } from 'semantic-ui-react';
 
 const LoaderSegment = ({ children, size = 'big', ...props }) => (
   <Segment
@@ -42,13 +43,12 @@ const LoaderSegment = ({ children, size = 'big', ...props }) => (
     className="loader-segment"
     placeholder
   >
-    <Loader
-      active
-      size={size}
+    <LoadingState
+      size={size === 'small' ? 32 : 48}
       {...props}
     >
       {children}
-    </Loader>
+    </LoadingState>
   </Segment>
 );
 

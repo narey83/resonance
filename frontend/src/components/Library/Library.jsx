@@ -70,6 +70,7 @@ import * as prefs from '../../lib/prefs';
 import { create as createSearch, stripRemixInfo } from '../../lib/searches';
 import { usePagedList, usePagedTracks } from '../../lib/usePagedList';
 import { formatSeconds, isRecentlyIndexed } from '../../lib/util';
+import ResonanceMark from '../Shared/ResonanceMark';
 import UsbExportPanel from '../TrackAnalysis/UsbExportPanel';
 import AlbumArt from './components/AlbumArt';
 import AlbumDetail from './components/AlbumDetail';
@@ -3043,7 +3044,7 @@ const IssuesView = ({
 
       {loading ? (
         <div className="jb-state">
-          <div className="jb-spinner" /> Loading…
+          <ResonanceMark size={48} /> Loading…
         </div>
       ) : tracks.length === 0 && !loading ? (
         <div className="jb-state">

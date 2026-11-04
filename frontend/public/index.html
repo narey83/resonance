@@ -115,7 +115,17 @@
         <noscript>You need to enable JavaScript to run this app.</noscript>
         <div id="splash">
             <div id="splash-icon">
-                <img src="./assets/brand/mark.svg" width="44" height="44" alt="" />
+                <picture>
+                    <source id="splash-still" media="(prefers-reduced-motion: reduce)" />
+                    <img id="splash-mark" width="44" height="44" alt="" />
+                </picture>
+                <script>
+                    (function () {
+                        var base = (window.urlBase || '').replace(/\/$/, '');
+                        document.getElementById('splash-still').srcset = base + '/assets/brand/mark-static.svg';
+                        document.getElementById('splash-mark').src = base + '/assets/brand/mark.svg';
+                    })();
+                </script>
             </div>
             <div id="splash-name">Resonance</div>
             <div id="splash-dots">

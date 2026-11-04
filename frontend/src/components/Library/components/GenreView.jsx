@@ -32,6 +32,7 @@ import { alphaKey } from '../../../lib/alphaBucket';
 import * as prefs from '../../../lib/prefs';
 import { usePagedTracks } from '../../../lib/usePagedList';
 import { trackCountLabel } from '../../../lib/util';
+import ResonanceMark from '../../Shared/ResonanceMark';
 import LibraryDetailHeader from './LibraryDetailHeader';
 import LibraryViewHeader from './LibraryViewHeader';
 import TrackTable from './TrackTable';
@@ -154,7 +155,7 @@ const GenreView = ({
   if (loading && !selected) {
     return (
       <div className="jb-state">
-        <div className="jb-spinner" />
+        <ResonanceMark size={48} />
         Loading genres…
       </div>
     );

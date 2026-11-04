@@ -3504,6 +3504,8 @@ html.amoled {
 .status-transfer-link svg { color: var(--accent); flex-shrink: 0; }
 .status-transfer-link strong { font-variant-numeric: tabular-nums; font-weight: 600; }
 .status-transfer-waiting { color: var(--text-muted); font-size: 10px; }
+.status-strip-logout { min-height: 34px; flex-shrink: 0; }
+.status-strip-logout:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .status-details > summary { min-height: 34px; border-radius: 8px; padding: 0 10px; }
 .status-details[open] > summary svg:first-child { transform: none; }
 @media (max-width: 1100px) {
@@ -3511,8 +3513,6 @@ html.amoled {
 }
 @media (max-width: 700px) {
   .status-strip { height: auto; flex-wrap: wrap; padding-block: 8px; }
-  .status-transfer-group { order: 5; flex: 1 0 100%; }
-  .status-transfer-link { flex: 1; justify-content: center; }
   .status-strip-view-label { display: none; }
 }
 
@@ -3553,3 +3553,33 @@ html.amoled {
 }
 .status-account-presence.online { color: var(--success, #27834b); }
 .status-account-presence.away { color: var(--warning, #a76c0a); }
+
+/* Keep the requested controls together, with queue links inside Statistics. */
+.status-strip-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; margin-left: auto; }
+.status-details-panel .status-transfer-group { flex-direction: column; align-items: stretch; }
+.status-details-panel .status-transfer-link + .status-transfer-link { border-left: 0; border-top: 1px solid var(--border); }
+.status-details-panel .status-transfer-waiting { display: inline; }
+
+/* Give every visible top-bar section the same quiet outline. */
+.status-strip > .status-brand,
+.status-strip > .status-chip,
+.status-strip > .enrichment-status,
+.status-strip-actions > .status-strip-view-controls,
+.status-strip-actions > .status-strip-logout {
+  min-height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 10px;
+}
+.status-strip > .status-brand,
+.status-strip-actions > .status-strip-view-controls,
+.status-strip-actions > .status-strip-logout { background: var(--bg-surface); }
+.status-strip-actions > .status-strip-logout { color: var(--text-primary); }
+.status-strip-actions > .status-strip-logout:hover { border-color: var(--accent); background: var(--surface-hover); }
+@media (max-width: 480px) {
+  .status-strip-actions { gap: 6px; }
+  .status-strip-actions > .status-strip-view-controls { padding-inline: 6px; gap: 6px; }
+  .status-strip-actions > .status-strip-logout,
+  .status-strip-actions > .status-details > summary { padding-inline: 7px; font-size: 11px; gap: 5px; }
+  .status-strip-actions .app-zoom-controls button { padding-inline: 4px; font-size: 11px; }
+}

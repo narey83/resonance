@@ -101,6 +101,7 @@ import QueuePanel from './Queue/QueuePanel';
 import Rooms from './Rooms/Rooms';
 import Searches from './Search/Searches';
 import Setup from './Setup';
+import LoadingState from './Shared/LoadingState';
 import ResonanceMark from './Shared/ResonanceMark';
 import ZoomControl from './Shared/ZoomControl';
 import DatabaseViewer from './System/DatabaseViewer';
@@ -144,7 +145,7 @@ import React, {
 } from 'react';
 import { unstable_batchedUpdates } from 'react-dom';
 import { Link, Redirect, Route, Switch, withRouter } from 'react-router-dom';
-import { Button, Loader, Modal } from 'semantic-ui-react';
+import { Button, Modal } from 'semantic-ui-react';
 
 // ── Small always-rendered helpers ────────────────────────────────────────────
 
@@ -1172,10 +1173,9 @@ const App = () => {
 
   if (!initialized && setup.required !== true)
     return (
-      <Loader
-        active
-        size="big"
-      />
+      <LoadingState className="resonance-loading--startup">
+        Loading Resonance…
+      </LoadingState>
     );
 
   if (setup.required) return <Setup onComplete={handleSetupComplete} />;

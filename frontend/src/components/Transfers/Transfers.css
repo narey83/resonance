@@ -1109,20 +1109,6 @@
   text-align: center;
 }
 
-.transfers-loading__spinner {
-  animation: transfers-loading-spin 1s linear infinite;
-  color: var(--accent);
-  flex-shrink: 0;
-}
-
-@keyframes transfers-loading-spin {
-  to { transform: rotate(360deg); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .transfers-loading__spinner { animation: none; }
-}
-
 /* Downloads use the same recipient workspace as uploads. */
 .dl-workspace-root > .ul-complete-header .ul-toolbar { border: 0; flex-wrap: wrap; gap: 12px; margin-left: auto; padding: 0; }
 .dl-workspace-root .ul-toolbar-actions { flex-wrap: wrap; }

@@ -37,6 +37,7 @@ import {
   isRecentlyIndexed,
   trackCountLabel,
 } from '../../../lib/util';
+import ResonanceMark from '../../Shared/ResonanceMark';
 import AlbumArt from './AlbumArt';
 import LibraryDetailHeader from './LibraryDetailHeader';
 import LibraryViewHeader from './LibraryViewHeader';
@@ -325,7 +326,7 @@ const FolderView = ({
   if (loading && !selected) {
     return (
       <div className="jb-state">
-        <div className="jb-spinner" />
+        <ResonanceMark size={48} />
         Loading folders…
       </div>
     );

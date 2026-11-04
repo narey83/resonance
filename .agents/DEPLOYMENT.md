@@ -1,11 +1,47 @@
 # Resonance deployment destinations and runbook
 
-Last confirmed: 2 November 2026. Read this file before any deployment.
+Last updated: 4 November 2026. Read this file before any deployment.
 
 **Standing user rule: use only the dev laptop for builds, tests, application and
 development servers, including temporary web QA and Metro, until the user explicitly
 says Mac runtime use is OK.** Keep source editing and Git on the Mac; SSH/ADB
 forwarding and artifact transfer are transport, not Mac application runtimes.
+
+## Top-bar layout and loading logos deployed — 4 November 2026
+
+Deployed the verified Mac frontend changes to the existing development source
+directory using hot reload. The initial 25-file update activated at 16:57:33 UTC;
+the final queue/order/outline adjustment activated at 17:01:31 UTC and compiled
+at 17:01:38 UTC. No production bundle was built for delivery.
+
+The right-hand controls now read **Statistics, size controls, Log out** from left
+to right. Upload/download waiting counts and queue links are inside Statistics.
+Visible top-bar sections share a subtle outline. Startup, shared system loaders,
+transfers, analysis and initial library views use the current Resonance logo;
+the splash resolves its assets from the configured URL base, including nested
+pages, and provides the still logo for reduced-motion settings.
+
+Verification: 103 component tests across the focused suites (including the final
+18 top-bar tests), four splash asset/path tests, changed-file ESLint and 11
+dependency security tests passed on the dev laptop. Public browser checks passed
+at 1440px and 390px, including mobile at manual 100% scale and the AMOLED theme:
+control order, section borders, both queue-link destinations and local logout
+were exercised. The server logout request was mocked to preserve the QA session.
+Public loading-screen checks delayed selected API responses to inspect the splash,
+initialization, uploads, downloads, Events and Artists; images loaded without
+page errors, including reduced-motion mode. Desktop/mobile screenshots were
+inspected. Public animated/still logo checksums match the Mac source. Development
+compilation retained the existing 14 dependency source-map warnings.
+
+Public and direct readiness remained available. Frontend service PID 1228101,
+backend PID 3121754 (release `security-a002b60`) and Caddy PID 3992646 were
+preserved. No backend restart, gateway reload, database copy, queue rewrite or
+routine backup was performed. Unrelated gateway work in the Mac checkout was
+not included in this UI deployment.
+
+Evidence: `/home/narey/resonance-builds/statistics-topbar-20261104/`, including
+`ui-activation.json`, `ui-layout-activation.json`, `ui-final-source-manifest.json`,
+`ui-runtime-verification.json`, test/lint logs and `live-ui/` browser logs/screenshots.
 
 ## User intent and defaults
 
@@ -37,6 +73,44 @@ Use the user's latest explicit instructions if they change a destination or scop
 Ask only when a material destination or delivery choice is genuinely new, or access
 fails and cannot be recovered through the established workflow. A deployment request
 does not authorize publishing to app stores or an unrelated distribution channel.
+
+## Codex remote access — 4 November 2026
+
+New capability: Codex CLI is installed on the dev laptop and ready for SSH
+app-server connections. This is remote agent access, not a Resonance deployment.
+
+Verified from the Mac on 4 November 2026:
+
+- Existing SSH aliases `dev-laptop.local` and `lan-server` resolve to
+  `192.168.0.80`, user `narey`; batch-mode SSH succeeds.
+- Remote executable: `/home/narey/.local/bin/codex`, version `0.166.0`.
+- `codex login status` reports `Logged in using ChatGPT`.
+- Starting `codex app-server --listen stdio://` through SSH and sending the
+  `initialize` request succeeds. Its user agent reports Ubuntu/x86_64.
+- `command/exec` with command `["/bin/hostname"]`, cwd `/tmp`, sandbox policy
+  `readOnly` and a 10-second timeout returns exit code 0, stdout `dev-laptop`
+  and empty stderr. This check creates no agent chat. The temporary connection
+  was closed afterward; no public app-server listener was configured.
+
+**Desktop connection setup remains manual and unverified.** The app's project
+inventory currently lists only the Mac Resonance project. Computer Use refuses
+access to this app's own UI, and the available app tools cannot add SSH hosts.
+In the desktop app, open Settings > Connections > SSH, enable
+`dev-laptop.local`, then choose the intended remote project folder. Do not claim
+desktop connection or chat execution is verified until the saved remote project
+appears and a command is tested through that connection. A successful direct
+app-server test proves the remote prerequisite, not the desktop integration.
+
+Agent workflow: keep editing and Git in `/Users/narey/Projects/resonance` on the
+Mac. Use deliberately prepared isolated snapshots on the dev laptop for builds
+and checks; a remote project must not turn the live checkout or private state
+into an editing workspace. Codex installation does not authorize source resets,
+automatic mirroring, deployments/restarts or access to the old server. Preserve
+existing credentials and sandbox/approval controls. Use SSH transport rather
+than exposing the app server on the network. Remote desktop/browser automation
+requires separately available host tools and has not been verified here.
+
+Official setup: <https://learn.chatgpt.com/docs/remote-connections#connect-to-an-ssh-host>.
 
 ## Default live server
 
@@ -2115,7 +2189,6 @@ button dimensions at desktop and 390px widths, then verify positions after the
 response completes.
 All four fixture cases (automatic/manual at 1440px/390px) measured zero row movement
 and zero button width/height change while loading and after completion.
-
 
 ## yt-dlp page URL correction deployed — 2 November 2026
 

@@ -30,6 +30,7 @@
 import { useLibraryActivity } from '../../../context/LibraryActivityContext';
 import { usePlayer } from '../../../context/PlayerContext';
 import { getPlayHistory } from '../../../lib/libraryActivity';
+import ResonanceMark from '../../Shared/ResonanceMark';
 import { Heart, Play, Smartphone, Trash2, X } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -202,7 +203,7 @@ const PlayHistoryView = ({ onContextMenu }) => {
   if (loading) {
     return (
       <div className="jb-state">
-        <div className="jb-spinner" />
+        <ResonanceMark size={48} />
         Loading play history…
       </div>
     );

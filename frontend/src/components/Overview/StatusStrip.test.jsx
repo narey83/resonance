@@ -51,14 +51,15 @@ describe('Status and controls explanations', () => {
     expect(panel.textContent).toContain('3 folders');
   });
 
-  it('labels the top-bar count as file transfers', () => {
+  it('keeps the fallback waiting count inside Statistics', () => {
     const panel = renderPanel({ queuedTransferCount: 42 });
+    expect(panel.textContent).toContain('42 queued');
     expect(
-      panel.closest('.status-strip').querySelector('.status-chip').textContent,
-    ).toContain('42 transfers queued');
+      panel.closest('.status-strip').querySelector('.status-chip'),
+    ).toBeNull();
   });
 
-  it('links separate upload and download waiting counts to their queues', () => {
+  it('links upload and download waiting counts inside Statistics', () => {
     const panel = renderPanel({
       queuedTransferCount: 13_150,
       queuedTransferCounts: { uploads: 13_143, downloads: 7 },
@@ -70,6 +71,10 @@ describe('Status and controls explanations', () => {
     expect(
       bar.querySelector('a[href="/downloads"]').getAttribute('aria-label'),
     ).toBe('7 downloads waiting');
+    expect(
+      panel.querySelector('[aria-label="Waiting transfers"]'),
+    ).not.toBeNull();
+    expect(bar.querySelector(':scope > .status-transfer-group')).toBeNull();
     expect(bar.querySelectorAll('.status-transfer-link strong')).toHaveLength(
       2,
     );
@@ -143,7 +148,7 @@ describe('Status and controls explanations', () => {
     },
   );
 
-  it('keeps transfer speeds inside Options rather than the top bar', () => {
+  it('keeps transfer speeds inside Statistics rather than the top bar', () => {
     const panel = renderPanel({
       downloads: [{ state: 'InProgress', averageSpeed: 125_000 }],
       uploads: [{ state: 'InProgress', averageSpeed: 250_000 }],
@@ -154,6 +159,29 @@ describe('Status and controls explanations', () => {
     expect(panel.textContent).toContain('Download:');
     expect(panel.textContent).toContain('Upload:');
   });
+
+  it('labels statistics and places logout directly on the top bar', () => {
+    const panel = renderPanel({ isLoggedIn: true, onLogout: jest.fn() });
+    const bar = panel.closest('.status-strip');
+    expect(bar.querySelector('summary').textContent.trim()).toBe('Statistics');
+    expect(bar.querySelector('summary').getAttribute('aria-label')).toBe(
+      'Statistics',
+    );
+    const logout = bar.querySelector('button[title="Log out"]');
+    expect(logout.parentElement.className).toBe('status-strip-actions');
+    expect(panel.querySelector('button[title="Log out"]')).toBeNull();
+    expect(panel.textContent).not.toContain('Your session');
+  });
+
+  it.each([{ isLoggedIn: false, onLogout: jest.fn() }, { isLoggedIn: true }])(
+    'hides logout when unavailable: %j',
+    (props) => {
+      const panel = renderPanel(props);
+      expect(
+        panel.closest('.status-strip').querySelector('button[title="Log out"]'),
+      ).toBeNull();
+    },
+  );
 
   it('uses the whole-queue counter with only active byte samples', () => {
     const panel = renderPanel({
@@ -185,6 +213,20 @@ describe('Status and controls explanations', () => {
       bar.querySelector('.status-strip-view-controls').textContent,
     ).toContain('Auto size');
     expect(panel.querySelector('.status-strip-view-controls')).toBeNull();
+  });
+
+  it('orders Statistics, size controls and Logout from left to right', () => {
+    const panel = renderPanel({
+      isLoggedIn: true,
+      onLogout: jest.fn(),
+      viewControls: <button type="button">Auto size</button>,
+    });
+    const actions = panel.closest('.status-strip-actions');
+    expect([...actions.children].map((element) => element.className)).toEqual([
+      'status-details',
+      'status-strip-view-controls',
+      'status-strip-btn status-strip-btn--label status-strip-logout',
+    ]);
   });
 
   it('handles absent server metrics and an empty queue', () => {

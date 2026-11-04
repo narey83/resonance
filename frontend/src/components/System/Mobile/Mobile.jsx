@@ -30,16 +30,10 @@
 import './Mobile.css';
 import { getYaml, updateYaml } from '../../../lib/options';
 import { createPairingCode, getPairingStatus } from '../../../lib/session';
+import LoadingState from '../../Shared/LoadingState';
 import QRCode from 'qrcode';
 import React, { useCallback, useEffect, useState } from 'react';
-import {
-  Button,
-  Checkbox,
-  Icon,
-  Input,
-  Loader,
-  Message,
-} from 'semantic-ui-react';
+import { Button, Checkbox, Icon, Input, Message } from 'semantic-ui-react';
 import { parse, stringify } from 'yaml';
 
 // Where the toggle lives in the options document.
@@ -194,13 +188,7 @@ const Mobile = () => {
     return () => clearInterval(timer);
   }, [pairing]);
 
-  if (loading)
-    return (
-      <Loader
-        active
-        inline="centered"
-      />
-    );
+  if (loading) return <LoadingState>Loading mobile settings…</LoadingState>;
 
   const mmss = `${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, '0')}`;
 

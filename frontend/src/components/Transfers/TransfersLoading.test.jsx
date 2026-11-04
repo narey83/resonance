@@ -1,5 +1,4 @@
-import { getCompleteUploadsQueue } from '../../lib/completeUploadQueue';
-import { getAll } from '../../lib/transfers';
+import { getAll, getUploadsQueue } from '../../lib/transfers';
 import DownloadsTable from './DownloadsTable';
 import Transfers from './Transfers';
 import UploadsTable from './UploadsTable';
@@ -14,7 +13,10 @@ jest.mock('./UploadsTable', () => ({
   __esModule: true,
   default: jest.fn(() => 'Upload queue'),
 }));
-jest.mock('../../lib/transfers', () => ({ getAll: jest.fn() }));
+jest.mock('../../lib/transfers', () => ({
+  getAll: jest.fn(),
+  getUploadsQueue: jest.fn(),
+}));
 jest.mock('./DownloadsTable', () => ({
   __esModule: true,
   default: jest.fn(),
@@ -38,7 +40,7 @@ describe('Transfer loading state', () => {
       finish = resolve;
       fail = reject;
     });
-    getCompleteUploadsQueue.mockReturnValue(pending);
+    getUploadsQueue.mockReturnValue(pending);
     getAll.mockReturnValue(pending);
   });
   afterEach(() => {
@@ -53,8 +55,8 @@ describe('Transfer loading state', () => {
       direction: 'upload',
       label: 'Loading uploads…',
       queue: 'Upload queue',
-      response: { users: [], transfers: [], username: null },
-      method: getCompleteUploadsQueue,
+      response: { users: [], transfers: [], username: null, folders: [] },
+      method: getUploadsQueue,
     },
     {
       direction: 'download',
@@ -73,7 +75,9 @@ describe('Transfer loading state', () => {
       const status = container.querySelector('[role="status"]');
       expect(status.className).toBe('transfers-loading');
       expect(status.getAttribute('aria-busy')).toBe('true');
-      expect(status.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+      expect(
+        status.querySelector('img.resonance-mark[aria-hidden="true"]'),
+      ).not.toBeNull();
       expect(status.textContent).toBe(label);
       expect(UploadsTable).not.toHaveBeenCalled();
       expect(DownloadsTable).not.toHaveBeenCalled();
