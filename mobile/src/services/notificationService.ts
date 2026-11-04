@@ -35,12 +35,12 @@
  * then rebuild the dev client.
  */
 
+import { getNotificationsModule, messageAlertData, wasMessageAlertRead } from './messageAlerts';
 import { startMessagingSync } from './messagingSync';
 import { maintainServerConnection } from '../lib/serverConnection';
 import { getApplicationState } from '../api/application';
 import { sessionGuard } from '../lib/sessionScope';
 import { useEffect } from 'react';
-import { requireOptionalNativeModule } from 'expo';
 import { useAppSettings } from '../store/appSettingsStore';
 import { useAuthStore } from '../store/auth';
 import { createApplicationHubConnection } from '../api/applicationHub';
@@ -49,38 +49,22 @@ import { useRoomStore } from '../store/roomStore';
 import { useBlockedUsersStore } from '../store/blockedUsersStore';
 import type { BlockedUsersPayload } from '../api/blockedUsers';
 
-let notificationsModule: typeof import('expo-notifications') | null = null;
-
-async function getModule() {
-  if (notificationsModule) return notificationsModule;
-  // expo-notifications accesses native modules at load time — only import if
-  // the native side is actually present (requires a custom dev build).
-  // Probe via requireOptionalNativeModule, not RN's `NativeModules`: Expo
-  // modules register on globalThis.expo.modules and never appear on the legacy
-  // bridge registry, so a NativeModules lookup is always undefined and silently
-  // disables every notification.
-  if (!requireOptionalNativeModule('ExpoNotificationScheduler')) return null;
-  try {
-    notificationsModule = await import('expo-notifications');
-    return notificationsModule;
-  } catch {
-    return null;
-  }
-}
-
 export async function initNotifications(): Promise<boolean> {
-  const N = await getModule();
+  const N = await getNotificationsModule();
   if (!N) return false;
 
   try {
     N.setNotificationHandler({
-      handleNotification: async () => ({
-        shouldShowAlert: true,
-        shouldPlaySound: true,
-        shouldSetBadge:  false,
-        shouldShowBanner: true,
-        shouldShowList:   true,
-      }),
+      handleNotification: async (notification) => {
+        const show = !wasMessageAlertRead(notification.request.content.data);
+        return {
+          shouldShowAlert: show,
+          shouldPlaySound: show,
+          shouldSetBadge: false,
+          shouldShowBanner: show,
+          shouldShowList: show,
+        };
+      },
     });
 
     for (const [id, name] of [['messages-v2', 'Alerts'], ['private-messages-v2', 'Private messages'], ['room-mentions-v2', 'Room mentions'], ['transfers-v2', 'Transfers']]) {
@@ -99,12 +83,13 @@ export async function initNotifications(): Promise<boolean> {
   }
 }
 
-async function send(title: string, body: string, channelId = 'messages-v2') {
-  const N = await getModule();
-  if (!N) return;
+async function send(title: string, body: string, channelId = 'messages-v2', data?: Record<string, unknown>) {
+  const current = sessionGuard();
+  const N = await getNotificationsModule();
+  if (!current() || !N || (data && wasMessageAlertRead(data))) return;
   try {
     await N.scheduleNotificationAsync({
-      content: { title, body, sound: 'default' },
+      content: { title, body, sound: 'default', data },
       trigger: { channelId },
     });
   } catch {}
@@ -131,13 +116,13 @@ export async function notifyShareScanComplete() {
 export async function notifyPrivateMessage(username: string, message: string) {
   const { notifications } = useAppSettings.getState();
   if (!notifications.privateMessage) return;
-  await send(`Message from ${username}`, message, 'private-messages-v2');
+  await send(`Message from ${username}`, message, 'private-messages-v2', messageAlertData('pm', username));
 }
 
 export async function notifyRoomMention(roomName: string, username: string, message: string) {
   const { notifications } = useAppSettings.getState();
   if (!notifications.roomMention) return;
-  await send(`Mentioned in ${roomName}`, `${username}: ${message}`, 'room-mentions-v2');
+  await send(`Mentioned in ${roomName}`, `${username}: ${message}`, 'room-mentions-v2', messageAlertData('room', roomName));
 }
 
 // Restart alerts are only shown to administrators.
@@ -224,8 +209,8 @@ export const useNotificationHub = () => {
     });
     hub.on('ROOM_MENTION', ({ roomName, username, message }: { roomName: string; username: string; message: string }) => {
       if (!current()) return;
-      useRoomStore.getState().noteMention(roomName);
       notifyRoomMention(roomName, username, message);
+      useRoomStore.getState().noteMention(roomName);
     });
 
     // Messages that arrived while the app was closed only reach the tab badge

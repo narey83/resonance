@@ -30,6 +30,7 @@
 import { Text, TextInput } from '../../components/Typography';
 import type { TextInput as NativeTextInput } from 'react-native';
 
+import { sessionGuard } from '../../lib/sessionScope';
 import { useLatestMessage } from '../../hooks/useLatestMessage';
 
 import { Editorial, Radius, Spacing, ThemeColors, Typography } from '../../theme';
@@ -90,7 +91,8 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
   const s = useMemo(() => makeStyles(colors), [colors]);
 
   const { joined, messages, loadMessages, sendMessage, clearMentions, markRead, leave } = useRoomStore();
-  const mentionCount = useRoomStore((s) => s.unread[roomName] ?? 0);
+  const unreadCount = useRoomStore((s) => s.unread[roomName] ?? 0);
+  const mentionCount = useRoomStore((s) => s.mentions[roomName] ?? 0);
   const room = joined.find((r) => r.name === roomName);
   const thread = useMemo(() => messages[roomName] ?? [], [messages, roomName]);
 
@@ -194,19 +196,26 @@ export default function RoomDetailScreen({ navigation, route }: Props) {
   useFocusEffect(
     useCallback(() => {
       setShowUsers(false);
-      void loadMessages(roomName).catch(() => {});
-      clearMentions(roomName);
-      markRead(roomName);
-      return () => setShowUsers(false);
+      const current = sessionGuard();
+      let active = true;
+      void loadMessages(roomName).then(() => {
+        if (!active || !current() || AppState.currentState !== 'active') return;
+        clearMentions(roomName);
+        markRead(roomName);
+      }).catch(() => {});
+      return () => {
+        active = false;
+        setShowUsers(false);
+      };
     }, [roomName, loadMessages, clearMentions, markRead])
   );
 
   React.useEffect(() => {
-    if (focused && AppState.currentState === 'active' && mentionCount) {
+    if (focused && AppState.currentState === 'active' && (unreadCount || mentionCount)) {
       clearMentions(roomName);
       markRead(roomName);
     }
-  }, [focused, mentionCount, roomName, clearMentions, markRead]);
+  }, [focused, unreadCount, mentionCount, roomName, clearMentions, markRead]);
 
   React.useEffect(() => {
     loadTranslationStatus();

@@ -8,7 +8,7 @@ test('room badges count ordinary traffic, clear on read and recover from counter
   const load = mobileModules({
     'src/api/rooms.ts': { getMessageCounts: async () => counts },
     'src/api/linkPreview.ts': { prefetchMessagePreviews() {} },
-    'src/lib/sessionScope.ts': { sessionGuard: () => () => active, onSessionReset() {} },
+    'src/lib/sessionScope.ts': { sessionGuard: () => () => active, getSessionScope: () => null, onSessionReset() {} },
   });
   const { useRoomStore, totalRoomUnread } = load('src/store/roomStore.ts');
   await useRoomStore.getState().loadUnread();

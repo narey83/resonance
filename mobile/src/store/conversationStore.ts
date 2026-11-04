@@ -27,6 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { dismissMessageAlerts } from '../services/messageAlerts';
 import { prefetchMessagePreviews } from '../api/linkPreview';
 import { shallowEqual } from '../lib/shallowEqual';
 import { onSessionReset, sessionGuard } from '../lib/sessionScope';
@@ -115,6 +116,7 @@ export const useConversationStore = create<ConversationStore>((set, get) => ({
   },
 
   acknowledge: async (username) => {
+    const readThrough = Date.now();
     const current = sessionGuard();
     const prev = get().conversations.find((c) => c.username === username);
     const delta = prev?.unAcknowledgedMessageCount ?? 0;
@@ -130,6 +132,7 @@ export const useConversationStore = create<ConversationStore>((set, get) => ({
     try {
       await chatAPI.acknowledge(username);
       if (!current()) return;
+      await dismissMessageAlerts('pm', username, readThrough);
     } catch {
       if (!current()) return;
       // Restore on failure

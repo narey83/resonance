@@ -27,6 +27,7 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
+import { dismissMessageAlerts } from '../services/messageAlerts';
 import { prefetchMessagePreviews } from '../api/linkPreview';
 import { onSessionReset, sessionGuard } from '../lib/sessionScope';
 import { shallowEqual } from '../lib/shallowEqual';
@@ -112,10 +113,13 @@ export const useRoomStore = create<RoomStore>((set, get) => ({
       return { readCounts, unread };
     });
   },
-  markRead: (roomName) => set((s) => ({
-    readCounts: { ...s.readCounts, [roomName]: (s.readCounts[roomName] ?? 0) + (s.unread[roomName] ?? 0) },
-    unread: { ...s.unread, [roomName]: 0 },
-  })),
+  markRead: (roomName) => {
+    set((s) => ({
+      readCounts: { ...s.readCounts, [roomName]: (s.readCounts[roomName] ?? 0) + (s.unread[roomName] ?? 0) },
+      unread: { ...s.unread, [roomName]: 0 },
+    }));
+    void dismissMessageAlerts('room', roomName);
+  },
   isLoadingJoined: false,
   isLoadingAvailable: false,
 
