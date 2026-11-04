@@ -164,18 +164,26 @@ const LoginForm = ({ error, loading, onLoginAttempt }) => {
               </button>
             </form>
 
+            <p
+              className="auth-sub"
+              style={{ marginBottom: 0, marginTop: 24 }}
+            >
+              Resonance is a music streaming app with library management, DJ
+              tools and a Soulseek integration.
+            </p>
+
             <div
               className="auth-legal"
               style={{
                 borderTop: '1px solid rgba(128,128,128,0.2)',
                 fontSize: 11,
                 lineHeight: 1.5,
-                marginTop: 24,
+                marginTop: 16,
                 opacity: 0.6,
                 paddingTop: 16,
               }}
             >
-              Resonance is a modified version of{' '}
+              Built from a modified version of{' '}
               <a
                 href="https://github.com/slskd/slskd"
                 rel="noreferrer"
@@ -183,8 +191,8 @@ const LoginForm = ({ error, loading, onLoginAttempt }) => {
               >
                 slskd
               </a>
-              . It is not maintained by, endorsed by, or affiliated with the
-              slskd project or its author(s). Licensed under{' '}
+              . Not maintained by, endorsed by, or affiliated with the slskd
+              project or its authors. Licensed under{' '}
               <a
                 href="https://www.gnu.org/licenses/agpl-3.0.html"
                 rel="noreferrer"
@@ -192,7 +200,15 @@ const LoginForm = ({ error, loading, onLoginAttempt }) => {
               >
                 AGPL-3.0
               </a>{' '}
-              with additional terms.{' '}
+              with{' '}
+              <a
+                href="https://github.com/narey83/resonance/blob/main/LICENSE"
+                rel="noreferrer"
+                target="_blank"
+              >
+                additional terms
+              </a>
+              .{' '}
               <a
                 href="https://github.com/narey83/resonance"
                 rel="noreferrer"

@@ -40,6 +40,10 @@
   outline-offset: 4px;
 }
 
+.auth-shell--cinematic .auth-legal a {
+  color: var(--accent);
+}
+
 .auth-brand-panel--cinematic {
   background: #090f19;
   isolation: isolate;
