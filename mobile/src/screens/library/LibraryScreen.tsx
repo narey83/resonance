@@ -4047,7 +4047,7 @@ function PlaylistDetail({ route, navigation: nav }: PlaylistDetailProps) {
     [playlist],
   );
 
-  const shareUrl = playlist?.publicToken ? `${serverUrl}/mixtape/${playlist.publicToken}` : null;
+  const shareUrl = playlist?.publicToken ? `${serverUrl}/playlist/${playlist.publicToken}` : null;
 
   useEffect(() => {
     if (playlist?.name) nav.setOptions({ title: playlist.name });

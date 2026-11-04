@@ -1326,7 +1326,7 @@ const MixtapeDetail = ({ mixtape, onBack, onDelete, onUpdate }) => {
   const artworkInputRef = useRef(null);
 
   const shareUrl = mixtape.publicToken
-    ? `${window.location.origin}${urlBase}/mixtape/${mixtape.publicToken}`
+    ? `${window.location.origin}${urlBase}/playlist/${mixtape.publicToken}`
     : null;
 
   const totalDur = useMemo(

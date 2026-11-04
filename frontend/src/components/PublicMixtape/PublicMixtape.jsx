@@ -28,6 +28,7 @@
 // </copyright>
 
 import './PublicMixtape.css';
+import { urlBase } from '../../config';
 import {
   downloadTrackUrl,
   getPublic,
@@ -83,7 +84,7 @@ const PublicMixtape = ({ token }) => {
       });
   }, [token]);
 
-  const shareUrl = window.location.href;
+  const shareUrl = `${window.location.origin}${urlBase}/playlist/${token}`;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(shareUrl).then(() => {

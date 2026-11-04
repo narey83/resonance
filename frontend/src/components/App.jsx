@@ -1115,7 +1115,7 @@ const App = () => {
   // ── Gate: full-screen screens that replace the app ───────────────────────────
   const mixtapeMatch = window.location.pathname.match(
     new RegExp(
-      `^${urlBase.replaceAll(/[$()*+.?[\\\]^{|}]/g, '\\$&')}/mixtape/([^/]+)/?$`,
+      `^${urlBase.replaceAll(/[$()*+.?[\\\]^{|}]/g, '\\$&')}/(?:playlist|mixtape)/([^/]+)/?$`,
     ),
   );
   if (mixtapeMatch) {
