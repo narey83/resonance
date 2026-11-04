@@ -229,6 +229,7 @@ const Transfers = ({ direction }) => {
 
   useEffect(() => {
     let mounted = true;
+    let hasCompleteUpload = false;
     const scheduled = new Set();
     const inFlight = new Set();
     let controller;
@@ -250,20 +251,28 @@ const Transfers = ({ direction }) => {
       try {
         let response;
         if (direction === 'upload') {
+          const updateSummary = ({ username, users }) => {
+            setQueueUsers(users);
+            setUploadQueueCount?.(
+              users.reduce((sum, user) => sum + user.waitingCount, 0),
+            );
+            setSelectedUploadUser(username);
+          };
+
           const result = await getCompleteUploadsQueue({
             username:
               requestedUploadUser ?? completeUploadRef.current?.username,
             previous: completeUploadRef.current,
+            onSummary: (summary) => {
+              if (mounted && !hasCompleteUpload) updateSummary(summary);
+            },
             signal: controller.signal,
           });
           response = result.transfers;
           if (mounted) {
             rememberCompleteUpload(result);
-            setQueueUsers(result.users);
-            setUploadQueueCount?.(
-              result.users.reduce((sum, user) => sum + user.waitingCount, 0),
-            );
-            setSelectedUploadUser(result.username);
+            hasCompleteUpload = true;
+            updateSummary(result);
           }
         } else {
           response = await transfersLibrary.getAll({
@@ -321,7 +330,8 @@ const Transfers = ({ direction }) => {
         }
       } finally {
         inFlight.delete(controller);
-        if (mounted) setConnecting(false);
+        if (mounted && (direction !== 'upload' || hasCompleteUpload))
+          setConnecting(false);
       }
 
       if (mounted) scheduled.add(setTimeout(poll, 2_000));
@@ -373,7 +383,10 @@ const Transfers = ({ direction }) => {
     }
   };
 
-  if (connecting) {
+  if (
+    connecting &&
+    (direction !== 'upload' || (queueUsers.length === 0 && !loadError))
+  ) {
     return (
       <div
         aria-busy="true"
@@ -394,31 +407,30 @@ const Transfers = ({ direction }) => {
   }
 
   if (direction === 'upload') {
-    if (loadError && transfers.length === 0)
-      return (
-        <p role="status">
-          Unable to load the complete upload queue. Retrying automatically.
-        </p>
-      );
     return (
       <>
         {loadError && (
           <div role="status">
-            Unable to refresh uploads. Retrying automatically.
+            {connecting
+              ? 'Unable to load the complete upload queue. Retrying automatically.'
+              : 'Unable to refresh uploads. Retrying automatically.'}
           </div>
         )}
-        <UploadsTable
-          onCancel={cancel}
-          onCancelDirectory={cancelUploadDirectory}
-          onCancelUser={cancelUserUploads}
-          onRemove={remove}
-          onSelectUploadUser={(username) => {
-            setRequestedUploadUser(username);
-          }}
-          queueUsers={queueUsers}
-          selectedUsername={selectedUploadUser}
-          transfers={transfers}
-        />
+        {(!loadError || queueUsers.length > 0) && (
+          <UploadsTable
+            onCancel={cancel}
+            onCancelDirectory={cancelUploadDirectory}
+            onCancelUser={cancelUserUploads}
+            onRemove={remove}
+            onSelectUploadUser={(username) => {
+              setRequestedUploadUser(username);
+            }}
+            queueLoading={connecting}
+            queueUsers={queueUsers}
+            selectedUsername={selectedUploadUser}
+            transfers={transfers}
+          />
+        )}
       </>
     );
   }

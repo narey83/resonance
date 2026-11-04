@@ -66,6 +66,22 @@ describe('Complete recipient upload queue', () => {
       new Set(getUploadsQueue.mock.calls.map(([args]) => args.page)).size,
     ).toBe(17);
   });
+  it('reports recipient counts while the remaining tracks are still loading', async () => {
+    expect.hasAssertions();
+    const all = Array.from({ length: 501 }, (_, i) => makeFile(i));
+    const first = snapshot(all.slice(0, 500), all.length);
+    const onSummary = jest.fn();
+    getUploadsQueue
+      .mockResolvedValueOnce(first)
+      .mockImplementationOnce(async () => {
+        expect(onSummary).toHaveBeenCalledWith(first);
+        return snapshot(all.slice(500), all.length, 1);
+      })
+      .mockResolvedValueOnce(first);
+
+    const result = await getCompleteUploadsQueue({ onSummary });
+    expect(filesFrom(result)).toHaveLength(501);
+  });
   it('refreshes progress without repeatedly fetching an unchanged backlog', async () => {
     expect.hasAssertions();
     const all = Array.from({ length: 1_200 }, (_, i) => makeFile(i));

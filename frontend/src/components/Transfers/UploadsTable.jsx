@@ -176,6 +176,7 @@ const UploadsTable = ({
   onCancelDirectory,
   onCancelUser,
   onSelectUploadUser,
+  queueLoading = false,
   queueUsers = [],
   selectedUsername,
   transfers,
@@ -345,7 +346,10 @@ const UploadsTable = ({
             ))}
           </div>
         </aside>
-        <div className="ul-live-track-pane">
+        <div
+          aria-busy={queueLoading}
+          className="ul-live-track-pane"
+        >
           <header className="ul-complete-header">
             {selectedUsername && (
               <div className="ul-recipient-controls">
@@ -382,7 +386,7 @@ const UploadsTable = ({
               </button>
             )}
           </header>
-          {selectedUsername && (
+          {!queueLoading && selectedUsername && (
             <section
               aria-label="Uploading now"
               className="ul-current-uploads"
@@ -418,7 +422,14 @@ const UploadsTable = ({
               )}
             </section>
           )}
-          {fileCount === 0 ? (
+          {queueLoading ? (
+            <p
+              className="ul-complete-empty"
+              role="status"
+            >
+              Loading complete upload queue…
+            </p>
+          ) : fileCount === 0 ? (
             <p className="ul-complete-empty">
               {selectedUsername
                 ? 'No unfinished uploads for this user.'

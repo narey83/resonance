@@ -49,11 +49,12 @@ const completeSnapshot = (snapshot, records, detailsLoadedAt) => {
 // Transport pages are assembled here; the user sees one complete recipient list.
 // Polling reuses unchanged membership for 30s and refreshes active progress from
 // the leading sample. A changed count, new sampled ID or missing active ID forces
-// a complete reload. Nothing is published to the UI until the IDs reconcile.
+// a complete reload. Track details are published only after reconciliation.
 export const getCompleteUploadsQueue = async ({
   username,
   signal,
   previous,
+  onSummary,
 } = {}) => {
   let first = await getUploadsQueue({
     username,
@@ -61,6 +62,7 @@ export const getCompleteUploadsQueue = async ({
     pageSize: PAGE_SIZE,
     signal,
   });
+  if (!signal?.aborted) onSummary?.(first);
   if (
     previous?.username === first.username &&
     previous.userTotalPending === first.userTotalPending &&
