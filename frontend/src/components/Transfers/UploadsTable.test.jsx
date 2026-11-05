@@ -1,3 +1,4 @@
+import * as prefs from '../../lib/prefs';
 import { getUploadFolder } from '../../lib/transfers';
 import { getStatuses } from '../../lib/users';
 import UploadsTable from './UploadsTable';
@@ -9,6 +10,8 @@ jest.mock('../../lib/transfers', () => ({
   ...jest.requireActual('../../lib/transfers'),
   getUploadFolder: jest.fn(),
 }));
+
+jest.mock('../../lib/prefs', () => ({ get: jest.fn(), set: jest.fn() }));
 
 jest.mock('../../lib/users', () => ({
   getStatuses: jest.fn().mockResolvedValue({}),
@@ -93,6 +96,8 @@ describe('One complete upload list and one user header', () => {
     act(() => Simulate.click(container.querySelector('.ul-folder-toggle')));
 
   beforeEach(() => {
+    prefs.get.mockReset().mockReturnValue(null);
+    prefs.set.mockReset();
     container = document.createElement('div');
     document.body.append(container);
   });
@@ -101,6 +106,66 @@ describe('One complete upload list and one user header', () => {
       ReactDOM.unmountComponentAtNode(container);
     });
     container.remove();
+  });
+  it.each(['Downloading', 'Connecting', 'Waiting'])(
+    'restores saved %s even when that group is empty',
+    async (status) => {
+      expect.hasAssertions();
+      prefs.get.mockReturnValue(status);
+      await render({ queueUsers: [] });
+      expect(statusControl().textContent).toBe(`${status} (0)`);
+      expect(prefs.get).toHaveBeenCalledWith(
+        'resonance-uploads-recipient-status',
+      );
+      expect(prefs.set).not.toHaveBeenCalled();
+    },
+  );
+  it.each(['Finished', 42, { status: 'Downloading' }])(
+    'ignores invalid saved status %p without overwriting it on mount',
+    async (saved) => {
+      expect.hasAssertions();
+      prefs.get.mockReturnValue(saved);
+      await render();
+      expect(statusControl().textContent).toBe('Waiting (2)');
+      expect(prefs.set).not.toHaveBeenCalled();
+    },
+  );
+  it('keeps the dropdown usable when preference storage cannot be read', async () => {
+    expect.hasAssertions();
+    prefs.get.mockImplementation(() => {
+      throw new Error('Storage blocked');
+    });
+    await render();
+    chooseStatus('Downloading');
+    expect(statusControl().textContent).toBe('Downloading (0)');
+    expect(prefs.set).toHaveBeenCalledWith(
+      'resonance-uploads-recipient-status',
+      'Downloading',
+    );
+  });
+  it('saves explicit selections and restores them after leaving and remounting', async () => {
+    expect.hasAssertions();
+    let saved = null;
+    prefs.get.mockImplementation(() => saved);
+    prefs.set.mockImplementation((key, value) => {
+      saved = value;
+    });
+    await render();
+    chooseStatus('Downloading');
+    expect(prefs.set).toHaveBeenLastCalledWith(
+      'resonance-uploads-recipient-status',
+      'Downloading',
+    );
+    act(() => {
+      ReactDOM.unmountComponentAtNode(container);
+    });
+    await render({ selectedUsername: 'other' });
+    expect(statusControl().textContent).toBe('Downloading (0)');
+    chooseStatus('Connecting');
+    expect(prefs.set).toHaveBeenLastCalledWith(
+      'resonance-uploads-recipient-status',
+      'Connecting',
+    );
   });
   it('shows known waiting-user presence and keeps missing results unknown', async () => {
     expect.hasAssertions();
@@ -295,9 +360,9 @@ describe('One complete upload list and one user header', () => {
     expect(dropdown.open).toBe(false);
     expect(document.activeElement).toBe(summary);
     dropdown.open = true;
-    act(() =>
-      document.body.dispatchEvent(new Event('pointerdown', { bubbles: true })),
-    );
+    act(() => {
+      document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    });
     expect(dropdown.open).toBe(false);
     dropdown.open = true;
     act(() => Simulate.blur(summary, { relatedTarget: document.body }));

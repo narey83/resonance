@@ -26,6 +26,7 @@
 //   │ SPDX-License-Identifier: AGPL-3.0-only
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
+import * as prefs from '../../lib/prefs';
 import { getUploadFolder, isStateCancellable } from '../../lib/transfers';
 import { getStatuses } from '../../lib/users';
 import { formatBitrate, formatBytes, getFileName } from '../../lib/util';
@@ -33,6 +34,8 @@ import { UsernameLink } from '../Shared';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ChevronDown, ChevronRight, Folder, X } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+
+const recipientStatusPreference = 'resonance-uploads-recipient-status';
 
 const isSending = (file) => ['InProgress', 'Initializing'].includes(file.state);
 const isPending = (file) =>
@@ -361,9 +364,16 @@ const UploadsTable = ({
   const selectedGroup = userGroups.find((group) =>
     group.users.some((recipient) => recipient.username === selectedUsername),
   )?.label;
-  const [recipientStatus, setRecipientStatus] = useState(
-    selectedGroup ?? 'Waiting',
-  );
+  const [recipientStatus, setRecipientStatus] = useState(() => {
+    try {
+      const saved = prefs.get(recipientStatusPreference);
+      if (userGroups.some((group) => group.label === saved)) return saved;
+    } catch {
+      // Browser storage may be unavailable; the dropdown must still work.
+    }
+
+    return selectedGroup ?? 'Waiting';
+  });
   const visibleGroup = userGroups.find(
     (group) => group.label === recipientStatus,
   );
@@ -475,7 +485,10 @@ const UploadsTable = ({
         >
           <UploadRecipientStatus
             groups={userGroups}
-            onChange={setRecipientStatus}
+            onChange={(status) => {
+              setRecipientStatus(status);
+              prefs.set(recipientStatusPreference, status);
+            }}
             value={recipientStatus}
           />
           <div className="ul-live-user-list">
