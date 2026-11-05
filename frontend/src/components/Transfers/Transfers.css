@@ -1060,8 +1060,14 @@
 
 .ul-live-workspace { display: grid; flex: 1; gap: 20px; grid-template-columns: 220px minmax(0, 1fr); min-height: 0; }
 .ul-live-users { display: flex; flex-direction: column; min-height: 0; padding-top: 8px; }
-.ul-recipient-status { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); flex-shrink: 0; font: inherit; margin-bottom: 10px; min-width: 0; padding: 8px 6px; width: 100%; }
-.ul-recipient-status:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ul-recipient-status { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); flex-shrink: 0; font: inherit; margin-bottom: 10px; min-width: 0; position: relative; width: 100%; }
+.ul-recipient-status > summary { align-items: center; cursor: pointer; display: flex; gap: 3px; justify-content: space-between; list-style: none; padding: 8px 6px; }
+.ul-recipient-status > summary::-webkit-details-marker { display: none; }
+.ul-recipient-status > summary svg { flex-shrink: 0; }
+.ul-recipient-status > summary:focus-visible, .ul-recipient-status-menu button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ul-recipient-status-menu { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 4px 12px #0003; left: 0; position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; }
+.ul-recipient-status-menu button { background: transparent; border: 0; color: var(--text-primary); cursor: pointer; display: block; font: inherit; padding: 8px 6px; text-align: left; width: 100%; }
+.ul-recipient-status-menu button[aria-checked="true"], .ul-recipient-status-menu button:hover { color: var(--accent); }
 .ul-live-users p { color: var(--text-muted); font-size: 12px; }
 .ul-live-user-list { min-height: 0; overflow-y: auto; }
 .ul-live-user { background: transparent; border: 0; border-bottom: 1px solid var(--border); border-left: 3px solid transparent; color: var(--text-primary); cursor: pointer; display: flex; flex-direction: column; gap: 5px; padding: 12px 10px; text-align: left; width: 100%; overflow-wrap: anywhere; }
@@ -1074,7 +1080,8 @@
 }
 @media (max-width: 700px) {
   .ul-live-workspace { grid-template-columns: 112px minmax(0, 1fr); gap: 10px; }
-  .ul-recipient-status { font-size: 10px; padding: 8px 2px; }
+  .ul-recipient-status { font-size: 10px; }
+  .ul-recipient-status > summary, .ul-recipient-status-menu button { padding: 8px 2px; }
   .ul-live-user { font-size: 11px; padding: 10px 7px; }
   .ul-live-user span { font-size: 10px; }
   .ul-complete-file { grid-template-columns: minmax(0, 1fr) auto; }

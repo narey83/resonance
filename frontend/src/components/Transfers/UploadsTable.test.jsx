@@ -65,6 +65,16 @@ const findGroup = (container, name) =>
 
 describe('One complete upload list and one user header', () => {
   let container;
+  const statusControl = () =>
+    container.querySelector('.ul-recipient-status > summary');
+  const chooseStatus = (value) =>
+    act(() =>
+      Simulate.click(
+        container.querySelector(
+          `.ul-recipient-status button[value="${value}"]`,
+        ),
+      ),
+    );
   const render = async (props = {}) => {
     await act(async () => {
       ReactDOM.render(
@@ -176,11 +186,11 @@ describe('One complete upload list and one user header', () => {
     ])
       expect(container.textContent).not.toContain(phrase);
   });
-  it('shows users on the side without a dropdown and switches by clicking a user', async () => {
+  it('shows users on the side and switches by clicking a user', async () => {
     expect.hasAssertions();
     const onSelectUploadUser = jest.fn();
     await render({ onSelectUploadUser });
-    expect(container.querySelector('select').value).toBe('Waiting');
+    expect(statusControl().textContent).toContain('Waiting');
     expect(container.querySelectorAll('.ul-live-user')).toHaveLength(2);
     expect(
       container.querySelector('.ul-live-user[aria-pressed="true"]').textContent,
@@ -202,11 +212,11 @@ describe('One complete upload list and one user header', () => {
     expect(findGroup(container, 'Downloading').textContent).toContain(
       '1 downloading · 45 waiting',
     );
-    expect(container.querySelector('select').value).toBe('Downloading');
+    expect(statusControl().textContent).toContain('Downloading');
     expect(findGroup(container, 'Waiting')).toBeNull();
 
     await render({ queueUsers: [connecting, waiting] });
-    expect(container.querySelector('select').value).toBe('Connecting');
+    expect(statusControl().textContent).toContain('Connecting');
     expect(findGroup(container, 'Connecting').textContent).toContain(
       '1 connecting',
     );
@@ -215,7 +225,7 @@ describe('One complete upload list and one user header', () => {
     ).not.toBeNull();
 
     await render({ queueUsers: users });
-    expect(container.querySelector('select').value).toBe('Waiting');
+    expect(statusControl().textContent).toContain('Waiting');
     expect(findGroup(container, 'Connecting')).toBeNull();
     expect(
       findGroup(container, 'Waiting').querySelector('[aria-pressed="true"]'),
@@ -226,13 +236,13 @@ describe('One complete upload list and one user header', () => {
     const onSelectUploadUser = jest.fn();
     const downloading = { ...users[1], sendingCount: 1, activeCount: 1 };
     await render({ queueUsers: [users[0], downloading], onSelectUploadUser });
-    const select = container.querySelector('select');
-    expect(Array.from(select.options, (option) => option.textContent)).toEqual([
-      'Waiting (1)',
-      'Connecting (0)',
-      'Downloading (1)',
-    ]);
-    act(() => Simulate.change(select, { target: { value: 'Downloading' } }));
+    expect(
+      Array.from(
+        container.querySelectorAll('[role="menuitemradio"]'),
+        (option) => option.textContent,
+      ),
+    ).toEqual(['Waiting (1)', 'Connecting (0)', 'Downloading (1)']);
+    chooseStatus('Downloading');
     expect(container.querySelectorAll('.ul-live-user')).toHaveLength(1);
     expect(container.querySelector('.ul-live-user').textContent).toContain(
       'other',
@@ -243,11 +253,43 @@ describe('One complete upload list and one user header', () => {
     expect(onSelectUploadUser).not.toHaveBeenCalled();
     act(() => Simulate.click(container.querySelector('.ul-live-user')));
     expect(onSelectUploadUser).toHaveBeenCalledWith('other');
-    act(() => Simulate.change(select, { target: { value: 'Connecting' } }));
+    chooseStatus('Connecting');
     expect(container.querySelectorAll('.ul-live-user')).toHaveLength(0);
     expect(container.textContent).toContain('No users connecting.');
     await render({ queueUsers: [users[0], downloading], onSelectUploadUser });
-    expect(select.value).toBe('Connecting');
+    expect(statusControl().textContent).toContain('Connecting');
+  });
+  it('supports keyboard navigation, selection, Escape and outside dismissal', async () => {
+    expect.hasAssertions();
+    await render();
+    const summary = statusControl();
+    const dropdown = summary.parentElement;
+    summary.focus();
+    act(() => Simulate.keyDown(summary, { key: 'ArrowDown' }));
+    expect(dropdown.open).toBe(true);
+    expect(document.activeElement.value).toBe('Waiting');
+    act(() => Simulate.keyDown(document.activeElement, { key: 'ArrowDown' }));
+    expect(document.activeElement.value).toBe('Connecting');
+    act(() => Simulate.keyDown(document.activeElement, { key: 'End' }));
+    expect(document.activeElement.value).toBe('Downloading');
+    chooseStatus('Downloading');
+    expect(dropdown.open).toBe(false);
+    expect(document.activeElement).toBe(summary);
+    act(() => Simulate.keyDown(summary, { key: 'ArrowUp' }));
+    expect(document.activeElement.value).toBe('Downloading');
+    act(() => Simulate.keyDown(document.activeElement, { key: 'Home' }));
+    expect(document.activeElement.value).toBe('Waiting');
+    act(() => Simulate.keyDown(document.activeElement, { key: 'Escape' }));
+    expect(dropdown.open).toBe(false);
+    expect(document.activeElement).toBe(summary);
+    dropdown.open = true;
+    act(() =>
+      document.body.dispatchEvent(new Event('pointerdown', { bubbles: true })),
+    );
+    expect(dropdown.open).toBe(false);
+    dropdown.open = true;
+    act(() => Simulate.blur(summary, { relatedTarget: document.body }));
+    expect(dropdown.open).toBe(false);
   });
   it('keeps combined activity readable when the server has no sending count', async () => {
     expect.hasAssertions();
