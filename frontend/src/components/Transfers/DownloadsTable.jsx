@@ -28,6 +28,7 @@
 // </copyright>
 
 import { lookupIp } from '../../lib/network';
+import * as prefs from '../../lib/prefs';
 import {
   isStateCancellable,
   isStateRemovable,
@@ -42,6 +43,7 @@ import {
 } from '../../lib/util';
 import { UsernameLink } from '../Shared';
 import PeerUploadSlots from './PeerUploadSlots';
+import RecipientStatusDropdown from './RecipientStatusDropdown';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Ban,
@@ -979,6 +981,10 @@ const summarizeFiles = (files) => {
   const failed = files.filter((file) => isStateRetryable(file.state)).length;
   return {
     active,
+    hasDownloading: files.some((file) => file.state === 'InProgress'),
+    hasConnecting: files.some((file) =>
+      ['Initializing', 'Requested'].includes(file.state),
+    ),
     pending,
     waiting: pending - active,
     failed,
@@ -1011,6 +1017,17 @@ const DownloadsTable = ({
 }) => {
   const [selectedUsername, setSelectedUsername] = useState(null);
   const [activeFilter, setActiveFilter] = useState('all');
+  const [sourceStatus, setSourceStatus] = useState(() => {
+    try {
+      const saved = prefs.get('resonance-downloads-source-status');
+      if (['Downloading', 'Connecting', 'Waiting', 'All'].includes(saved))
+        return saved;
+    } catch {
+      // Keep the page usable if browser storage is unavailable.
+    }
+
+    return 'All';
+  });
   const [presences, setPresences] = useState({});
   const fetchedRef = useRef(new Set());
   const mountedRef = useRef(false);
@@ -1033,6 +1050,32 @@ const DownloadsTable = ({
             Number(b.summary.pending > 0) - Number(a.summary.pending > 0),
         ),
     [transfers],
+  );
+  const downloadingUsers = [];
+  const connectingUsers = [];
+  const waitingUsers = [];
+  for (const source of allGroups) {
+    if (source.summary.hasDownloading) downloadingUsers.push(source);
+    else if (source.summary.hasConnecting) connectingUsers.push(source);
+    else if (source.summary.pending > 0) waitingUsers.push(source);
+  }
+
+  const sourceGroups = [
+    {
+      label: 'Downloading',
+      users: downloadingUsers,
+      empty: 'No users downloading.',
+    },
+    {
+      label: 'Connecting',
+      users: connectingUsers,
+      empty: 'No users connecting.',
+    },
+    { label: 'Waiting', users: waitingUsers, empty: 'No users waiting.' },
+    { label: 'All', users: allGroups, empty: 'No downloads.' },
+  ];
+  const visibleSources = sourceGroups.find(
+    (group) => group.label === sourceStatus,
   );
   const user =
     allGroups.find((group) => group.username === selectedUsername) ??
@@ -1092,12 +1135,18 @@ const DownloadsTable = ({
           aria-label="Download users"
           className="ul-live-users"
         >
-          <h2>
-            Users <span>{allGroups.length}</span>
-          </h2>
-          {allGroups.length === 0 && <p>No downloads.</p>}
+          <RecipientStatusDropdown
+            groups={sourceGroups}
+            label="Download source status"
+            onChange={(status) => {
+              setSourceStatus(status);
+              prefs.set('resonance-downloads-source-status', status);
+            }}
+            value={sourceStatus}
+          />
+          {visibleSources.users.length === 0 && <p>{visibleSources.empty}</p>}
           <div className="ul-live-user-list">
-            {allGroups.map((group) => (
+            {visibleSources.users.map((group) => (
               <button
                 aria-pressed={user?.username === group.username}
                 className="ul-live-user"

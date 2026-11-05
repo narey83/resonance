@@ -1,3 +1,4 @@
+import * as prefs from '../../lib/prefs';
 import { getStatus } from '../../lib/users';
 import DownloadsTable from './DownloadsTable';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -22,6 +23,7 @@ jest.mock('./PeerUploadSlots', () => ({
   __esModule: true,
   default: () => null,
 }));
+jest.mock('../../lib/prefs', () => ({ get: jest.fn(), set: jest.fn() }));
 jest.mock('../../lib/users', () => ({ getStatus: jest.fn() }));
 jest.mock('../../lib/network', () => ({ lookupIp: jest.fn() }));
 jest.mock('@tanstack/react-virtual', () => ({ useVirtualizer: jest.fn() }));
@@ -67,10 +69,36 @@ const sample = () => [
   },
 ];
 
+const source = (username, states) => ({
+  username,
+  directories: [
+    {
+      directory: username,
+      files: states.map((state, index) =>
+        file(`${username}-${index}`, username, state),
+      ),
+    },
+  ],
+});
+const finishCurrent = (transfers) =>
+  transfers.map((user) => ({
+    ...user,
+    directories: user.directories.map((directory) => ({
+      ...directory,
+      files: directory.files.map((entry) =>
+        entry.state === 'InProgress'
+          ? { ...entry, state: 'Completed, Succeeded' }
+          : entry,
+      ),
+    })),
+  }));
+
 describe('Downloads recipient workspace', () => {
   let container;
   let actions;
   beforeEach(() => {
+    prefs.get.mockReset().mockReturnValue(null);
+    prefs.set.mockReset();
     useVirtualizer.mockImplementation(({ count, getItemKey }) => ({
       getTotalSize: () => count * 56,
       getVirtualItems: () =>
@@ -136,6 +164,133 @@ describe('Downloads recipient workspace', () => {
       (button) => button.querySelector('.dl-dir-label').textContent === name,
     );
 
+  const statusControl = () =>
+    container.querySelector('.ul-recipient-status > summary');
+  const chooseStatus = (status) =>
+    act(() =>
+      Simulate.click(
+        container.querySelector(
+          `.ul-recipient-status button[value="${status}"]`,
+        ),
+      ),
+    );
+
+  it('orders source statuses and keeps completed and failed users accessible through All', async () => {
+    expect.hasAssertions();
+    await render();
+    expect(
+      Array.from(
+        container.querySelectorAll('[role="menuitemradio"]'),
+        (option) => option.textContent,
+      ),
+    ).toEqual(['Downloading (1)', 'Connecting (0)', 'Waiting (1)', 'All (3)']);
+    chooseStatus('Downloading');
+    expect(container.querySelectorAll('.ul-live-user')).toHaveLength(1);
+    expect(container.querySelector('.ul-live-user strong').textContent).toBe(
+      'alpha',
+    );
+    chooseStatus('Waiting');
+    expect(container.querySelector('.ul-live-user strong').textContent).toBe(
+      'bravo',
+    );
+    chooseStatus('Connecting');
+    expect(container.querySelectorAll('.ul-live-user')).toHaveLength(0);
+    expect(container.textContent).toContain('No users connecting.');
+    chooseStatus('All');
+    choose('charlie');
+    expect(
+      container.querySelector('.test-user-controls').textContent,
+    ).toContain('charlie');
+    expect(folder('Charlie')).toBeDefined();
+  });
+  it('groups source activity by downloading, then connecting, then waiting', async () => {
+    expect.hasAssertions();
+    await render([
+      source('receiving', ['InProgress', 'Initializing', 'Queued']),
+      source('connecting', ['Initializing', 'Queued']),
+      source('requested', ['Requested']),
+      source('queued', ['Queued, Remotely']),
+      source('finished', ['Completed, Succeeded']),
+    ]);
+    chooseStatus('Downloading');
+    expect(container.querySelector('.ul-live-user strong').textContent).toBe(
+      'receiving',
+    );
+    chooseStatus('Connecting');
+    expect(
+      Array.from(
+        container.querySelectorAll('.ul-live-user strong'),
+        (user) => user.textContent,
+      ).sort(),
+    ).toEqual(['connecting', 'requested']);
+    chooseStatus('Waiting');
+    expect(container.querySelector('.ul-live-user strong').textContent).toBe(
+      'queued',
+    );
+  });
+  it('keeps Downloading selected when the last current download finishes or all users disappear', async () => {
+    expect.hasAssertions();
+    await render();
+    chooseStatus('Downloading');
+    const finished = finishCurrent(sample());
+    await render(finished);
+    expect(statusControl().textContent).toBe('Downloading (0)');
+    expect(container.querySelectorAll('.ul-live-user')).toHaveLength(0);
+    expect(container.textContent).toContain('No users downloading.');
+    await render([]);
+    expect(statusControl().textContent).toBe('Downloading (0)');
+    await render(sample());
+    expect(statusControl().textContent).toBe('Downloading (1)');
+  });
+  it.each(['Downloading', 'Connecting', 'Waiting', 'All'])(
+    'restores saved %s even when it is empty',
+    async (status) => {
+      expect.hasAssertions();
+      prefs.get.mockReturnValue(status);
+      await render([]);
+      expect(statusControl().textContent).toBe(`${status} (0)`);
+      expect(prefs.set).not.toHaveBeenCalled();
+    },
+  );
+  it('remembers its own selection independently of the uploads selection', async () => {
+    expect.hasAssertions();
+    const saved = {
+      'resonance-downloads-source-status': 'Waiting',
+      'resonance-uploads-recipient-status': 'Connecting',
+    };
+    prefs.get.mockImplementation((key) => saved[key]);
+    prefs.set.mockImplementation((key, value) => {
+      saved[key] = value;
+    });
+    await render();
+    expect(statusControl().textContent).toBe('Waiting (1)');
+    chooseStatus('Downloading');
+    expect(prefs.set).toHaveBeenLastCalledWith(
+      'resonance-downloads-source-status',
+      'Downloading',
+    );
+    act(() => {
+      ReactDOM.unmountComponentAtNode(container);
+    });
+    await render([]);
+    expect(statusControl().textContent).toBe('Downloading (0)');
+    expect(prefs.get).toHaveBeenCalledWith('resonance-downloads-source-status');
+  });
+  it('falls back to All for an invalid saved value', async () => {
+    expect.hasAssertions();
+    prefs.get.mockReturnValue('Unknown');
+    await render();
+    expect(statusControl().textContent).toBe('All (3)');
+  });
+  it('keeps working if storage cannot be read', async () => {
+    expect.hasAssertions();
+    prefs.get.mockImplementation(() => {
+      throw new Error('Storage blocked');
+    });
+    await render();
+    chooseStatus('Downloading');
+    expect(statusControl().textContent).toBe('Downloading (1)');
+  });
   it('shows every user, matching counts, one selected-user control group and closed folders', async () => {
     expect.hasAssertions();
     await render();

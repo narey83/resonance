@@ -31,6 +31,7 @@ import { getUploadFolder, isStateCancellable } from '../../lib/transfers';
 import { getStatuses } from '../../lib/users';
 import { formatBitrate, formatBytes, getFileName } from '../../lib/util';
 import { UsernameLink } from '../Shared';
+import RecipientStatusDropdown from './RecipientStatusDropdown';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ChevronDown, ChevronRight, Folder, X } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -228,97 +229,6 @@ const useFolderTracks = (username, expanded, folders) => {
   return details?.username === username ? details?.folders : null;
 };
 
-const UploadRecipientStatus = ({ groups, onChange, value }) => {
-  const dropdown = useRef(null);
-  useEffect(() => {
-    const dismiss = (event) => {
-      if (dropdown.current && !dropdown.current.contains(event.target)) {
-        dropdown.current.open = false;
-      }
-    };
-
-    document.addEventListener('pointerdown', dismiss);
-    return () => document.removeEventListener('pointerdown', dismiss);
-  }, []);
-  const close = () => {
-    dropdown.current.open = false;
-    dropdown.current.querySelector('summary').focus();
-  };
-
-  const selected = groups.find((group) => group.label === value);
-  return (
-    <details
-      className="ul-recipient-status"
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) {
-          event.currentTarget.open = false;
-        }
-      }}
-      onKeyDown={(event) => {
-        if (event.key === 'Escape') {
-          event.preventDefault();
-          close();
-        } else if (
-          ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)
-        ) {
-          event.preventDefault();
-          const items = Array.from(
-            dropdown.current.querySelectorAll('[role="menuitemradio"]'),
-          );
-          const index = items.indexOf(document.activeElement);
-          let next = 0;
-          if (event.key === 'End') next = items.length - 1;
-          else if (event.key === 'ArrowDown') next = (index + 1) % items.length;
-          else if (event.key === 'ArrowUp') {
-            next =
-              index < 0
-                ? items.length - 1
-                : (index + items.length - 1) % items.length;
-          }
-
-          dropdown.current.open = true;
-          items[next].focus();
-        }
-      }}
-      ref={dropdown}
-    >
-      <summary
-        aria-haspopup="menu"
-        aria-label="Upload recipient status"
-      >
-        <span>
-          {value} ({selected.users.length})
-        </span>
-        <ChevronDown
-          aria-hidden="true"
-          size={12}
-        />
-      </summary>
-      <div
-        aria-label="Upload recipient status options"
-        className="ul-recipient-status-menu"
-        role="menu"
-      >
-        {groups.map((group) => (
-          <button
-            aria-checked={group.label === value}
-            key={group.label}
-            onClick={() => {
-              onChange(group.label);
-              close();
-            }}
-            role="menuitemradio"
-            type="button"
-            value={group.label}
-          >
-            {group.label} ({group.users.length})
-          </button>
-        ))}
-      </div>
-    </details>
-  );
-};
-
 const UploadsTable = ({
   folders,
   onCancel,
@@ -483,8 +393,9 @@ const UploadsTable = ({
           aria-label="Users requesting uploads"
           className="ul-live-users"
         >
-          <UploadRecipientStatus
+          <RecipientStatusDropdown
             groups={userGroups}
+            label="Upload recipient status"
             onChange={(status) => {
               setRecipientStatus(status);
               prefs.set(recipientStatusPreference, status);
