@@ -364,9 +364,6 @@ const UploadsTable = ({
   const [recipientStatus, setRecipientStatus] = useState(
     selectedGroup ?? 'Waiting',
   );
-  useEffect(() => {
-    if (selectedGroup) setRecipientStatus(selectedGroup);
-  }, [selectedGroup, selectedUsername]);
   const visibleGroup = userGroups.find(
     (group) => group.label === recipientStatus,
   );

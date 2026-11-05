@@ -198,7 +198,7 @@ describe('One complete upload list and one user header', () => {
     act(() => Simulate.click(container.querySelectorAll('.ul-live-user')[1]));
     expect(onSelectUploadUser).toHaveBeenCalledWith('other');
   });
-  it('moves recipients between downloading, connecting and waiting as the queue changes', async () => {
+  it('keeps Downloading selected as recipients connect, wait, finish or disappear', async () => {
     expect.hasAssertions();
     const downloading = {
       ...users[0],
@@ -212,24 +212,36 @@ describe('One complete upload list and one user header', () => {
     expect(findGroup(container, 'Downloading').textContent).toContain(
       '1 downloading · 45 waiting',
     );
-    expect(statusControl().textContent).toContain('Downloading');
-    expect(findGroup(container, 'Waiting')).toBeNull();
+    expect(statusControl().textContent).toBe('Downloading (1)');
 
-    await render({ queueUsers: [connecting, waiting] });
-    expect(statusControl().textContent).toContain('Connecting');
-    expect(findGroup(container, 'Connecting').textContent).toContain(
-      '1 connecting',
+    for (const queueUsers of [[connecting, waiting], users, [waiting], []]) {
+      await render({ queueUsers });
+      expect(statusControl().textContent).toBe('Downloading (0)');
+      expect(container.textContent).toContain('No users downloading.');
+      expect(container.querySelectorAll('.ul-live-user')).toHaveLength(0);
+    }
+
+    await render({
+      queueUsers: [downloading, waiting],
+      selectedUsername: 'other',
+    });
+    expect(statusControl().textContent).toBe('Downloading (1)');
+    expect(findGroup(container, 'Downloading').textContent).toContain(
+      'listener',
     );
-    expect(
-      findGroup(container, 'Connecting').querySelector('[aria-pressed="true"]'),
-    ).not.toBeNull();
-
-    await render({ queueUsers: users });
-    expect(statusControl().textContent).toContain('Waiting');
-    expect(findGroup(container, 'Connecting')).toBeNull();
-    expect(
-      findGroup(container, 'Waiting').querySelector('[aria-pressed="true"]'),
-    ).not.toBeNull();
+    chooseStatus('Waiting');
+    expect(statusControl().textContent).toBe('Waiting (1)');
+    expect(findGroup(container, 'Waiting').textContent).toContain('other');
+  });
+  it('keeps an explicitly selected empty Downloading group through subsequent updates', async () => {
+    expect.hasAssertions();
+    await render();
+    chooseStatus('Downloading');
+    expect(statusControl().textContent).toBe('Downloading (0)');
+    await render({ queueUsers: [], selectedUsername: null });
+    await render({ queueUsers: users, selectedUsername: 'other' });
+    expect(statusControl().textContent).toBe('Downloading (0)');
+    expect(container.textContent).toContain('No users downloading.');
   });
   it('filters recipients by status, includes empty statuses and preserves the open queue', async () => {
     expect.hasAssertions();
