@@ -254,24 +254,31 @@ const UploadsTable = ({
   }
 
   const waitingPresence = useWaitingPresence(waitingUsers);
-  const hasUnclassifiedActivity = downloadingUsers.some(
-    (recipient) => recipient.sendingCount == null,
-  );
   const userGroups = [
+    { label: 'Waiting', empty: 'No users waiting.', users: waitingUsers },
     {
-      label: hasUnclassifiedActivity ? 'Active uploads' : 'Downloading now',
+      label: 'Connecting',
+      empty: 'No users connecting.',
+      users: connectingUsers,
+    },
+    {
+      label: 'Downloading',
       empty: 'No users downloading.',
       users: downloadingUsers,
     },
-    ...(connectingUsers.length > 0
-      ? [{ label: 'Connecting', users: connectingUsers }]
-      : []),
-    {
-      label: 'Waiting',
-      empty: 'No users waiting.',
-      users: waitingUsers,
-    },
   ];
+  const selectedGroup = userGroups.find((group) =>
+    group.users.some((recipient) => recipient.username === selectedUsername),
+  )?.label;
+  const [recipientStatus, setRecipientStatus] = useState(
+    selectedGroup ?? 'Waiting',
+  );
+  useEffect(() => {
+    if (selectedGroup) setRecipientStatus(selectedGroup);
+  }, [selectedGroup, selectedUsername]);
+  const visibleGroup = userGroups.find(
+    (group) => group.label === recipientStatus,
+  );
   const transferDetails = useMemo(
     () => ({
       username: selectedUsername,
@@ -378,16 +385,28 @@ const UploadsTable = ({
           aria-label="Users requesting uploads"
           className="ul-live-users"
         >
+          <select
+            aria-label="Upload recipient status"
+            className="ul-recipient-status"
+            onChange={(event) => setRecipientStatus(event.target.value)}
+            value={recipientStatus}
+          >
+            {userGroups.map((group) => (
+              <option
+                key={group.label}
+                value={group.label}
+              >
+                {group.label} ({group.users.length})
+              </option>
+            ))}
+          </select>
           <div className="ul-live-user-list">
-            {userGroups.map(({ empty, label, users }) => (
+            {[visibleGroup].map(({ empty, label, users }) => (
               <section
                 aria-label={label}
                 className="ul-live-user-group"
                 key={label}
               >
-                <h2>
-                  {label} <span>{users.length}</span>
-                </h2>
                 {users.length === 0 && <p>{empty}</p>}
                 {users.map((recipient) => {
                   const { activeCount, sendingCount, waitingCount } = recipient;

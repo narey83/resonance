@@ -1060,9 +1060,8 @@
 
 .ul-live-workspace { display: grid; flex: 1; gap: 20px; grid-template-columns: 220px minmax(0, 1fr); min-height: 0; }
 .ul-live-users { display: flex; flex-direction: column; min-height: 0; padding-top: 8px; }
-.ul-live-user-group + .ul-live-user-group { margin-top: 16px; }
-.ul-live-users h2 { align-items: center; display: flex; font-size: 14px; gap: 8px; margin: 0 0 8px; }
-.ul-live-users h2 span { color: var(--text-muted); font-size: 12px; font-weight: 400; }
+.ul-recipient-status { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); flex-shrink: 0; font: inherit; margin-bottom: 10px; min-width: 0; padding: 8px 6px; width: 100%; }
+.ul-recipient-status:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .ul-live-users p { color: var(--text-muted); font-size: 12px; }
 .ul-live-user-list { min-height: 0; overflow-y: auto; }
 .ul-live-user { background: transparent; border: 0; border-bottom: 1px solid var(--border); border-left: 3px solid transparent; color: var(--text-primary); cursor: pointer; display: flex; flex-direction: column; gap: 5px; padding: 12px 10px; text-align: left; width: 100%; overflow-wrap: anywhere; }
@@ -1075,6 +1074,7 @@
 }
 @media (max-width: 700px) {
   .ul-live-workspace { grid-template-columns: 112px minmax(0, 1fr); gap: 10px; }
+  .ul-recipient-status { font-size: 10px; padding: 8px 2px; }
   .ul-live-user { font-size: 11px; padding: 10px 7px; }
   .ul-live-user span { font-size: 10px; }
   .ul-complete-file { grid-template-columns: minmax(0, 1fr) auto; }

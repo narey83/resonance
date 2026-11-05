@@ -180,7 +180,7 @@ describe('One complete upload list and one user header', () => {
     expect.hasAssertions();
     const onSelectUploadUser = jest.fn();
     await render({ onSelectUploadUser });
-    expect(container.querySelector('select')).toBeNull();
+    expect(container.querySelector('select').value).toBe('Waiting');
     expect(container.querySelectorAll('.ul-live-user')).toHaveLength(2);
     expect(
       container.querySelector('.ul-live-user[aria-pressed="true"]').textContent,
@@ -199,18 +199,14 @@ describe('One complete upload list and one user header', () => {
     const connecting = { ...downloading, sendingCount: 0 };
     const waiting = { ...users[1], sendingCount: 0 };
     await render({ queueUsers: [downloading, waiting] });
-    expect(findGroup(container, 'Downloading now').textContent).toContain(
+    expect(findGroup(container, 'Downloading').textContent).toContain(
       '1 downloading · 45 waiting',
     );
-    expect(findGroup(container, 'Waiting').textContent).toContain('other');
-    expect(findGroup(container, 'Waiting').textContent).not.toContain(
-      'listener',
-    );
+    expect(container.querySelector('select').value).toBe('Downloading');
+    expect(findGroup(container, 'Waiting')).toBeNull();
 
     await render({ queueUsers: [connecting, waiting] });
-    expect(findGroup(container, 'Downloading now').textContent).toContain(
-      'No users downloading.',
-    );
+    expect(container.querySelector('select').value).toBe('Connecting');
     expect(findGroup(container, 'Connecting').textContent).toContain(
       '1 connecting',
     );
@@ -219,20 +215,48 @@ describe('One complete upload list and one user header', () => {
     ).not.toBeNull();
 
     await render({ queueUsers: users });
+    expect(container.querySelector('select').value).toBe('Waiting');
     expect(findGroup(container, 'Connecting')).toBeNull();
     expect(
       findGroup(container, 'Waiting').querySelector('[aria-pressed="true"]'),
     ).not.toBeNull();
   });
-  it('labels combined activity when the server has no sending count', async () => {
+  it('filters recipients by status, includes empty statuses and preserves the open queue', async () => {
+    expect.hasAssertions();
+    const onSelectUploadUser = jest.fn();
+    const downloading = { ...users[1], sendingCount: 1, activeCount: 1 };
+    await render({ queueUsers: [users[0], downloading], onSelectUploadUser });
+    const select = container.querySelector('select');
+    expect(Array.from(select.options, (option) => option.textContent)).toEqual([
+      'Waiting (1)',
+      'Connecting (0)',
+      'Downloading (1)',
+    ]);
+    act(() => Simulate.change(select, { target: { value: 'Downloading' } }));
+    expect(container.querySelectorAll('.ul-live-user')).toHaveLength(1);
+    expect(container.querySelector('.ul-live-user').textContent).toContain(
+      'other',
+    );
+    expect(
+      container.querySelector('.ul-recipient-controls').textContent,
+    ).toContain('listener');
+    expect(onSelectUploadUser).not.toHaveBeenCalled();
+    act(() => Simulate.click(container.querySelector('.ul-live-user')));
+    expect(onSelectUploadUser).toHaveBeenCalledWith('other');
+    act(() => Simulate.change(select, { target: { value: 'Connecting' } }));
+    expect(container.querySelectorAll('.ul-live-user')).toHaveLength(0);
+    expect(container.textContent).toContain('No users connecting.');
+    await render({ queueUsers: [users[0], downloading], onSelectUploadUser });
+    expect(select.value).toBe('Connecting');
+  });
+  it('keeps combined activity readable when the server has no sending count', async () => {
     expect.hasAssertions();
     await render({
       queueUsers: [{ ...users[0], activeCount: 1, pendingCount: 46 }, users[1]],
     });
-    expect(findGroup(container, 'Active uploads').textContent).toContain(
+    expect(findGroup(container, 'Downloading').textContent).toContain(
       '1 sending/connecting',
     );
-    expect(findGroup(container, 'Downloading now')).toBeNull();
   });
   it('adds new users to the live side list while retaining the selected user and tracks', async () => {
     expect.hasAssertions();
