@@ -26,7 +26,7 @@
 	encode zstd gzip
 	route {
 		vars site_state unavailable
-		@status_assets path /__site/assets/status.css /__site/assets/recovery.js /__site/assets/mark.svg
+		@status_assets path /__site/assets/status.css /__site/assets/recovery.js /__site/assets/scene.js /__site/assets/ribbons.svg /__site/assets/mark.svg /__site/assets/mark-static.svg
 		handle @status_assets {
 			uri strip_prefix /__site/assets
 			root * "{$RESONANCE_STATUS_ROOT}"

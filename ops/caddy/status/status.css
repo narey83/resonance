@@ -1,9 +1,16 @@
-:root { color-scheme: light dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; background: #f3f5f6; color: #24323b; --surface: #fff; --muted: #647582; --line: #dce5e8; --accent: #087e8c; }
+/* Palette and ribbon motion follow frontend/src/components/LoginScene.css. */
+:root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; background: #090f19; color: #eef6f4; --surface: #0d151f; --muted: #b0c1c1; --line: #31434b; --accent: #91d8c7; }
 * { box-sizing: border-box; }
-body { margin: 0; min-height: 100svh; display: grid; place-items: center; padding: 24px; }
-main { width: min(100%, 740px); background: var(--surface); border: 1px solid var(--line); border-radius: 24px; overflow: hidden; box-shadow: 0 24px 90px #132e3c09; }
+body { margin: 0; min-height: 100svh; display: grid; place-items: center; padding: 24px; isolation: isolate; }
+.status-scene { position: fixed; inset: 0; overflow: hidden; pointer-events: none; z-index: -1; }
+.scene-halo { position: absolute; inset: -15%; background: radial-gradient(ellipse at 28% 65%, #327b7145, transparent 48%), radial-gradient(ellipse at 80% 30%, #73609635, transparent 48%), radial-gradient(ellipse at 70% 95%, #a2784420, transparent 40%); animation: halo-drift 24s ease-in-out infinite alternate; }
+.scene-ribbon { position: absolute; height: 120%; width: 120%; left: -10%; top: -10%; background: url('/__site/assets/ribbons.svg') center / cover no-repeat; }
+.scene-ribbon--front { transform: translateY(12%) rotate(-12deg) scale(1.1); animation: ribbon-drift 20s ease-in-out infinite alternate; }
+.scene-ribbon--back { opacity: .3; filter: hue-rotate(100deg); transform: translateY(-10%) rotate(165deg) scale(1.15); animation: ribbon-return 28s ease-in-out infinite alternate; }
+.scene-shade { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 46%, #090f19c4, transparent 48%), linear-gradient(180deg, #090f1920, transparent 70%, #090f1980); }
+main { width: min(100%, 740px); background: linear-gradient(160deg, #111e29, var(--surface) 65%); border: 1px solid var(--line); border-radius: 24px; overflow: hidden; box-shadow: 0 24px 90px #00000040; }
 header { display: flex; align-items: center; gap: 12px; padding: 28px 36px; border-bottom: 1px solid var(--line); font-size: 13px; font-weight: 750; letter-spacing: .12em; }
-.mark { color: var(--accent); font-size: 25px; }
+header picture, .mark { display: block; }
 section { padding: 48px 48px 56px; }
 .eyebrow { display: flex; align-items: center; gap: 9px; color: var(--accent); text-transform: uppercase; font-size: 11px; font-weight: 750; letter-spacing: .14em; }
 .dot { width: 7px; height: 7px; background: currentColor; border-radius: 50%; }
@@ -11,12 +18,18 @@ h1 { margin: 20px 0; max-width: 580px; font-size: clamp(30px, 5.5vw, 48px); font
 .message { max-width: 530px; color: var(--muted); font-size: 16px; line-height: 1.75; }
 .recovery { margin: 32px 0 24px; display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 13px; line-height: 1.6; }
 .spinner { flex-shrink: 0; width: 16px; height: 16px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: turn 1s linear infinite; }
-button { border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: inherit; padding: 12px 22px; font: inherit; font-size: 14px; cursor: pointer; }
-button:hover { border-color: var(--accent); color: var(--accent); }
+button { border: 1px solid var(--line); border-radius: 999px; background: var(--accent); color: #09231e; padding: 12px 22px; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+button:hover { background: #afe8db; }
 button:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+.motion-toggle { position: fixed; bottom: 24px; left: 24px; width: 44px; height: 44px; display: grid; place-items: center; padding: 0; background: #ffffff08; border-color: #ffffff24; color: #d0e5e2; }
+.motion-toggle:hover { background: #ffffff18; }
+.motion-toggle[hidden] { display: none; }
+[data-motion-paused='true'] .scene-halo, [data-motion-paused='true'] .scene-ribbon { animation-play-state: paused; }
 footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; padding: 20px 36px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
 footer span { font-family: ui-monospace, monospace; }
 @keyframes turn { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
-@media (prefers-color-scheme: dark) { :root { background: #10171c; color: #e1eaee; --surface: #192229; --muted: #a0b0bb; --line: #303f48; --accent: #67c9cd; } }
-@media (max-width: 480px) { body { padding: 16px; } header, footer { padding: 22px 24px; } section { padding: 32px 24px 40px; } }
+@keyframes halo-drift { to { transform: translate(5%, -4%) scale(1.08); } }
+@keyframes ribbon-drift { to { transform: translate(3%, 4%) rotate(-4deg) scale(1.18); } }
+@keyframes ribbon-return { to { transform: translate(-4%, -3%) rotate(175deg) scale(1.05); } }
+@media (prefers-reduced-motion: reduce) { .spinner, .scene-halo, .scene-ribbon { animation: none; } .motion-toggle { display: none; } }
+@media (max-width: 480px) { body { padding: 16px 16px 76px; } header, footer { padding: 22px 24px; } section { padding: 32px 24px 40px; } .motion-toggle { bottom: 16px; left: 16px; } }
