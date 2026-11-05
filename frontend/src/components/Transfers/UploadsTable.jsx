@@ -346,17 +346,17 @@ const UploadsTable = ({
 
   const waitingPresence = useWaitingPresence(waitingUsers);
   const userGroups = [
-    { label: 'Waiting', empty: 'No users waiting.', users: waitingUsers },
-    {
-      label: 'Connecting',
-      empty: 'No users connecting.',
-      users: connectingUsers,
-    },
     {
       label: 'Downloading',
       empty: 'No users downloading.',
       users: downloadingUsers,
     },
+    {
+      label: 'Connecting',
+      empty: 'No users connecting.',
+      users: connectingUsers,
+    },
+    { label: 'Waiting', empty: 'No users waiting.', users: waitingUsers },
   ];
   const selectedGroup = userGroups.find((group) =>
     group.users.some((recipient) => recipient.username === selectedUsername),

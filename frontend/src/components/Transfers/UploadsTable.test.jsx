@@ -241,7 +241,7 @@ describe('One complete upload list and one user header', () => {
         container.querySelectorAll('[role="menuitemradio"]'),
         (option) => option.textContent,
       ),
-    ).toEqual(['Waiting (1)', 'Connecting (0)', 'Downloading (1)']);
+    ).toEqual(['Downloading (1)', 'Connecting (0)', 'Waiting (1)']);
     chooseStatus('Downloading');
     expect(container.querySelectorAll('.ul-live-user')).toHaveLength(1);
     expect(container.querySelector('.ul-live-user').textContent).toContain(
@@ -267,18 +267,18 @@ describe('One complete upload list and one user header', () => {
     summary.focus();
     act(() => Simulate.keyDown(summary, { key: 'ArrowDown' }));
     expect(dropdown.open).toBe(true);
-    expect(document.activeElement.value).toBe('Waiting');
+    expect(document.activeElement.value).toBe('Downloading');
     act(() => Simulate.keyDown(document.activeElement, { key: 'ArrowDown' }));
     expect(document.activeElement.value).toBe('Connecting');
     act(() => Simulate.keyDown(document.activeElement, { key: 'End' }));
-    expect(document.activeElement.value).toBe('Downloading');
-    chooseStatus('Downloading');
+    expect(document.activeElement.value).toBe('Waiting');
+    chooseStatus('Waiting');
     expect(dropdown.open).toBe(false);
     expect(document.activeElement).toBe(summary);
     act(() => Simulate.keyDown(summary, { key: 'ArrowUp' }));
-    expect(document.activeElement.value).toBe('Downloading');
-    act(() => Simulate.keyDown(document.activeElement, { key: 'Home' }));
     expect(document.activeElement.value).toBe('Waiting');
+    act(() => Simulate.keyDown(document.activeElement, { key: 'Home' }));
+    expect(document.activeElement.value).toBe('Downloading');
     act(() => Simulate.keyDown(document.activeElement, { key: 'Escape' }));
     expect(dropdown.open).toBe(false);
     expect(document.activeElement).toBe(summary);
