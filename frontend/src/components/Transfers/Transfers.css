@@ -1105,7 +1105,7 @@
 
 /* Upload recipients: overview first, one person's queue on demand. */
 .ul-complete--cards { overflow-y: auto; }
-.ul-card-view { margin: 0 auto; max-width: 1320px; padding: 18px 24px 48px; width: 100%; }
+.ul-card-view { width: 100%; }
 .ul-card-view-header { align-items: flex-end; display: flex; flex-wrap: wrap; gap: 24px; justify-content: space-between; margin-bottom: 32px; }
 .ul-card-view-header h1 { color: var(--text-primary); font-size: clamp(24px, 3vw, 34px); letter-spacing: -.03em; line-height: 1.15; margin: 6px 0 8px; }
 .ul-card-view-header p { color: var(--text-muted); font-size: 13px; margin: 0; }
@@ -1129,16 +1129,14 @@
 .ul-user-card-stats b { color: var(--text-primary); }
 .ul-user-card-pause { color: var(--danger); font-size: 11px; margin: 0 0 14px; }
 .ul-user-card-open { align-items: center; border-top: 1px solid var(--border); color: var(--accent); display: flex; font-size: 12px; font-weight: 600; justify-content: space-between; margin-top: auto; padding-top: 12px; width: 100%; }
-.ul-detail-view { display: flex; flex: 1; flex-direction: column; margin: 0 auto; max-width: 1480px; min-height: 0; padding: 12px 24px 18px; width: 100%; }
+.ul-detail-view { display: flex; flex: 1; flex-direction: column; min-height: 0; width: 100%; }
 .ul-back-button { align-items: center; align-self: flex-start; background: transparent; border: 0; color: var(--accent); cursor: pointer; display: flex; font: inherit; font-size: 12px; font-weight: 600; gap: 7px; margin-bottom: 8px; padding: 6px 0; }
 .ul-detail-view .ul-live-track-pane { flex: 1; }
 @media (max-width: 700px) {
-  .ul-card-view { padding: 16px 14px 32px; }
   .ul-card-view-header { align-items: stretch; gap: 18px; margin-bottom: 26px; }
   .ul-card-view-header .ul-recipient-status { width: 100%; }
   .ul-user-card-grid { gap: 12px; grid-template-columns: 1fr; }
   .ul-user-card { min-height: 178px; }
-  .ul-detail-view { padding: 10px 14px 16px; }
 }
 
 /* Centre the initial transfer state within the available page, including narrow screens. */
