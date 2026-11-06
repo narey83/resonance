@@ -57,15 +57,17 @@ namespace resonance.Transfers
         /// </summary>
         /// <param name="username">The username of the remote user.</param>
         /// <param name="filename">The filename for which to await the start.</param>
+        /// <param name="id">The transfer ID, or empty for legacy callers.</param>
         /// <returns>The operation context.</returns>
-        Task AwaitStartAsync(string username, string filename);
+        Task AwaitStartAsync(string username, string filename, Guid id = default);
 
         /// <summary>
         ///     Signals the completion of an upload.
         /// </summary>
         /// <param name="username">The username of the remote user.</param>
         /// <param name="filename">The completed filename.</param>
-        void Complete(string username, string filename);
+        /// <param name="id">The transfer ID, or empty for legacy callers.</param>
+        void Complete(string username, string filename, Guid id = default);
 
         /// <summary>
         ///     Gracefully attempts to signal the completion of an upload, returning false if a problem is encountered
@@ -73,15 +75,23 @@ namespace resonance.Transfers
         /// </summary>
         /// <param name="username">The username of the remote user.</param>
         /// <param name="filename">The completed filename.</param>
+        /// <param name="id">The transfer ID, or empty for legacy callers.</param>
         /// <returns>A value indicating whether a problem was encountered.</returns>
-        bool TryComplete(string username, string filename);
+        bool TryComplete(string username, string filename, Guid id = default);
 
         /// <summary>
         ///     Enqueues an upload.
         /// </summary>
         /// <param name="username">The username of the remote user.</param>
         /// <param name="filename">The filename to enqueue.</param>
-        void Enqueue(string username, string filename);
+        /// <param name="id">The transfer ID, or empty for legacy callers.</param>
+        void Enqueue(string username, string filename, Guid id = default);
+
+        /// <summary>Removes waiting work for a disconnected recipient in one pass; active slots release normally.</summary>
+        /// <param name="username">The recipient.</param>
+        /// <param name="ids">The transfer IDs being forgotten.</param>
+        /// <returns>The number of queue entries removed.</returns>
+        int ForgetRecipient(string username, IReadOnlyCollection<Guid> ids);
 
         /// <summary>
         ///     Gets information about the specified <paramref name="groupName"/>.
@@ -147,8 +157,9 @@ namespace resonance.Transfers
         /// </summary>
         /// <param name="username">The username of the remote user.</param>
         /// <param name="filename">The filename for which to await the start.</param>
+        /// <param name="id">The transfer ID, or empty for legacy callers.</param>
         /// <returns>The operation context.</returns>
-        public Task AwaitStartAsync(string username, string filename)
+        public Task AwaitStartAsync(string username, string filename, Guid id = default)
         {
             SyncRoot.Wait();
 
@@ -159,7 +170,7 @@ namespace resonance.Transfers
                     throw new SlskdException($"No enqueued uploads for user {username}");
                 }
 
-                var upload = list.FirstOrDefault(e => e.Filename == filename);
+                var upload = list.FirstOrDefault(e => e.Filename == filename && (id == Guid.Empty || e.Id == id));
 
                 if (upload == default)
                 {
@@ -184,17 +195,51 @@ namespace resonance.Transfers
         /// </summary>
         /// <param name="username">The username of the remote user.</param>
         /// <param name="filename">The completed filename.</param>
+        /// <param name="id">The transfer ID, or empty for legacy callers.</param>
         /// <returns>A value indicating whether a problem was encountered.</returns>
-        public bool TryComplete(string username, string filename)
+        public bool TryComplete(string username, string filename, Guid id = default)
         {
+            var removed = false;
+            SyncRoot.Wait();
+
             try
             {
-                Complete(username, filename);
+                if (!Uploads.TryGetValue(username, out var list))
+                {
+                    return false;
+                }
+
+                var upload = list.FirstOrDefault(e => e.Filename == filename && (id == Guid.Empty || e.Id == id));
+                if (upload is null)
+                {
+                    return false;
+                }
+
+                list.Remove(upload);
+                removed = true;
+                Log.Debug("Complete: {File} for {User} at {Time}", Path.GetFileName(upload.Filename), upload.Username, upload.Enqueued);
+
+                if (Groups.TryGetValue(upload.Group ?? string.Empty, out var group))
+                {
+                    group.UsedSlots = Math.Max(0, group.UsedSlots - 1);
+                    Log.Debug("Group {Group} slots: {Used}/{Available}", group.Name, group.UsedSlots, group.Slots);
+                }
+
+                if (list.Count == 0)
+                {
+                    Uploads.TryRemove(username, out _);
+                    Log.Debug("Cleaned up tracking list for {User}; no more queued uploads to track", username);
+                }
+
                 return true;
             }
-            catch (SlskdException)
+            finally
             {
-                return false;
+                SyncRoot.Release();
+                if (removed)
+                {
+                    Process();
+                }
             }
         }
 
@@ -206,46 +251,60 @@ namespace resonance.Transfers
         /// </remarks>
         /// <param name="username">The username of the remote user.</param>
         /// <param name="filename">The completed filename.</param>
-        public void Complete(string username, string filename)
+        /// <param name="id">The transfer ID, or empty for legacy callers.</param>
+        public void Complete(string username, string filename, Guid id = default)
         {
-            SyncRoot.Wait();
+            if (!TryComplete(username, filename, id))
+            {
+                throw new SlskdException($"File {filename} is not enqueued for user {username}");
+            }
+        }
 
+        /// <inheritdoc/>
+        public int ForgetRecipient(string username, IReadOnlyCollection<Guid> ids)
+        {
+            var removed = 0;
+            SyncRoot.Wait();
             try
             {
-                if (!Uploads.TryGetValue(username, out var list))
+                if (!Uploads.TryGetValue(username, out var list) || ids.Count == 0)
                 {
-                    throw new SlskdException($"No enqueued uploads for user {username}");
+                    return 0;
                 }
 
-                var upload = list.FirstOrDefault(e => e.Filename == filename);
-
-                if (upload == default)
+                var forgotten = ids.ToHashSet();
+                var kept = new List<Upload>(list.Count);
+                foreach (var upload in list)
                 {
-                    throw new SlskdException($"File {filename} is not enqueued for user {username}");
+                    // An active SDK transfer still owns its slot until SlotReleased runs.
+                    if (!forgotten.Contains(upload.Id) || upload.Started.HasValue)
+                    {
+                        kept.Add(upload);
+                        continue;
+                    }
+
+                    removed++;
                 }
 
-                list.Remove(upload);
-                Log.Debug("Complete: {File} for {User} at {Time}", Path.GetFileName(upload.Filename), upload.Username, upload.Enqueued);
-
-                // ensure the slot is returned to the group from which it was acquired the group may have been removed during the
-                // transfer. if so, do nothing.
-                if (Groups.ContainsKey(upload.Group ?? string.Empty))
+                if (kept.Count == 0)
                 {
-                    var group = Groups[upload.Group];
-
-                    group.UsedSlots = Math.Max(0, group.UsedSlots - 1);
-                    Log.Debug("Group {Group} slots: {Used}/{Available}", group.Name, group.UsedSlots, group.Slots);
+                    Uploads.TryRemove(username, out _);
+                }
+                else if (removed > 0)
+                {
+                    Uploads[username] = kept;
                 }
 
-                if (!list.Any() && Uploads.TryRemove(username, out _))
-                {
-                    Log.Debug("Cleaned up tracking list for {User}; no more queued uploads to track", username);
-                }
+                Log.Information("Forgot {Count} queued upload(s) to {User}", removed, username);
+                return removed;
             }
             finally
             {
                 SyncRoot.Release();
-                Process();
+                if (removed > 0)
+                {
+                    Process();
+                }
             }
         }
 
@@ -254,13 +313,14 @@ namespace resonance.Transfers
         /// </summary>
         /// <param name="username">The username of the remote user.</param>
         /// <param name="filename">The filename to enqueue.</param>
-        public void Enqueue(string username, string filename)
+        /// <param name="id">The transfer ID, or empty for legacy callers.</param>
+        public void Enqueue(string username, string filename, Guid id = default)
         {
             SyncRoot.Wait();
 
             try
             {
-                var upload = new Upload() { Username = username, Filename = filename };
+                var upload = new Upload() { Id = id, Username = username, Filename = filename };
 
                 Uploads.AddOrUpdate(
                     key: username,

@@ -15,6 +15,52 @@ using Soulseek;
 /// </summary>
 public class UploadQueueTests
 {
+    [Fact]
+    public void ForgetRecipientRemovesWaitingEntriesWithoutReleasingAnActiveSlotOrAReplacementRequest()
+    {
+        var queue = new UploadQueue(new StubUserService(), StubOptions(slots: 1));
+        var activeId = Guid.NewGuid();
+        var oldId = Guid.NewGuid();
+        var replacementId = Guid.NewGuid();
+        queue.Enqueue("alice", "active-file", activeId);
+        Assert.True(queue.AwaitStartAsync("alice", "active-file", activeId).IsCompletedSuccessfully);
+        queue.Enqueue("alice", "same-file", oldId);
+        Assert.False(queue.AwaitStartAsync("alice", "same-file", oldId).IsCompleted);
+
+        Assert.Equal(1, queue.ForgetRecipient("alice", [activeId, oldId]));
+        Assert.Equal(1, queue.GetGroupInfo(Application.DefaultGroup).UsedSlots);
+        Assert.False(queue.TryComplete("alice", "same-file", oldId));
+
+        queue.Enqueue("alice", "same-file", replacementId);
+        Assert.False(queue.TryComplete("alice", "same-file", oldId));
+        Assert.Equal(1, queue.GetGroupInfo(Application.DefaultGroup).UsedSlots);
+        queue.Complete("alice", "active-file", activeId);
+        Assert.True(queue.AwaitStartAsync("alice", "same-file", replacementId).IsCompletedSuccessfully);
+        queue.Complete("alice", "same-file", replacementId);
+        Assert.Equal(0, queue.GetGroupInfo(Application.DefaultGroup).UsedSlots);
+    }
+
+    [Fact]
+    public void ForgetRecipientClearsAThousandWaitingEntriesInOnePass()
+    {
+        var queue = new UploadQueue(new StubUserService(), StubOptions(slots: 1));
+        var activeId = Guid.NewGuid();
+        queue.Enqueue("alice", "active-file", activeId);
+        Assert.True(queue.AwaitStartAsync("alice", "active-file", activeId).IsCompletedSuccessfully);
+        var waiting = Enumerable.Range(0, 1000).Select(_ => Guid.NewGuid()).ToArray();
+        for (var i = 0; i < waiting.Length; i++)
+        {
+            queue.Enqueue("alice", $"waiting-{i}", waiting[i]);
+        }
+
+        Assert.Equal(waiting.Length, queue.ForgetRecipient("alice", waiting));
+        Assert.Equal(1, queue.GetGroupInfo(Application.DefaultGroup).UsedSlots);
+        Assert.False(queue.TryComplete("alice", "waiting-999", waiting[^1]));
+        queue.Complete("alice", "active-file", activeId);
+        Assert.Equal(0, queue.GetGroupInfo(Application.DefaultGroup).UsedSlots);
+    }
+
+
     /// <summary>
     ///     Regression test: EstimatePosition orders and flattens the per-user upload lists, and LINQ buffers a source
     ///     by reading Count and then copying it. Reading without the lock that Enqueue/Complete hold raced a concurrent

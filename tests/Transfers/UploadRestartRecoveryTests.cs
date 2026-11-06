@@ -91,7 +91,7 @@ public sealed partial class UploadEnqueueTests
             Assert.Null(await tasks[0].WaitAsync(TimeSpan.FromSeconds(5)));
             foreach (var task in tasks.Skip(1))
             {
-                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => task.WaitAsync(TimeSpan.FromSeconds(5)));
+                Assert.Null(await task.WaitAsync(TimeSpan.FromSeconds(5)));
             }
 
             await old.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));

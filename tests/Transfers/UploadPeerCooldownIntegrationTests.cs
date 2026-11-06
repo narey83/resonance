@@ -134,7 +134,7 @@ public sealed partial class UploadEnqueueTests
         Exception rejection = new TransferRejectedException("Transfer rejected: Cancelled");
         first.Completion.SetException(wrapped ? new InvalidOperationException("upload failed", rejection) : rejection);
         await Assert.ThrowsAnyAsync<Exception>(() => firstTask.WaitAsync(TimeSpan.FromSeconds(5)));
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waitingTask.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.Null(await waitingTask.WaitAsync(TimeSpan.FromSeconds(5)));
         using var db = factory.CreateDbContext();
         Assert.Equal(TransferStates.Completed | TransferStates.Rejected, db.Transfers.Single(t => t.Id == cancelled.Id).State);
         var forgotten = db.Transfers.Single(t => t.Id == waiting.Id);

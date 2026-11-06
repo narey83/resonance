@@ -40,6 +40,7 @@ namespace resonance.Transfers
 
     public sealed class Upload
     {
+        public Guid Id { get; set; }
         public DateTime Enqueued { get; set; } = DateTime.UtcNow;
         public string Filename { get; set; }
         public string Group { get; set; }

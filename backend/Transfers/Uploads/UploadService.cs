@@ -425,7 +425,7 @@ namespace resonance.Transfers.Uploads
                 {
                     // All waiting files remain visible in the queue, but only one file per peer
                     // reaches the SDK. This also gates files queued before the circuit opens.
-                    Queue.Enqueue(transfer.Username, transfer.Filename);
+                    Queue.Enqueue(transfer.Username, transfer.Filename, transfer.Id);
                     using var peer = await PeerCooldown.EnterAsync(transfer.Username, cts.Token);
                     UploadAttempt attempt;
                     try
@@ -445,7 +445,7 @@ namespace resonance.Transfers.Uploads
 
                     if (attempt.ConnectionFailure is not null || attempt.Transfer is null)
                     {
-                        if (!Work.Token.IsCancellationRequested)
+                        if (!Work.Token.IsCancellationRequested && !ForgottenInFlight.ContainsKey(transfer.Id))
                         {
                             ForgetPendingUploads(transfer.Username);
                         }
@@ -461,6 +461,11 @@ namespace resonance.Transfers.Uploads
                 // The next process restores these queued records after logging in.
                 return null;
             }
+            catch (OperationCanceledException) when (ForgottenInFlight.ContainsKey(transfer.Id))
+            {
+                // ForgetPendingUploads already completed and hid this record.
+                return null;
+            }
             catch (OperationCanceledException ex)
             {
                 TryFail(transfer.Id, ex);
@@ -470,7 +475,7 @@ namespace resonance.Transfers.Uploads
             {
                 Locks.TryRemove(lockName, out _);
                 CancellationTokens.TryRemove(transfer.Id, out _);
-                Queue.TryComplete(transfer.Username, transfer.Filename);
+                Queue.TryComplete(transfer.Username, transfer.Filename, transfer.Id);
                 ForgottenInFlight.TryRemove(transfer.Id, out _);
             }
         }
@@ -785,6 +790,15 @@ namespace resonance.Transfers.Uploads
                 }
             }
 
+            try
+            {
+                Queue.ForgetRecipient(username, pending);
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Failed to clear queued SDK work for disconnected recipient {Username}", username);
+            }
+
             foreach (var id in pending)
             {
                 if (CancellationTokens.TryGetValue(id, out var cts))
@@ -1063,7 +1077,7 @@ namespace resonance.Transfers.Uploads
                 t.Exception = new OperationCanceledException().Message;
                 Update(t);
 
-                Queue.TryComplete(username: t.Username, filename: t.Filename);
+                Queue.TryComplete(username: t.Username, filename: t.Filename, id: t.Id);
                 return true;
             }
 
@@ -1505,8 +1519,8 @@ namespace resonance.Transfers.Uploads
                     disposeInputStreamOnCompletion: true, // note: don't set this to false!
                     governor: (tx, req, ct) => Governor.GetBytesAsync(tx.Username, req, ct),
                     reporter: (tx, att, grant, act) => Governor.ReturnBytes(tx.Username, att, grant, act),
-                    slotAwaiter: (tx, ct) => Queue.AwaitStartAsync(tx.Username, tx.Filename).WaitAsync(ct),
-                    slotReleased: (tx) => Queue.Complete(tx.Username, tx.Filename));
+                    slotAwaiter: (tx, ct) => Queue.AwaitStartAsync(tx.Username, tx.Filename, transfer.Id).WaitAsync(ct),
+                    slotReleased: (tx) => Queue.TryComplete(tx.Username, tx.Filename, transfer.Id));
 
                 transfer.EnqueuedAt = DateTime.UtcNow;
                 SynchronizedUpdate(transfer, semaphore: syncRoot, cancellationToken: cancellationToken);
@@ -1578,6 +1592,11 @@ namespace resonance.Transfers.Uploads
             {
                 // Preserve shutdown records for the existing startup recovery pass.
                 Log.Debug("Upload of {Filename} to {Username} stopped for shutdown", transfer.Filename, transfer.Username);
+                return new UploadAttempt(null, null);
+            }
+            catch (Exception) when (ForgottenInFlight.ContainsKey(transfer.Id))
+            {
+                // The recipient's pending queue was already cancelled and hidden.
                 return new UploadAttempt(null, null);
             }
             catch (Exception ex) when (connectionAttemptStarted && !cancellationToken.IsCancellationRequested
@@ -1688,7 +1707,7 @@ namespace resonance.Transfers.Uploads
                     syncRoot.Release();
                 }
 
-                Queue.TryComplete(username: transfer.Username, filename: transfer.Filename);
+                Queue.TryComplete(username: transfer.Username, filename: transfer.Filename, id: transfer.Id);
             }
         }
 
