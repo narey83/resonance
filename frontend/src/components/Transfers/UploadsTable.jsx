@@ -37,6 +37,8 @@ import { ArrowLeft, ChevronDown, ChevronRight, Folder, X } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 const recipientStatusPreference = 'resonance-uploads-recipient-status';
+// Keep a recipient visible while the next queued file starts connecting.
+const recentUploadGraceMs = 30_000;
 
 const isSending = (file) => ['InProgress', 'Initializing'].includes(file.state);
 const isPending = (file) =>
@@ -243,10 +245,25 @@ const UploadsTable = ({
   const selected = queueUsers.find(
     (recipient) => recipient.username === selectedUsername,
   );
+  const lastActiveAt = useRef(new Map());
+  const now = Date.now();
+  const currentUsernames = new Set(queueUsers.map(({ username }) => username));
+  for (const username of lastActiveAt.current.keys()) {
+    if (!currentUsernames.has(username)) lastActiveAt.current.delete(username);
+  }
+
   const downloadingUsers = [];
   const waitingUsers = [];
   for (const recipient of queueUsers) {
-    const group = recipient.activeCount > 0 ? downloadingUsers : waitingUsers;
+    if (recipient.activeCount > 0)
+      lastActiveAt.current.set(recipient.username, now);
+    const lastActive = lastActiveAt.current.get(recipient.username);
+    const recentlyActive =
+      lastActive !== undefined && now - lastActive < recentUploadGraceMs;
+    const group =
+      recipient.activeCount > 0 || recentlyActive
+        ? downloadingUsers
+        : waitingUsers;
     group.push(recipient);
   }
 
@@ -414,11 +431,7 @@ const UploadsTable = ({
             ) : (
               <div className="ul-user-card-grid">
                 {visibleGroup.users.map((recipient) => {
-                  const { activeCount, sendingCount, waitingCount } = recipient;
-                  const connectingCount = Math.max(
-                    0,
-                    activeCount - (sendingCount ?? activeCount),
-                  );
+                  const { activeCount, waitingCount } = recipient;
                   const presence =
                     waitingPresence?.[recipient.username]?.presence;
                   const status = ['Online', 'Offline', 'Away'].includes(
@@ -447,10 +460,8 @@ const UploadsTable = ({
                           {recipient.username.slice(0, 1).toUpperCase()}
                         </span>
                         <span className="ul-user-card-status">
-                          {activeCount > 0
-                            ? sendingCount === 0
-                              ? 'Connecting'
-                              : 'Downloading'
+                          {visibleGroup.label === 'Downloading'
+                            ? 'Downloading'
                             : status}
                         </span>
                       </span>
@@ -458,14 +469,9 @@ const UploadsTable = ({
                         {recipient.username}
                       </strong>
                       <span className="ul-user-card-stats">
-                        {activeCount > 0 && sendingCount !== 0 && (
+                        {activeCount > 0 && (
                           <span>
-                            <b>{sendingCount ?? activeCount}</b> downloading
-                          </span>
-                        )}
-                        {connectingCount > 0 && (
-                          <span>
-                            <b>{connectingCount}</b> connecting
+                            <b>{activeCount}</b> downloading
                           </span>
                         )}
                         <span>

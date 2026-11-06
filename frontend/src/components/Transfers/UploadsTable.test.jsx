@@ -101,9 +101,10 @@ describe('Uploads recipient cards', () => {
       ReactDOM.unmountComponentAtNode(container);
     });
     container.remove();
+    jest.restoreAllMocks();
   });
 
-  it('starts with downloading cards and includes connecting users in the same group', async () => {
+  it('keeps connecting transfers under the Downloading label', async () => {
     expect.hasAssertions();
     await render();
     expect(
@@ -115,7 +116,19 @@ describe('Uploads recipient cards', () => {
         (node) => node.textContent,
       ),
     ).toEqual(['listener', 'connecting']);
-    expect(container.textContent).toContain('1 connecting');
+    expect(container.querySelectorAll('.ul-user-card-status')).toHaveLength(2);
+    expect(
+      Array.from(
+        container.querySelectorAll('.ul-user-card-status'),
+        (node) => node.textContent,
+      ),
+    ).toEqual(['Downloading', 'Downloading']);
+    expect(
+      Array.from(
+        container.querySelectorAll('.ul-user-card-stats'),
+        (node) => node.textContent,
+      ).join(' '),
+    ).not.toContain('connecting');
     expect(container.querySelector('.ul-detail-view')).toBeNull();
     expect(
       Array.from(
@@ -123,6 +136,34 @@ describe('Uploads recipient cards', () => {
         (node) => node.value,
       ),
     ).toEqual(['Downloading', 'Waiting']);
+  });
+
+  it('holds a recipient in Downloading across short gaps, then returns them to Waiting', async () => {
+    expect.hasAssertions();
+    const now = jest.spyOn(Date, 'now').mockReturnValue(100_000);
+    await render({ queueUsers: users.slice(0, 2) });
+    const idle = { ...users[0], activeCount: 0, sendingCount: 0 };
+    now.mockReturnValue(102_000);
+    await render({ queueUsers: [idle, users[1]] });
+    expect(
+      container.querySelector('.ul-recipient-status').textContent,
+    ).toContain('Downloading (1)');
+    expect(container.querySelector('.ul-user-card-name').textContent).toBe(
+      'listener',
+    );
+    expect(container.querySelector('.ul-user-card-status').textContent).toBe(
+      'Downloading',
+    );
+    now.mockReturnValue(129_999);
+    await render({ queueUsers: [idle, users[1]] });
+    expect(container.querySelectorAll('.ul-user-card')).toHaveLength(1);
+    now.mockReturnValue(130_001);
+    await render({ queueUsers: [idle, users[1]] });
+    expect(
+      container.querySelector('.ul-recipient-status').textContent,
+    ).toContain('Downloading (0)');
+    chooseStatus('Waiting');
+    expect(container.querySelectorAll('.ul-user-card')).toHaveLength(2);
   });
 
   it('shows waiting cards and presence, then returns to downloading cards after closing details', async () => {
