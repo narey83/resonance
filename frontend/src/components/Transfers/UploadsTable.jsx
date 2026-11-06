@@ -33,7 +33,7 @@ import { formatBitrate, formatBytes, getFileName } from '../../lib/util';
 import { UsernameLink } from '../Shared';
 import RecipientStatusDropdown from './RecipientStatusDropdown';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { ChevronDown, ChevronRight, Folder, X } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronRight, Folder, X } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 const recipientStatusPreference = 'resonance-uploads-recipient-status';
@@ -244,16 +244,9 @@ const UploadsTable = ({
     (recipient) => recipient.username === selectedUsername,
   );
   const downloadingUsers = [];
-  const connectingUsers = [];
   const waitingUsers = [];
   for (const recipient of queueUsers) {
-    const sending = recipient.sendingCount ?? recipient.activeCount;
-    const group =
-      sending > 0
-        ? downloadingUsers
-        : recipient.activeCount > 0
-          ? connectingUsers
-          : waitingUsers;
+    const group = recipient.activeCount > 0 ? downloadingUsers : waitingUsers;
     group.push(recipient);
   }
 
@@ -264,16 +257,8 @@ const UploadsTable = ({
       empty: 'No users downloading.',
       users: downloadingUsers,
     },
-    {
-      label: 'Connecting',
-      empty: 'No users connecting.',
-      users: connectingUsers,
-    },
     { label: 'Waiting', empty: 'No users waiting.', users: waitingUsers },
   ];
-  const selectedGroup = userGroups.find((group) =>
-    group.users.some((recipient) => recipient.username === selectedUsername),
-  )?.label;
   const [recipientStatus, setRecipientStatus] = useState(() => {
     try {
       const saved = prefs.get(recipientStatusPreference);
@@ -282,8 +267,11 @@ const UploadsTable = ({
       // Browser storage may be unavailable; the dropdown must still work.
     }
 
-    return selectedGroup ?? 'Waiting';
+    return 'Downloading';
   });
+  const [openedUsername, setOpenedUsername] = useState(null);
+  const showingDetails = openedUsername !== null;
+  const detailsReady = openedUsername === selectedUsername && !queueLoading;
   const visibleGroup = userGroups.find(
     (group) => group.label === recipientStatus,
   );
@@ -385,43 +373,52 @@ const UploadsTable = ({
   }, [selectedUsername]);
   return (
     <div
-      className="ul-complete"
+      className={`ul-complete ${showingDetails ? 'ul-complete--details' : 'ul-complete--cards'}`}
       data-total-tracks={fileCount}
     >
-      <div className="ul-live-workspace">
-        <aside
-          aria-label="Users requesting uploads"
-          className="ul-live-users"
-        >
-          <RecipientStatusDropdown
-            groups={userGroups}
-            label="Upload recipient status"
-            onChange={(status) => {
-              setRecipientStatus(status);
-              prefs.set(recipientStatusPreference, status);
-            }}
-            value={recipientStatus}
-          />
-          <div className="ul-live-user-list">
-            {[visibleGroup].map(({ empty, label, users }) => (
-              <section
-                aria-label={label}
-                className="ul-live-user-group"
-                key={label}
-              >
-                {users.length === 0 && <p>{empty}</p>}
-                {users.map((recipient) => {
+      {!showingDetails ? (
+        <div className="ul-card-view">
+          <header className="ul-card-view-header">
+            <div>
+              <p className="ul-eyebrow">Live uploads</p>
+              <h1>
+                {recipientStatus === 'Downloading'
+                  ? 'People downloading from you'
+                  : 'People waiting for your music'}
+              </h1>
+              <p>Choose a person to see their uploads and waiting tracks.</p>
+            </div>
+            <RecipientStatusDropdown
+              groups={userGroups}
+              label="Upload recipient status"
+              onChange={(status) => {
+                setRecipientStatus(status);
+                prefs.set(recipientStatusPreference, status);
+              }}
+              value={recipientStatus}
+            />
+          </header>
+          <section
+            aria-label={`${visibleGroup.label} users`}
+            className="ul-card-section"
+          >
+            <div className="ul-card-section-heading">
+              <h2>{visibleGroup.label}</h2>
+              <span>
+                {visibleGroup.users.length}{' '}
+                {visibleGroup.users.length === 1 ? 'person' : 'people'}
+              </span>
+            </div>
+            {visibleGroup.users.length === 0 ? (
+              <p className="ul-card-empty">{visibleGroup.empty}</p>
+            ) : (
+              <div className="ul-user-card-grid">
+                {visibleGroup.users.map((recipient) => {
                   const { activeCount, sendingCount, waitingCount } = recipient;
-                  const connectingCount = activeCount - (sendingCount ?? 0);
-                  const summary = [
-                    sendingCount > 0 && `${sendingCount} downloading`,
-                    connectingCount > 0 &&
-                      `${connectingCount} ${sendingCount == null ? 'sending/connecting' : 'connecting'}`,
-                    waitingCount > 0 &&
-                      `${waitingCount.toLocaleString()} waiting`,
-                  ]
-                    .filter(Boolean)
-                    .join(' · ');
+                  const connectingCount = Math.max(
+                    0,
+                    activeCount - (sendingCount ?? activeCount),
+                  );
                   const presence =
                     waitingPresence?.[recipient.username]?.presence;
                   const status = ['Online', 'Offline', 'Away'].includes(
@@ -432,260 +429,336 @@ const UploadsTable = ({
 
                   return (
                     <button
-                      aria-pressed={recipient.username === selectedUsername}
-                      className="ul-live-user"
+                      aria-label={`View uploads for ${recipient.username}`}
+                      className="ul-user-card"
                       key={recipient.username}
-                      onClick={() => onSelectUploadUser(recipient.username)}
+                      onClick={() => {
+                        setOpenedUsername(recipient.username);
+                        if (recipient.username !== selectedUsername)
+                          onSelectUploadUser?.(recipient.username);
+                      }}
                       type="button"
                     >
-                      <strong>{recipient.username}</strong>
-                      <span>
-                        {summary}
-                        {label === 'Waiting' && ` · ${status}`}
+                      <span className="ul-user-card-top">
+                        <span
+                          aria-hidden="true"
+                          className="ul-user-avatar"
+                        >
+                          {recipient.username.slice(0, 1).toUpperCase()}
+                        </span>
+                        <span className="ul-user-card-status">
+                          {activeCount > 0
+                            ? sendingCount === 0
+                              ? 'Connecting'
+                              : 'Downloading'
+                            : status}
+                        </span>
+                      </span>
+                      <strong className="ul-user-card-name">
+                        {recipient.username}
+                      </strong>
+                      <span className="ul-user-card-stats">
+                        {activeCount > 0 && sendingCount !== 0 && (
+                          <span>
+                            <b>{sendingCount ?? activeCount}</b> downloading
+                          </span>
+                        )}
+                        {connectingCount > 0 && (
+                          <span>
+                            <b>{connectingCount}</b> connecting
+                          </span>
+                        )}
+                        <span>
+                          <b>{(waitingCount ?? 0).toLocaleString()}</b> waiting
+                        </span>
+                      </span>
+                      {recipient.retryAt &&
+                        Number.isFinite(Date.parse(recipient.retryAt)) && (
+                          <span className="ul-user-card-pause">
+                            Paused until{' '}
+                            {new Date(recipient.retryAt).toLocaleTimeString(
+                              [],
+                              { hour: '2-digit', minute: '2-digit' },
+                            )}
+                          </span>
+                        )}
+                      <span className="ul-user-card-open">
+                        View details <ChevronRight size={16} />
                       </span>
                     </button>
                   );
                 })}
-              </section>
-            ))}
-          </div>
-        </aside>
-        <div
-          aria-busy={queueLoading}
-          className="ul-live-track-pane"
-        >
-          <header className="ul-complete-header">
-            {selectedUsername && (
-              <div className="ul-recipient-controls">
-                <UsernameLink username={selectedUsername} />
               </div>
             )}
-            {selectedUsername && (
-              <span className="ul-complete-count">
-                <strong>
-                  {(selected?.waitingCount ?? fileCount).toLocaleString()}{' '}
-                  waiting
-                </strong>
-                {selected?.activeCount > 0
-                  ? ` · ${selected.activeCount} sending/connecting`
-                  : ''}
-              </span>
-            )}
-            {selected?.retryAt &&
-              Number.isFinite(Date.parse(selected.retryAt)) && (
-                <span className="ul-complete-count">
-                  Paused after repeated transfer failures. Retry from{' '}
-                  <time dateTime={selected.retryAt}>
-                    {new Date(selected.retryAt).toLocaleString()}
-                  </time>
-                </span>
-              )}
-            {fileCount > 0 && (
-              <button
-                className="ul-quick-btn ul-quick-btn--cancel"
-                onClick={() =>
-                  onCancelUser({ fileCount, username: selectedUsername })
-                }
-                type="button"
+          </section>
+        </div>
+      ) : (
+        <div className="ul-detail-view">
+          <button
+            className="ul-back-button"
+            onClick={() => {
+              setOpenedUsername(null);
+              setRecipientStatus('Downloading');
+            }}
+            type="button"
+          >
+            <ArrowLeft size={16} /> All people
+          </button>
+          <div
+            aria-busy={!detailsReady}
+            className="ul-live-track-pane"
+          >
+            {!detailsReady ? (
+              <p
+                className="ul-complete-empty"
+                role="status"
               >
-                Cancel all uploads
-              </button>
-            )}
-          </header>
-          {!queueLoading && selectedUsername && (
-            <section
-              aria-label="Uploading now"
-              className="ul-current-uploads"
-            >
-              <h2>
-                Uploading now
-                {activeFiles.length > 0 ? ` · ${activeFiles.length}` : ''}
-              </h2>
-              {activeFiles.length === 0 ? (
-                <p>Nothing uploading to this user right now.</p>
-              ) : (
-                <div
-                  aria-colcount={6}
-                  aria-label="Current uploads"
-                  className="ul-current-list"
-                  role="table"
-                >
-                  {activeFiles.map(({ file, sourceFolder }) => (
+                Loading uploads for {openedUsername}…
+              </p>
+            ) : (
+              <>
+                <header className="ul-complete-header">
+                  {selectedUsername && (
+                    <div className="ul-recipient-controls">
+                      <UsernameLink username={selectedUsername} />
+                    </div>
+                  )}
+                  {selectedUsername && (
+                    <span className="ul-complete-count">
+                      <strong>
+                        {(selected?.waitingCount ?? fileCount).toLocaleString()}{' '}
+                        waiting
+                      </strong>
+                      {selected?.activeCount > 0
+                        ? ` · ${selected.activeCount} sending/connecting`
+                        : ''}
+                    </span>
+                  )}
+                  {selected?.retryAt &&
+                    Number.isFinite(Date.parse(selected.retryAt)) && (
+                      <span className="ul-complete-count">
+                        Paused after repeated transfer failures. Retry from{' '}
+                        <time dateTime={selected.retryAt}>
+                          {new Date(selected.retryAt).toLocaleString()}
+                        </time>
+                      </span>
+                    )}
+                  {fileCount > 0 && (
+                    <button
+                      className="ul-quick-btn ul-quick-btn--cancel"
+                      onClick={() =>
+                        onCancelUser({ fileCount, username: selectedUsername })
+                      }
+                      type="button"
+                    >
+                      Cancel all uploads
+                    </button>
+                  )}
+                </header>
+                {!queueLoading && selectedUsername && (
+                  <section
+                    aria-label="Uploading now"
+                    className="ul-current-uploads"
+                  >
+                    <h2>
+                      Uploading now
+                      {activeFiles.length > 0 ? ` · ${activeFiles.length}` : ''}
+                    </h2>
+                    {activeFiles.length === 0 ? (
+                      <p>Nothing uploading to this user right now.</p>
+                    ) : (
+                      <div
+                        aria-colcount={6}
+                        aria-label="Current uploads"
+                        className="ul-current-list"
+                        role="table"
+                      >
+                        {activeFiles.map(({ file, sourceFolder }) => (
+                          <div
+                            className="ul-complete-file ul-current-file"
+                            data-current-upload-id={file.id}
+                            key={file.id}
+                            role="row"
+                          >
+                            <FileCells
+                              file={file}
+                              onCancel={onCancel}
+                              sourceFolder={sourceFolder}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                )}
+                {queueLoading ? (
+                  <p
+                    className="ul-complete-empty"
+                    role="status"
+                  >
+                    Loading complete upload queue…
+                  </p>
+                ) : fileCount === 0 ? (
+                  <p className="ul-complete-empty">
+                    {selectedUsername
+                      ? 'No unfinished uploads for this user.'
+                      : 'No queued uploads.'}
+                  </p>
+                ) : (
+                  <div
+                    aria-colcount={6}
+                    aria-label="Complete upload queue"
+                    aria-rowcount={rows.length + 1}
+                    className="ul-complete-table"
+                    role="table"
+                  >
                     <div
-                      className="ul-complete-file ul-current-file"
-                      data-current-upload-id={file.id}
-                      key={file.id}
+                      className="ul-complete-columns"
                       role="row"
                     >
-                      <FileCells
-                        file={file}
-                        onCancel={onCancel}
-                        sourceFolder={sourceFolder}
+                      <div role="columnheader">Track</div>
+                      <div role="columnheader">Status</div>
+                      <div role="columnheader">Progress</div>
+                      <div role="columnheader">Size</div>
+                      <div role="columnheader">Speed</div>
+                      <div
+                        aria-label="Actions"
+                        role="columnheader"
                       />
                     </div>
-                  ))}
-                </div>
-              )}
-            </section>
-          )}
-          {queueLoading ? (
-            <p
-              className="ul-complete-empty"
-              role="status"
-            >
-              Loading complete upload queue…
-            </p>
-          ) : fileCount === 0 ? (
-            <p className="ul-complete-empty">
-              {selectedUsername
-                ? 'No unfinished uploads for this user.'
-                : 'No queued uploads.'}
-            </p>
-          ) : (
-            <div
-              aria-colcount={6}
-              aria-label="Complete upload queue"
-              aria-rowcount={rows.length + 1}
-              className="ul-complete-table"
-              role="table"
-            >
-              <div
-                className="ul-complete-columns"
-                role="row"
-              >
-                <div role="columnheader">Track</div>
-                <div role="columnheader">Status</div>
-                <div role="columnheader">Progress</div>
-                <div role="columnheader">Size</div>
-                <div role="columnheader">Speed</div>
-                <div
-                  aria-label="Actions"
-                  role="columnheader"
-                />
-              </div>
-              <div
-                aria-label="All requested tracks"
-                className="ul-complete-scroll"
-                ref={scrollRef}
-                role="rowgroup"
-              >
-                <div
-                  style={{
-                    height: virtualizer.getTotalSize(),
-                    position: 'relative',
-                    width: '100%',
-                  }}
-                >
-                  {virtualizer.getVirtualItems().map((item) => {
-                    const row = rows[item.index];
-                    return (
+                    <div
+                      aria-label="All requested tracks"
+                      className="ul-complete-scroll"
+                      ref={scrollRef}
+                      role="rowgroup"
+                    >
                       <div
-                        aria-rowindex={item.index + 2}
-                        className={`ul-flat-row ${row.type === 'folder' ? 'ul-complete-folder' : `ul-complete-file ${isSending(row.file) ? '' : 'ul-complete-file--waiting'}`}`}
-                        data-file-id={
-                          row.type === 'file' ? row.file.id : undefined
-                        }
-                        data-index={item.index}
-                        key={item.key}
-                        ref={virtualizer.measureElement}
-                        role="row"
                         style={{
-                          position: 'absolute',
-                          top: 0,
-                          left: 0,
+                          height: virtualizer.getTotalSize(),
+                          position: 'relative',
                           width: '100%',
-                          transform: `translateY(${item.start}px)`,
                         }}
                       >
-                        {row.type === 'folder' ? (
-                          <div
-                            aria-colspan={6}
-                            className="ul-folder-content"
-                            role="cell"
-                          >
-                            <button
-                              aria-expanded={
-                                expanded.username === selectedUsername &&
-                                expanded.folders.has(row.directory.directory)
+                        {virtualizer.getVirtualItems().map((item) => {
+                          const row = rows[item.index];
+                          return (
+                            <div
+                              aria-rowindex={item.index + 2}
+                              className={`ul-flat-row ${row.type === 'folder' ? 'ul-complete-folder' : `ul-complete-file ${isSending(row.file) ? '' : 'ul-complete-file--waiting'}`}`}
+                              data-file-id={
+                                row.type === 'file' ? row.file.id : undefined
                               }
-                              className="ul-folder-toggle"
-                              onClick={() =>
-                                toggleFolder(row.directory.directory)
-                              }
-                              title={row.directory.directory}
-                              type="button"
+                              data-index={item.index}
+                              key={item.key}
+                              ref={virtualizer.measureElement}
+                              role="row"
+                              style={{
+                                position: 'absolute',
+                                top: 0,
+                                left: 0,
+                                width: '100%',
+                                transform: `translateY(${item.start}px)`,
+                              }}
                             >
-                              {expanded.username === selectedUsername &&
-                              expanded.folders.has(row.directory.directory) ? (
-                                <ChevronDown size={15} />
-                              ) : (
-                                <ChevronRight size={15} />
-                              )}
-                              <Folder size={15} />
-                              <strong>
-                                {row.directory.directory
-                                  .split(/[/\\]/u)
-                                  .filter(Boolean)
-                                  .at(-1) ?? row.directory.directory}
-                              </strong>
-                              <span>
-                                {row.directory.fileCount.toLocaleString()}{' '}
-                                tracks
-                              </span>
-                              {folders &&
-                                expanded.username === selectedUsername &&
-                                expanded.folders.has(
-                                  row.directory.directory,
-                                ) && (
-                                  <span role="status">
-                                    {folderTracks?.get(row.directory.directory)
-                                      ?.failed
-                                      ? 'Unable to load tracks. Retrying…'
-                                      : !folderTracks?.get(
+                              {row.type === 'folder' ? (
+                                <div
+                                  aria-colspan={6}
+                                  className="ul-folder-content"
+                                  role="cell"
+                                >
+                                  <button
+                                    aria-expanded={
+                                      expanded.username === selectedUsername &&
+                                      expanded.folders.has(
+                                        row.directory.directory,
+                                      )
+                                    }
+                                    className="ul-folder-toggle"
+                                    onClick={() =>
+                                      toggleFolder(row.directory.directory)
+                                    }
+                                    title={row.directory.directory}
+                                    type="button"
+                                  >
+                                    {expanded.username === selectedUsername &&
+                                    expanded.folders.has(
+                                      row.directory.directory,
+                                    ) ? (
+                                      <ChevronDown size={15} />
+                                    ) : (
+                                      <ChevronRight size={15} />
+                                    )}
+                                    <Folder size={15} />
+                                    <strong>
+                                      {row.directory.directory
+                                        .split(/[/\\]/u)
+                                        .filter(Boolean)
+                                        .at(-1) ?? row.directory.directory}
+                                    </strong>
+                                    <span>
+                                      {row.directory.fileCount.toLocaleString()}{' '}
+                                      tracks
+                                    </span>
+                                    {folders &&
+                                      expanded.username === selectedUsername &&
+                                      expanded.folders.has(
+                                        row.directory.directory,
+                                      ) && (
+                                        <span role="status">
+                                          {folderTracks?.get(
                                             row.directory.directory,
-                                          )?.files
-                                        ? 'Loading tracks…'
-                                        : null}
-                                  </span>
-                                )}
-                              {row.directory.activeCount > 0 && (
-                                <span>
-                                  {row.directory.activeCount} sending/connecting
-                                </span>
+                                          )?.failed
+                                            ? 'Unable to load tracks. Retrying…'
+                                            : !folderTracks?.get(
+                                                  row.directory.directory,
+                                                )?.files
+                                              ? 'Loading tracks…'
+                                              : null}
+                                        </span>
+                                      )}
+                                    {row.directory.activeCount > 0 && (
+                                      <span>
+                                        {row.directory.activeCount}{' '}
+                                        sending/connecting
+                                      </span>
+                                    )}
+                                  </button>
+                                  {(folders ||
+                                    row.directory.directory.trim()) && (
+                                    <button
+                                      className="ul-folder-block"
+                                      onClick={() =>
+                                        onCancelDirectory({
+                                          directory: row.directory.directory,
+                                          fileCount: row.directory.fileCount,
+                                          username: selectedUsername,
+                                        })
+                                      }
+                                      title="Cancel all requests for this folder and permanently block it for this person"
+                                      type="button"
+                                    >
+                                      Block folder
+                                    </button>
+                                  )}
+                                </div>
+                              ) : (
+                                <FileCells
+                                  file={row.file}
+                                  onCancel={onCancel}
+                                />
                               )}
-                            </button>
-                            {(folders || row.directory.directory.trim()) && (
-                              <button
-                                className="ul-folder-block"
-                                onClick={() =>
-                                  onCancelDirectory({
-                                    directory: row.directory.directory,
-                                    fileCount: row.directory.fileCount,
-                                    username: selectedUsername,
-                                  })
-                                }
-                                title="Cancel all requests for this folder and permanently block it for this person"
-                                type="button"
-                              >
-                                Block folder
-                              </button>
-                            )}
-                          </div>
-                        ) : (
-                          <FileCells
-                            file={row.file}
-                            onCancel={onCancel}
-                          />
-                        )}
+                            </div>
+                          );
+                        })}
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          )}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

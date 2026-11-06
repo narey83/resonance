@@ -10,30 +10,13 @@ jest.mock('../../lib/transfers', () => ({
   ...jest.requireActual('../../lib/transfers'),
   getUploadFolder: jest.fn(),
 }));
-
 jest.mock('../../lib/prefs', () => ({ get: jest.fn(), set: jest.fn() }));
-
 jest.mock('../../lib/users', () => ({
   getStatuses: jest.fn().mockResolvedValue({}),
 }));
-
 jest.mock('../Shared', () => ({
   UsernameLink: ({ username }) => (
-    <span className="test-user-controls">
-      {username}
-      <button
-        title="Chat"
-        type="button"
-      >
-        Chat
-      </button>
-      <button
-        title="Browse files"
-        type="button"
-      >
-        Browse files
-      </button>
-    </span>
+    <span className="test-user-controls">{username}</span>
   ),
 }));
 jest.mock('@tanstack/react-virtual', () => ({
@@ -48,6 +31,7 @@ jest.mock('@tanstack/react-virtual', () => ({
     measureElement: () => {},
   }),
 }));
+
 const file = (id, state = 'Queued') => ({
   id,
   state,
@@ -56,35 +40,32 @@ const file = (id, state = 'Queued') => ({
   filename: `Music/Album/Track ${id}.flac`,
   size: 1_024,
 });
-const transfers = (files) => [
-  { username: 'listener', directories: [{ directory: 'Music/Album', files }] },
-];
 const users = [
-  { username: 'listener', waitingCount: 45, activeCount: 0, pendingCount: 45 },
-  { username: 'other', waitingCount: 19, activeCount: 0, pendingCount: 19 },
+  { username: 'listener', waitingCount: 2, activeCount: 1, sendingCount: 1 },
+  { username: 'other', waitingCount: 3, activeCount: 0, sendingCount: 0 },
+  { username: 'connecting', waitingCount: 1, activeCount: 1, sendingCount: 0 },
 ];
-const findGroup = (container, name) =>
-  container.querySelector(`section[aria-label="${name}"]`);
+const transfers = [
+  {
+    username: 'listener',
+    directories: [
+      {
+        directory: 'Music/Album',
+        files: [file('active', 'InProgress'), file('waiting')],
+      },
+    ],
+  },
+];
 
-describe('One complete upload list and one user header', () => {
+describe('Uploads recipient cards', () => {
   let container;
-  const statusControl = () =>
-    container.querySelector('.ul-recipient-status > summary');
-  const chooseStatus = (value) =>
-    act(() =>
-      Simulate.click(
-        container.querySelector(
-          `.ul-recipient-status button[value="${value}"]`,
-        ),
-      ),
-    );
   const render = async (props = {}) => {
     await act(async () => {
       ReactDOM.render(
         <UploadsTable
           queueUsers={users}
           selectedUsername="listener"
-          transfers={[]}
+          transfers={transfers}
           {...props}
         />,
         container,
@@ -92,14 +73,28 @@ describe('One complete upload list and one user header', () => {
     });
   };
 
-  const expandFirst = () =>
-    act(() => Simulate.click(container.querySelector('.ul-folder-toggle')));
+  const chooseStatus = (status) =>
+    act(() =>
+      Simulate.click(
+        container.querySelector(
+          `.ul-recipient-status button[value="${status}"]`,
+        ),
+      ),
+    );
+  const openUser = (username = 'listener') =>
+    act(() =>
+      Simulate.click(
+        container.querySelector(`[aria-label="View uploads for ${username}"]`),
+      ),
+    );
 
   beforeEach(() => {
-    prefs.get.mockReset().mockReturnValue(null);
-    prefs.set.mockReset();
     container = document.createElement('div');
     document.body.append(container);
+    prefs.get.mockReset().mockReturnValue(null);
+    prefs.set.mockReset();
+    getStatuses.mockReset().mockResolvedValue({});
+    getUploadFolder.mockReset();
   });
   afterEach(() => {
     act(() => {
@@ -107,516 +102,227 @@ describe('One complete upload list and one user header', () => {
     });
     container.remove();
   });
-  it.each(['Downloading', 'Connecting', 'Waiting'])(
-    'restores saved %s even when that group is empty',
-    async (status) => {
-      expect.hasAssertions();
-      prefs.get.mockReturnValue(status);
-      await render({ queueUsers: [] });
-      expect(statusControl().textContent).toBe(`${status} (0)`);
-      expect(prefs.get).toHaveBeenCalledWith(
-        'resonance-uploads-recipient-status',
-      );
-      expect(prefs.set).not.toHaveBeenCalled();
-    },
-  );
-  it.each(['Finished', 42, { status: 'Downloading' }])(
-    'ignores invalid saved status %p without overwriting it on mount',
-    async (saved) => {
-      expect.hasAssertions();
-      prefs.get.mockReturnValue(saved);
-      await render();
-      expect(statusControl().textContent).toBe('Waiting (2)');
-      expect(prefs.set).not.toHaveBeenCalled();
-    },
-  );
-  it('keeps the dropdown usable when preference storage cannot be read', async () => {
+
+  it('starts with downloading cards and includes connecting users in the same group', async () => {
     expect.hasAssertions();
-    prefs.get.mockImplementation(() => {
-      throw new Error('Storage blocked');
-    });
     await render();
-    chooseStatus('Downloading');
-    expect(statusControl().textContent).toBe('Downloading (0)');
-    expect(prefs.set).toHaveBeenCalledWith(
-      'resonance-uploads-recipient-status',
-      'Downloading',
-    );
-  });
-  it('saves explicit selections and restores them after leaving and remounting', async () => {
-    expect.hasAssertions();
-    let saved = null;
-    prefs.get.mockImplementation(() => saved);
-    prefs.set.mockImplementation((key, value) => {
-      saved = value;
-    });
-    await render();
-    chooseStatus('Downloading');
-    expect(prefs.set).toHaveBeenLastCalledWith(
-      'resonance-uploads-recipient-status',
-      'Downloading',
-    );
-    act(() => {
-      ReactDOM.unmountComponentAtNode(container);
-    });
-    await render({ selectedUsername: 'other' });
-    expect(statusControl().textContent).toBe('Downloading (0)');
-    chooseStatus('Connecting');
-    expect(prefs.set).toHaveBeenLastCalledWith(
-      'resonance-uploads-recipient-status',
-      'Connecting',
-    );
-  });
-  it('shows known waiting-user presence and keeps missing results unknown', async () => {
-    expect.hasAssertions();
-    getStatuses.mockResolvedValueOnce({
-      listener: { presence: 'Online' },
-      other: { presence: 'Offline' },
-    });
-    await render({
-      queueUsers: [...users, { ...users[1], username: 'unknown-user' }],
-    });
-    const rows = Array.from(container.querySelectorAll('.ul-live-user'));
-    expect(rows.map((row) => row.textContent)).toEqual([
-      'listener45 waiting · Online',
-      'other19 waiting · Offline',
-      'unknown-user19 waiting · Status unknown',
-    ]);
-    expect(container.querySelector('.ul-complete-header h1')).toBeNull();
     expect(
-      container.querySelector('.ul-complete-header .test-user-controls'),
-    ).not.toBeNull();
-  });
-
-  it('shows the retry time only for the paused recipient', async () => {
-    expect.hasAssertions();
-    const retryAt = '2026-11-03T10:35:00+00:00';
-    const queueUsers = [{ ...users[0], retryAt }, users[1]];
-    await render({ queueUsers });
-    expect(container.querySelector('time').dateTime).toBe(retryAt);
-    expect(container.textContent).toContain(
-      'Paused after repeated transfer failures',
-    );
-    await render({ queueUsers, selectedUsername: 'other' });
-    expect(container.querySelector('time')).toBeNull();
-  });
-
-  it('defaults to closed folders and expands every track without pagination or duplicate headings', async () => {
-    expect.hasAssertions();
-    await render({
-      transfers: transfers(
-        Array.from({ length: 45 }, (_, i) => file(String(i))),
+      container.querySelector('.ul-recipient-status').textContent,
+    ).toContain('Downloading (2)');
+    expect(
+      Array.from(
+        container.querySelectorAll('.ul-user-card-name'),
+        (node) => node.textContent,
       ),
-    });
-    expect(container.querySelectorAll('[data-file-id]')).toHaveLength(0);
-    expect(
-      container
-        .querySelector('.ul-folder-toggle')
-        .getAttribute('aria-expanded'),
-    ).toBe('false');
-    expect(container.querySelector('.ul-folder-toggle').textContent).toContain(
-      '45 tracks',
-    );
-    expandFirst();
-    expect(
-      container
-        .querySelector('.ul-folder-toggle')
-        .getAttribute('aria-expanded'),
-    ).toBe('true');
-    expect(container.querySelectorAll('[data-file-id]')).toHaveLength(45);
-    expect(
-      container.querySelector('[data-file-id="44"]').textContent,
-    ).toContain('Track 44.flac');
-    expect(container.querySelector('.ul-complete').dataset.totalTracks).toBe(
-      '45',
-    );
-    expect(container.querySelectorAll('.test-user-controls')).toHaveLength(1);
-    expect(
-      container
-        .querySelector('.ul-complete-header')
-        .textContent.match(/listener/gu),
-    ).toHaveLength(1);
-    expect(
-      container.querySelector('.ul-complete-header [title="Chat"]'),
-    ).not.toBeNull();
-    expect(
-      container.querySelector('.ul-complete-header [title="Browse files"]'),
-    ).not.toBeNull();
-    for (const phrase of [
-      'on this page',
-      'Show more',
-      'Waiting to upload',
-      'History',
-      'Next',
-    ])
-      expect(container.textContent).not.toContain(phrase);
-  });
-  it('shows users on the side and switches by clicking a user', async () => {
-    expect.hasAssertions();
-    const onSelectUploadUser = jest.fn();
-    await render({ onSelectUploadUser });
-    expect(statusControl().textContent).toContain('Waiting');
-    expect(container.querySelectorAll('.ul-live-user')).toHaveLength(2);
-    expect(
-      container.querySelector('.ul-live-user[aria-pressed="true"]').textContent,
-    ).toContain('listener');
-    act(() => Simulate.click(container.querySelectorAll('.ul-live-user')[1]));
-    expect(onSelectUploadUser).toHaveBeenCalledWith('other');
-  });
-  it('keeps Downloading selected as recipients connect, wait, finish or disappear', async () => {
-    expect.hasAssertions();
-    const downloading = {
-      ...users[0],
-      activeCount: 1,
-      pendingCount: 46,
-      sendingCount: 1,
-    };
-    const connecting = { ...downloading, sendingCount: 0 };
-    const waiting = { ...users[1], sendingCount: 0 };
-    await render({ queueUsers: [downloading, waiting] });
-    expect(findGroup(container, 'Downloading').textContent).toContain(
-      '1 downloading · 45 waiting',
-    );
-    expect(statusControl().textContent).toBe('Downloading (1)');
-
-    for (const queueUsers of [[connecting, waiting], users, [waiting], []]) {
-      await render({ queueUsers });
-      expect(statusControl().textContent).toBe('Downloading (0)');
-      expect(container.textContent).toContain('No users downloading.');
-      expect(container.querySelectorAll('.ul-live-user')).toHaveLength(0);
-    }
-
-    await render({
-      queueUsers: [downloading, waiting],
-      selectedUsername: 'other',
-    });
-    expect(statusControl().textContent).toBe('Downloading (1)');
-    expect(findGroup(container, 'Downloading').textContent).toContain(
-      'listener',
-    );
-    chooseStatus('Waiting');
-    expect(statusControl().textContent).toBe('Waiting (1)');
-    expect(findGroup(container, 'Waiting').textContent).toContain('other');
-  });
-  it('keeps an explicitly selected empty Downloading group through subsequent updates', async () => {
-    expect.hasAssertions();
-    await render();
-    chooseStatus('Downloading');
-    expect(statusControl().textContent).toBe('Downloading (0)');
-    await render({ queueUsers: [], selectedUsername: null });
-    await render({ queueUsers: users, selectedUsername: 'other' });
-    expect(statusControl().textContent).toBe('Downloading (0)');
-    expect(container.textContent).toContain('No users downloading.');
-  });
-  it('filters recipients by status, includes empty statuses and preserves the open queue', async () => {
-    expect.hasAssertions();
-    const onSelectUploadUser = jest.fn();
-    const downloading = { ...users[1], sendingCount: 1, activeCount: 1 };
-    await render({ queueUsers: [users[0], downloading], onSelectUploadUser });
+    ).toEqual(['listener', 'connecting']);
+    expect(container.textContent).toContain('1 connecting');
+    expect(container.querySelector('.ul-detail-view')).toBeNull();
     expect(
       Array.from(
         container.querySelectorAll('[role="menuitemradio"]'),
-        (option) => option.textContent,
+        (node) => node.value,
       ),
-    ).toEqual(['Downloading (1)', 'Connecting (0)', 'Waiting (1)']);
-    chooseStatus('Downloading');
-    expect(container.querySelectorAll('.ul-live-user')).toHaveLength(1);
-    expect(container.querySelector('.ul-live-user').textContent).toContain(
-      'other',
-    );
-    expect(
-      container.querySelector('.ul-recipient-controls').textContent,
-    ).toContain('listener');
-    expect(onSelectUploadUser).not.toHaveBeenCalled();
-    act(() => Simulate.click(container.querySelector('.ul-live-user')));
-    expect(onSelectUploadUser).toHaveBeenCalledWith('other');
-    chooseStatus('Connecting');
-    expect(container.querySelectorAll('.ul-live-user')).toHaveLength(0);
-    expect(container.textContent).toContain('No users connecting.');
-    await render({ queueUsers: [users[0], downloading], onSelectUploadUser });
-    expect(statusControl().textContent).toContain('Connecting');
+    ).toEqual(['Downloading', 'Waiting']);
   });
-  it('supports keyboard navigation, selection, Escape and outside dismissal', async () => {
+
+  it('shows waiting cards and presence, then returns to downloading cards after closing details', async () => {
     expect.hasAssertions();
+    getStatuses.mockResolvedValue({ other: { presence: 'Online' } });
     await render();
-    const summary = statusControl();
-    const dropdown = summary.parentElement;
-    summary.focus();
-    act(() => Simulate.keyDown(summary, { key: 'ArrowDown' }));
-    expect(dropdown.open).toBe(true);
-    expect(document.activeElement.value).toBe('Downloading');
-    act(() => Simulate.keyDown(document.activeElement, { key: 'ArrowDown' }));
-    expect(document.activeElement.value).toBe('Connecting');
-    act(() => Simulate.keyDown(document.activeElement, { key: 'End' }));
-    expect(document.activeElement.value).toBe('Waiting');
     chooseStatus('Waiting');
-    expect(dropdown.open).toBe(false);
-    expect(document.activeElement).toBe(summary);
-    act(() => Simulate.keyDown(summary, { key: 'ArrowUp' }));
-    expect(document.activeElement.value).toBe('Waiting');
-    act(() => Simulate.keyDown(document.activeElement, { key: 'Home' }));
-    expect(document.activeElement.value).toBe('Downloading');
-    act(() => Simulate.keyDown(document.activeElement, { key: 'Escape' }));
-    expect(dropdown.open).toBe(false);
-    expect(document.activeElement).toBe(summary);
-    dropdown.open = true;
-    act(() => {
-      document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }));
-    });
-    expect(dropdown.open).toBe(false);
-    dropdown.open = true;
-    act(() => Simulate.blur(summary, { relatedTarget: document.body }));
-    expect(dropdown.open).toBe(false);
+    expect(container.querySelector('.ul-card-view-header h1').textContent).toBe(
+      'People waiting for your music',
+    );
+    expect(container.querySelectorAll('.ul-user-card')).toHaveLength(1);
+    expect(container.querySelector('.ul-user-card').textContent).toContain(
+      'Online',
+    );
+    openUser('other');
+    expect(container.textContent).toContain('Loading uploads for other');
+    await render({ selectedUsername: 'other', transfers: [] });
+    expect(container.querySelector('.ul-detail-view')).not.toBeNull();
+    act(() => Simulate.click(container.querySelector('.ul-back-button')));
+    expect(container.querySelector('.ul-detail-view')).toBeNull();
+    expect(
+      container.querySelector('.ul-recipient-status').textContent,
+    ).toContain('Downloading (2)');
   });
-  it('keeps combined activity readable when the server has no sending count', async () => {
+
+  it('requests another recipient only after opening their card and keeps stale tracks hidden', async () => {
     expect.hasAssertions();
+    const onSelectUploadUser = jest.fn();
+    await render({ onSelectUploadUser });
+    openUser('connecting');
+    expect(onSelectUploadUser).toHaveBeenCalledWith('connecting');
+    expect(container.textContent).toContain('Loading uploads for connecting');
+    expect(container.querySelector('.ul-complete-table')).toBeNull();
     await render({
-      queueUsers: [{ ...users[0], activeCount: 1, pendingCount: 46 }, users[1]],
+      onSelectUploadUser,
+      selectedUsername: 'connecting',
+      transfers: [],
     });
-    expect(findGroup(container, 'Downloading').textContent).toContain(
-      '1 sending/connecting',
+    expect(container.textContent).toContain(
+      'No unfinished uploads for this user',
     );
   });
-  it('adds new users to the live side list while retaining the selected user and tracks', async () => {
+
+  it('restores saved waiting choice and ignores the removed connecting choice', async () => {
     expect.hasAssertions();
-    const files = transfers([file('one')]);
-    await render({ transfers: files });
-    expandFirst();
-    await render({
-      transfers: files,
-      queueUsers: [
-        ...users,
-        {
-          username: 'new-arrival',
-          waitingCount: 3,
-          activeCount: 0,
-          pendingCount: 3,
-        },
-      ],
+    prefs.get.mockReturnValue('Waiting');
+    await render();
+    expect(
+      container.querySelector('.ul-recipient-status').textContent,
+    ).toContain('Waiting (1)');
+    expect(prefs.set).not.toHaveBeenCalled();
+    act(() => {
+      ReactDOM.unmountComponentAtNode(container);
     });
-    expect(container.querySelectorAll('.ul-live-user')).toHaveLength(3);
+    prefs.get.mockReturnValue('Connecting');
+    await render();
     expect(
-      container.querySelectorAll('.ul-live-user')[2].textContent,
-    ).toContain('new-arrival');
-    expect(
-      container.querySelector('.ul-recipient-controls').textContent,
-    ).toContain('listener');
-    expect(container.querySelector('[data-file-id="one"]')).not.toBeNull();
-    expect(container.querySelectorAll('.test-user-controls')).toHaveLength(1);
+      container.querySelector('.ul-recipient-status').textContent,
+    ).toContain('Downloading (2)');
+    expect(prefs.set).not.toHaveBeenCalled();
   });
-  it('shows folder counts and live uploads before requesting the expanded tracks', async () => {
+
+  it('opens the existing upload queue, fetches folder tracks lazily and preserves cancellation', async () => {
     expect.hasAssertions();
-    getUploadFolder.mockResolvedValueOnce([
+    const onCancel = jest.fn();
+    const onCancelDirectory = jest.fn();
+    const onCancelUser = jest.fn();
+    getUploadFolder.mockResolvedValue([
+      file('active', 'InProgress'),
       file('waiting'),
-      file('sending', 'InProgress'),
     ]);
     await render({
       folders: [{ directory: 'Music/Album', fileCount: 2, activeCount: 1 }],
-      transfers: transfers([file('sending', 'InProgress')]),
+      onCancel,
+      onCancelDirectory,
+      onCancelUser,
     });
-
-    expect(container.querySelector('.ul-folder-toggle').textContent).toContain(
-      '2 tracks',
-    );
+    openUser();
     expect(
-      container.querySelector('[data-current-upload-id="sending"]'),
+      container.querySelector('[data-current-upload-id="active"]'),
     ).not.toBeNull();
     expect(getUploadFolder).not.toHaveBeenCalled();
-    await act(async () => {
-      Simulate.click(container.querySelector('.ul-folder-toggle'));
-    });
+    await act(async () =>
+      Simulate.click(container.querySelector('.ul-folder-toggle')),
+    );
     expect(getUploadFolder).toHaveBeenCalledWith({
       directory: 'Music/Album',
       signal: expect.any(AbortSignal),
       username: 'listener',
     });
-    expect(container.querySelector('[data-file-id="waiting"]')).not.toBeNull();
-  });
-  it('keeps whole-user cancellation beside the single header', async () => {
-    expect.hasAssertions();
-    const onCancelUser = jest.fn();
-    const files = [file('one'), file('two')];
-    await render({ onCancelUser, transfers: transfers(files) });
+    expect(container.querySelectorAll('[data-file-id]')).toHaveLength(2);
+    act(() =>
+      Simulate.click(
+        container.querySelector('[aria-label="Cancel Track waiting.flac"]'),
+      ),
+    );
+    expect(onCancel).toHaveBeenCalledWith({
+      file: expect.objectContaining({ id: 'waiting' }),
+    });
+    act(() => Simulate.click(container.querySelector('.ul-folder-block')));
+    expect(onCancelDirectory).toHaveBeenCalledWith({
+      directory: 'Music/Album',
+      fileCount: 2,
+      username: 'listener',
+    });
     act(() =>
       Simulate.click(
         container.querySelector('.ul-complete-header .ul-quick-btn'),
       ),
     );
     expect(onCancelUser).toHaveBeenCalledWith({
-      username: 'listener',
       fileCount: 2,
-    });
-  });
-  it('preserves individual file and permanent folder-block actions', async () => {
-    expect.hasAssertions();
-    const onCancel = jest.fn();
-    const onCancelDirectory = jest.fn();
-    const track = file('one');
-    await render({
-      onCancel,
-      onCancelDirectory,
-      transfers: transfers([track]),
-    });
-    expandFirst();
-    act(() =>
-      Simulate.click(
-        container.querySelector('[aria-label="Cancel Track one.flac"]'),
-      ),
-    );
-    expect(onCancel).toHaveBeenCalledWith({ file: track });
-    act(() => Simulate.click(container.querySelector('.ul-folder-block')));
-    expect(onCancelDirectory).toHaveBeenCalledWith({
       username: 'listener',
-      directory: 'Music/Album',
-      fileCount: 1,
     });
   });
-  it('shows live progress in the same list while excluding finished records', async () => {
+
+  it('shows an empty card state without loading a detail pane', async () => {
+    expect.hasAssertions();
+    await render({ queueUsers: [], selectedUsername: null, transfers: [] });
+    expect(container.textContent).toContain('No users downloading.');
+    expect(container.querySelector('.ul-user-card')).toBeNull();
+    expect(container.querySelector('.ul-complete-table')).toBeNull();
+  });
+
+  it('keeps active progress above closed folders and excludes completed uploads', async () => {
     expect.hasAssertions();
     await render({
-      transfers: transfers([
-        file('waiting'),
-        {
-          ...file('active', 'InProgress'),
-          percentComplete: 25,
-          bytesTransferred: 256,
-        },
-        file('old', 'Completed, Succeeded'),
-      ]),
-    });
-    expect(container.querySelector('.ul-folder-toggle').textContent).toContain(
-      '1 sending/connecting',
-    );
-    expandFirst();
-    expect(container.querySelectorAll('[data-file-id]')).toHaveLength(2);
-    expect(
-      container.querySelector('[data-file-id="active"]').textContent,
-    ).toContain('25%');
-    expect(container.textContent).not.toContain('Track old.flac');
-  });
-  it('collapses independently and defaults closed when switching recipients', async () => {
-    expect.hasAssertions();
-    const props = {
       transfers: [
         {
           username: 'listener',
           directories: [
-            { directory: 'Music/Album', files: [file('one')] },
-            { directory: 'Music/Other', files: [file('two')] },
-          ],
-        },
-      ],
-    };
-    await render(props);
-    expandFirst();
-    expect(container.querySelectorAll('[data-file-id]')).toHaveLength(1);
-    expect(container.querySelector('[data-file-id="two"]')).toBeNull();
-    expandFirst();
-    expect(container.querySelectorAll('[data-file-id]')).toHaveLength(0);
-    expandFirst();
-    await render({
-      selectedUsername: 'other',
-      transfers: [
-        {
-          username: 'other',
-          directories: [
             {
               directory: 'Music/Album',
-              files: [{ ...file('other'), username: 'other' }],
-            },
-          ],
-        },
-      ],
-    });
-    expect(
-      container
-        .querySelector('.ul-folder-toggle')
-        .getAttribute('aria-expanded'),
-    ).toBe('false');
-    expect(container.querySelectorAll('[data-file-id]')).toHaveLength(0);
-    expect(container.querySelector('.ul-complete').dataset.totalTracks).toBe(
-      '1',
-    );
-    await render(props);
-    expect(container.querySelectorAll('[data-file-id]')).toHaveLength(0);
-  });
-  it('shows active tracks and their source above closed folders, isolated to the selected user', async () => {
-    expect.hasAssertions();
-    await render({
-      transfers: [
-        ...transfers([
-          { ...file('sending', 'InProgress'), percentComplete: 42 },
-          file('connecting', 'Initializing'),
-          file('waiting'),
-          file('finished', 'Completed, Succeeded'),
-        ]),
-        {
-          username: 'other',
-          directories: [
-            {
-              directory: 'Other/Private',
               files: [
-                { ...file('other-active', 'InProgress'), username: 'other' },
+                { ...file('active', 'InProgress'), percentComplete: 42 },
+                file('waiting'),
+                file('finished', 'Completed, Succeeded'),
               ],
             },
           ],
         },
       ],
     });
+    openUser();
     expect(container.querySelectorAll('[data-file-id]')).toHaveLength(0);
-    expect(container.querySelectorAll('[data-current-upload-id]')).toHaveLength(
-      2,
-    );
-    const current = container.querySelector('.ul-current-uploads');
-    expect(current.textContent).toContain('Track sending.flac');
-    expect(current.textContent).toContain('From: Album');
-    expect(current.textContent).toContain('42%');
-    expect(current.textContent).toContain('Connecting');
-    expect(current.textContent).not.toContain('Track waiting.flac');
-    expect(current.textContent).not.toContain('Track finished.flac');
-    expect(current.textContent).not.toContain('Other/Private');
-    expect(
-      current.compareDocumentPosition(
-        container.querySelector('.ul-complete-table'),
-      ),
-    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    await render({
-      transfers: transfers([
-        { ...file('sending', 'InProgress'), percentComplete: 71 },
-      ]),
-    });
     expect(
       container.querySelector('.ul-current-uploads').textContent,
-    ).toContain('71%');
-    await render({ transfers: transfers([file('waiting')]) });
-    expect(container.querySelectorAll('[data-current-upload-id]')).toHaveLength(
-      0,
+    ).toContain('42%');
+    expect(container.querySelector('.ul-current-source').textContent).toBe(
+      'From: Album',
     );
-    expect(
-      container.querySelector('.ul-current-uploads').textContent,
-    ).toContain('Nothing uploading to this user right now.');
+    expect(container.textContent).not.toContain('Track finished.flac');
+    act(() => Simulate.click(container.querySelector('.ul-folder-toggle')));
+    expect(container.querySelectorAll('[data-file-id]')).toHaveLength(2);
+    act(() => Simulate.click(container.querySelector('.ul-folder-toggle')));
+    expect(container.querySelectorAll('[data-file-id]')).toHaveLength(0);
   });
-  it.each(['downloads\\Prisoner', 'downloads/Prisoner/', 'Prisoner'])(
-    'shows just the source folder name for %s',
-    async (directory) => {
-      expect.hasAssertions();
-      await render({
-        transfers: [
-          {
-            username: 'listener',
-            directories: [{ directory, files: [file('active', 'InProgress')] }],
-          },
-        ],
-      });
-      expect(container.querySelector('.ul-current-source').textContent).toBe(
-        'From: Prisoner',
-      );
-    },
-  );
-  it('handles an empty recipient queue', async () => {
+
+  it('shows a retry time only in the opened recipient details', async () => {
     expect.hasAssertions();
-    await render({ queueUsers: [], selectedUsername: null });
-    expect(container.textContent).toContain('No queued uploads.');
-    expect(container.querySelector('[role="table"]')).toBeNull();
+    const retryAt = '2026-11-03T10:35:00+00:00';
+    await render({ queueUsers: [{ ...users[0], retryAt }, users[1]] });
+    openUser();
+    expect(container.querySelector('time').dateTime).toBe(retryAt);
+    expect(container.textContent).toContain(
+      'Paused after repeated transfer failures',
+    );
+    act(() => Simulate.click(container.querySelector('.ul-back-button')));
+    expect(container.querySelector('time')).toBeNull();
+  });
+
+  it('keeps the dropdown usable without preference storage', async () => {
+    expect.hasAssertions();
+    prefs.get.mockImplementation(() => {
+      throw new Error('Storage blocked');
+    });
+    await render();
+    chooseStatus('Waiting');
+    expect(
+      container.querySelector('.ul-recipient-status').textContent,
+    ).toContain('Waiting (1)');
+    expect(prefs.set).toHaveBeenCalledWith(
+      'resonance-uploads-recipient-status',
+      'Waiting',
+    );
+  });
+
+  it('supports keyboard navigation and Escape in the status dropdown', async () => {
+    expect.hasAssertions();
+    await render();
+    const summary = container.querySelector('.ul-recipient-status > summary');
+    const dropdown = summary.parentElement;
+    summary.focus();
+    act(() => Simulate.keyDown(summary, { key: 'ArrowDown' }));
+    expect(dropdown.open).toBe(true);
+    expect(document.activeElement.value).toBe('Downloading');
+    act(() => Simulate.keyDown(document.activeElement, { key: 'ArrowDown' }));
+    expect(document.activeElement.value).toBe('Waiting');
+    act(() => Simulate.keyDown(document.activeElement, { key: 'Escape' }));
+    expect(dropdown.open).toBe(false);
+    expect(document.activeElement).toBe(summary);
   });
 });

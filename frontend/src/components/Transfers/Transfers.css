@@ -1103,6 +1103,44 @@
 .ul-current-file .ul-complete-name { overflow-wrap: anywhere; white-space: normal; }
 .ul-current-source { color: var(--text-muted); display: block; font-size: 11px; margin-top: 5px; overflow-wrap: anywhere; }
 
+/* Upload recipients: overview first, one person's queue on demand. */
+.ul-complete--cards { overflow-y: auto; }
+.ul-card-view { margin: 0 auto; max-width: 1320px; padding: 18px 24px 48px; width: 100%; }
+.ul-card-view-header { align-items: flex-end; display: flex; flex-wrap: wrap; gap: 24px; justify-content: space-between; margin-bottom: 32px; }
+.ul-card-view-header h1 { color: var(--text-primary); font-size: clamp(24px, 3vw, 34px); letter-spacing: -.03em; line-height: 1.15; margin: 6px 0 8px; }
+.ul-card-view-header p { color: var(--text-muted); font-size: 13px; margin: 0; }
+.ul-card-view-header .ul-eyebrow { color: var(--accent); font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.ul-card-view-header .ul-recipient-status { margin: 0; min-width: 190px; width: auto; }
+.ul-card-view-header .ul-recipient-status > summary { gap: 24px; padding: 10px 12px; }
+.ul-card-view-header .ul-recipient-status-menu button { padding: 10px 12px; }
+.ul-card-section-heading { align-items: baseline; display: flex; gap: 12px; margin-bottom: 16px; }
+.ul-card-section-heading h2 { color: var(--text-primary); font-size: 15px; margin: 0; }
+.ul-card-section-heading > span { color: var(--text-muted); font-size: 12px; }
+.ul-card-empty { background: var(--bg-surface); border: 1px dashed var(--border); border-radius: 14px; color: var(--text-muted); font-size: 13px; padding: 46px 24px; text-align: center; }
+.ul-user-card-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); }
+.ul-user-card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 14px; color: var(--text-primary); cursor: pointer; display: flex; flex-direction: column; min-height: 200px; overflow: hidden; padding: 18px; text-align: left; transition: border-color .15s, box-shadow .15s, transform .15s; }
+.ul-user-card:hover { border-color: var(--accent); box-shadow: 0 8px 28px #0002; transform: translateY(-2px); }
+.ul-user-card:focus-visible, .ul-back-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.ul-user-card-top { align-items: center; display: flex; justify-content: space-between; gap: 10px; margin-bottom: 16px; }
+.ul-user-avatar { align-items: center; background: color-mix(in srgb, var(--accent) 18%, var(--bg-elevated)); border-radius: 10px; color: var(--accent); display: flex; font-size: 18px; font-weight: 700; height: 40px; justify-content: center; width: 40px; }
+.ul-user-card-status { background: var(--bg-elevated); border-radius: 20px; color: var(--text-muted); font-size: 11px; padding: 5px 9px; }
+.ul-user-card-name { font-size: 17px; line-height: 1.3; overflow-wrap: anywhere; }
+.ul-user-card-stats { color: var(--text-muted); display: flex; flex-wrap: wrap; font-size: 12px; gap: 6px 12px; margin: 9px 0 16px; }
+.ul-user-card-stats b { color: var(--text-primary); }
+.ul-user-card-pause { color: var(--danger); font-size: 11px; margin: 0 0 14px; }
+.ul-user-card-open { align-items: center; border-top: 1px solid var(--border); color: var(--accent); display: flex; font-size: 12px; font-weight: 600; justify-content: space-between; margin-top: auto; padding-top: 12px; width: 100%; }
+.ul-detail-view { display: flex; flex: 1; flex-direction: column; margin: 0 auto; max-width: 1480px; min-height: 0; padding: 12px 24px 18px; width: 100%; }
+.ul-back-button { align-items: center; align-self: flex-start; background: transparent; border: 0; color: var(--accent); cursor: pointer; display: flex; font: inherit; font-size: 12px; font-weight: 600; gap: 7px; margin-bottom: 8px; padding: 6px 0; }
+.ul-detail-view .ul-live-track-pane { flex: 1; }
+@media (max-width: 700px) {
+  .ul-card-view { padding: 16px 14px 32px; }
+  .ul-card-view-header { align-items: stretch; gap: 18px; margin-bottom: 26px; }
+  .ul-card-view-header .ul-recipient-status { width: 100%; }
+  .ul-user-card-grid { gap: 12px; grid-template-columns: 1fr; }
+  .ul-user-card { min-height: 178px; }
+  .ul-detail-view { padding: 10px 14px 16px; }
+}
+
 /* Centre the initial transfer state within the available page, including narrow screens. */
 .transfers-loading {
   align-items: center;
