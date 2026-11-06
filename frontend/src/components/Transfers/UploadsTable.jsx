@@ -313,7 +313,7 @@ const UploadsTable = ({
     if (!currentUsernames.has(username)) lastActiveAt.current.delete(username);
   }
 
-  const downloadingUsers = [];
+  const uploadingUsers = [];
   const waitingUsers = [];
   for (const recipient of queueUsers) {
     if (recipient.activeCount > 0)
@@ -323,7 +323,7 @@ const UploadsTable = ({
       lastActive !== undefined && now - lastActive < recentUploadGraceMs;
     const group =
       recipient.activeCount > 0 || recentlyActive
-        ? downloadingUsers
+        ? uploadingUsers
         : waitingUsers;
     group.push(recipient);
   }
@@ -331,21 +331,22 @@ const UploadsTable = ({
   const waitingPresence = useWaitingPresence(waitingUsers);
   const userGroups = [
     {
-      label: 'Downloading',
-      empty: 'No users downloading.',
-      users: downloadingUsers,
+      label: 'Uploading',
+      empty: 'No active uploads.',
+      users: uploadingUsers,
     },
     { label: 'Waiting', empty: 'No users waiting.', users: waitingUsers },
   ];
   const [recipientStatus, setRecipientStatus] = useState(() => {
     try {
       const saved = prefs.get(recipientStatusPreference);
+      if (saved === 'Downloading') return 'Uploading';
       if (userGroups.some((group) => group.label === saved)) return saved;
     } catch {
       // Browser storage may be unavailable; the dropdown must still work.
     }
 
-    return 'Downloading';
+    return 'Uploading';
   });
   const [openedUsername, setOpenedUsername] = useState(null);
   const showingDetails = openedUsername !== null;
@@ -460,8 +461,8 @@ const UploadsTable = ({
             <div>
               <p className="ul-eyebrow">Live uploads</p>
               <h1>
-                {recipientStatus === 'Downloading'
-                  ? 'People downloading from you'
+                {recipientStatus === 'Uploading'
+                  ? "People you're uploading to"
                   : 'People waiting for your music'}
               </h1>
               <p>Choose a person to see their uploads and waiting tracks.</p>
@@ -522,8 +523,8 @@ const UploadsTable = ({
                           username={recipient.username}
                         />
                         <span className="ul-user-card-status">
-                          {visibleGroup.label === 'Downloading'
-                            ? 'Downloading'
+                          {visibleGroup.label === 'Uploading'
+                            ? 'Uploading'
                             : status}
                         </span>
                       </span>
@@ -533,7 +534,7 @@ const UploadsTable = ({
                       <span className="ul-user-card-stats">
                         {activeCount > 0 && (
                           <span>
-                            <b>{activeCount}</b> downloading
+                            <b>{activeCount}</b> uploading
                           </span>
                         )}
                         <span>
@@ -566,7 +567,7 @@ const UploadsTable = ({
             className="ul-back-button"
             onClick={() => {
               setOpenedUsername(null);
-              setRecipientStatus('Downloading');
+              setRecipientStatus('Uploading');
             }}
             type="button"
           >

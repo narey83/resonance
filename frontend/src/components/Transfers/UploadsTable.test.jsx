@@ -113,12 +113,12 @@ describe('Uploads recipient cards', () => {
     jest.restoreAllMocks();
   });
 
-  it('keeps connecting transfers under the Downloading label', async () => {
+  it('keeps connecting transfers under the Uploading label', async () => {
     expect.hasAssertions();
     await render();
     expect(
       container.querySelector('.ul-recipient-status').textContent,
-    ).toContain('Downloading (2)');
+    ).toContain('Uploading (2)');
     expect(
       Array.from(
         container.querySelectorAll('.ul-user-card-name'),
@@ -131,7 +131,7 @@ describe('Uploads recipient cards', () => {
         container.querySelectorAll('.ul-user-card-status'),
         (node) => node.textContent,
       ),
-    ).toEqual(['Downloading', 'Downloading']);
+    ).toEqual(['Uploading', 'Uploading']);
     expect(
       Array.from(
         container.querySelectorAll('.ul-user-card-stats'),
@@ -144,7 +144,7 @@ describe('Uploads recipient cards', () => {
         container.querySelectorAll('[role="menuitemradio"]'),
         (node) => node.value,
       ),
-    ).toEqual(['Downloading', 'Waiting']);
+    ).toEqual(['Uploading', 'Waiting']);
   });
 
   it('shows peer profile pictures, keeps initials as a fallback, and keeps controls separate from opening', async () => {
@@ -178,7 +178,7 @@ describe('Uploads recipient cards', () => {
     expect(listenerCard.querySelector('.ul-user-avatar').textContent).toBe('L');
   });
 
-  it('holds a recipient in Downloading across short gaps, then returns them to Waiting', async () => {
+  it('holds a recipient in Uploading across short gaps, then returns them to Waiting', async () => {
     expect.hasAssertions();
     const now = jest.spyOn(Date, 'now').mockReturnValue(100_000);
     await render({ queueUsers: users.slice(0, 2) });
@@ -187,12 +187,12 @@ describe('Uploads recipient cards', () => {
     await render({ queueUsers: [idle, users[1]] });
     expect(
       container.querySelector('.ul-recipient-status').textContent,
-    ).toContain('Downloading (1)');
+    ).toContain('Uploading (1)');
     expect(container.querySelector('.ul-user-card-name').textContent).toBe(
       'listener',
     );
     expect(container.querySelector('.ul-user-card-status').textContent).toBe(
-      'Downloading',
+      'Uploading',
     );
     now.mockReturnValue(129_999);
     await render({ queueUsers: [idle, users[1]] });
@@ -201,12 +201,12 @@ describe('Uploads recipient cards', () => {
     await render({ queueUsers: [idle, users[1]] });
     expect(
       container.querySelector('.ul-recipient-status').textContent,
-    ).toContain('Downloading (0)');
+    ).toContain('Uploading (0)');
     chooseStatus('Waiting');
     expect(container.querySelectorAll('.ul-user-card')).toHaveLength(2);
   });
 
-  it('shows waiting cards and presence, then returns to downloading cards after closing details', async () => {
+  it('shows waiting cards and presence, then returns to uploading cards after closing details', async () => {
     expect.hasAssertions();
     getStatuses.mockResolvedValue({ other: { presence: 'Online' } });
     await render();
@@ -226,7 +226,7 @@ describe('Uploads recipient cards', () => {
     expect(container.querySelector('.ul-detail-view')).toBeNull();
     expect(
       container.querySelector('.ul-recipient-status').textContent,
-    ).toContain('Downloading (2)');
+    ).toContain('Uploading (2)');
   });
 
   it('requests another recipient only after opening their card and keeps stale tracks hidden', async () => {
@@ -262,7 +262,15 @@ describe('Uploads recipient cards', () => {
     await render();
     expect(
       container.querySelector('.ul-recipient-status').textContent,
-    ).toContain('Downloading (2)');
+    ).toContain('Uploading (2)');
+    act(() => {
+      ReactDOM.unmountComponentAtNode(container);
+    });
+    prefs.get.mockReturnValue('Downloading');
+    await render();
+    expect(
+      container.querySelector('.ul-recipient-status').textContent,
+    ).toContain('Uploading (2)');
     expect(prefs.set).not.toHaveBeenCalled();
   });
 
@@ -323,7 +331,7 @@ describe('Uploads recipient cards', () => {
   it('shows an empty card state without loading a detail pane', async () => {
     expect.hasAssertions();
     await render({ queueUsers: [], selectedUsername: null, transfers: [] });
-    expect(container.textContent).toContain('No users downloading.');
+    expect(container.textContent).toContain('No active uploads.');
     expect(container.querySelector('.ul-user-card')).toBeNull();
     expect(container.querySelector('.ul-complete-table')).toBeNull();
   });
@@ -399,7 +407,7 @@ describe('Uploads recipient cards', () => {
     summary.focus();
     act(() => Simulate.keyDown(summary, { key: 'ArrowDown' }));
     expect(dropdown.open).toBe(true);
-    expect(document.activeElement.value).toBe('Downloading');
+    expect(document.activeElement.value).toBe('Uploading');
     act(() => Simulate.keyDown(document.activeElement, { key: 'ArrowDown' }));
     expect(document.activeElement.value).toBe('Waiting');
     act(() => Simulate.keyDown(document.activeElement, { key: 'Escape' }));
