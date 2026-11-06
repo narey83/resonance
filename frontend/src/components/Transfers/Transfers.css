@@ -1118,13 +1118,19 @@
 .ul-card-section-heading > span { color: var(--text-muted); font-size: 12px; }
 .ul-card-empty { background: var(--bg-surface); border: 1px dashed var(--border); border-radius: 14px; color: var(--text-muted); font-size: 13px; padding: 46px 24px; text-align: center; }
 .ul-user-card-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); }
-.ul-user-card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 14px; color: var(--text-primary); cursor: pointer; display: flex; flex-direction: column; min-height: 200px; overflow: hidden; padding: 18px; text-align: left; transition: border-color .15s, box-shadow .15s, transform .15s; }
+.ul-user-card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 14px; color: var(--text-primary); display: flex; flex-direction: column; min-height: 200px; padding: 18px; position: relative; text-align: left; transition: border-color .15s, box-shadow .15s, transform .15s; }
 .ul-user-card:hover { border-color: var(--accent); box-shadow: 0 8px 28px #0002; transform: translateY(-2px); }
-.ul-user-card:focus-visible, .ul-back-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.ul-user-card:focus-within, .ul-back-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.ul-user-card-hitbox { background: transparent; border: 0; border-radius: inherit; cursor: pointer; inset: 0; position: absolute; z-index: 1; }
+.ul-user-card-hitbox:focus-visible { outline: 0; }
 .ul-user-card-top { align-items: center; display: flex; justify-content: space-between; gap: 10px; margin-bottom: 16px; }
-.ul-user-avatar { align-items: center; background: color-mix(in srgb, var(--accent) 18%, var(--bg-elevated)); border-radius: 10px; color: var(--accent); display: flex; font-size: 18px; font-weight: 700; height: 40px; justify-content: center; width: 40px; }
+.ul-user-avatar { align-items: center; background: color-mix(in srgb, var(--accent) 18%, var(--bg-elevated)); border-radius: 10px; color: var(--accent); display: flex; flex-shrink: 0; font-size: 18px; font-weight: 700; height: 40px; justify-content: center; overflow: hidden; width: 40px; }
+.ul-user-avatar img { height: 100%; object-fit: cover; width: 100%; }
 .ul-user-card-status { background: var(--bg-elevated); border-radius: 20px; color: var(--text-muted); font-size: 11px; padding: 5px 9px; }
-.ul-user-card-name { font-size: 17px; line-height: 1.3; overflow-wrap: anywhere; }
+.ul-user-card-name { font-size: 17px; line-height: 1.3; min-width: 0; pointer-events: none; position: relative; z-index: 2; }
+.ul-user-card-name .ulink-root { flex-wrap: wrap; }
+.ul-user-card-name .ulink-name { flex: 0 1 auto; font-weight: 700; max-width: 100%; overflow-wrap: anywhere; white-space: normal; }
+.ul-user-card-name .ulink-icon-btn { pointer-events: auto; }
 .ul-user-card-stats { color: var(--text-muted); display: flex; flex-wrap: wrap; font-size: 12px; gap: 6px 12px; margin: 9px 0 16px; }
 .ul-user-card-stats b { color: var(--text-primary); }
 .ul-user-card-pause { color: var(--danger); font-size: 11px; margin: 0 0 14px; }

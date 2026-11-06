@@ -1,6 +1,6 @@
 import * as prefs from '../../lib/prefs';
 import { getUploadFolder } from '../../lib/transfers';
-import { getStatuses } from '../../lib/users';
+import { getInfo, getStatuses } from '../../lib/users';
 import UploadsTable from './UploadsTable';
 import React from 'react';
 import ReactDOM from 'react-dom';
@@ -12,11 +12,19 @@ jest.mock('../../lib/transfers', () => ({
 }));
 jest.mock('../../lib/prefs', () => ({ get: jest.fn(), set: jest.fn() }));
 jest.mock('../../lib/users', () => ({
+  getInfo: jest.fn().mockResolvedValue({ data: { hasPicture: false } }),
   getStatuses: jest.fn().mockResolvedValue({}),
 }));
 jest.mock('../Shared', () => ({
   UsernameLink: ({ username }) => (
-    <span className="test-user-controls">{username}</span>
+    <span className="test-user-controls">
+      {username}
+      <button
+        aria-label={`Chat with ${username}`}
+        onClick={(event) => event.stopPropagation()}
+        type="button"
+      />
+    </span>
   ),
 }));
 jest.mock('@tanstack/react-virtual', () => ({
@@ -94,6 +102,7 @@ describe('Uploads recipient cards', () => {
     prefs.get.mockReset().mockReturnValue(null);
     prefs.set.mockReset();
     getStatuses.mockReset().mockResolvedValue({});
+    getInfo.mockReset().mockResolvedValue({ data: { hasPicture: false } });
     getUploadFolder.mockReset();
   });
   afterEach(() => {
@@ -136,6 +145,37 @@ describe('Uploads recipient cards', () => {
         (node) => node.value,
       ),
     ).toEqual(['Downloading', 'Waiting']);
+  });
+
+  it('shows peer profile pictures, keeps initials as a fallback, and keeps controls separate from opening', async () => {
+    expect.hasAssertions();
+    const infoByUser = {
+      listener: { hasPicture: true, picture: 'aGVsbG8=' },
+      connecting: { hasPicture: false },
+    };
+    getInfo.mockImplementation(({ username }) =>
+      Promise.resolve({ data: infoByUser[username] }),
+    );
+    const onSelectUploadUser = jest.fn();
+    await render({ onSelectUploadUser });
+    const listenerCard = container.querySelector('.ul-user-card');
+    expect(listenerCard.querySelector('.ul-user-avatar img').src).toBe(
+      'data:image/jpeg;base64,aGVsbG8=',
+    );
+    expect(container.querySelectorAll('.ul-user-avatar img')).toHaveLength(1);
+    expect(container.querySelectorAll('.ul-user-avatar')[1].textContent).toBe(
+      'C',
+    );
+    expect(listenerCard.querySelector('button button')).toBeNull();
+    act(() =>
+      Simulate.click(listenerCard.querySelector('.test-user-controls button')),
+    );
+    expect(container.querySelector('.ul-detail-view')).toBeNull();
+    expect(onSelectUploadUser).not.toHaveBeenCalled();
+    act(() =>
+      Simulate.error(listenerCard.querySelector('.ul-user-avatar img')),
+    );
+    expect(listenerCard.querySelector('.ul-user-avatar').textContent).toBe('L');
   });
 
   it('holds a recipient in Downloading across short gaps, then returns them to Waiting', async () => {

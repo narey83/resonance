@@ -28,7 +28,7 @@
 // </copyright>
 import * as prefs from '../../lib/prefs';
 import { getUploadFolder, isStateCancellable } from '../../lib/transfers';
-import { getStatuses } from '../../lib/users';
+import { getInfo, getStatuses } from '../../lib/users';
 import { formatBitrate, formatBytes, getFileName } from '../../lib/util';
 import { UsernameLink } from '../Shared';
 import RecipientStatusDropdown from './RecipientStatusDropdown';
@@ -177,6 +177,66 @@ const useWaitingPresence = (waitingUsers) => {
   return statuses;
 };
 
+const RecipientAvatar = ({ pictureCache, username }) => {
+  const avatarRef = useRef(null);
+  const [visible, setVisible] = useState(false);
+  const [picture, setPicture] = useState(() =>
+    pictureCache.current.get(username),
+  );
+
+  useEffect(() => {
+    if (pictureCache.current.has(username)) return undefined;
+    if (typeof IntersectionObserver === 'undefined') {
+      setVisible(true);
+      return undefined;
+    }
+
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        setVisible(true);
+        observer.disconnect();
+      }
+    });
+    observer.observe(avatarRef.current);
+    return () => observer.disconnect();
+  }, [pictureCache, username]);
+
+  useEffect(() => {
+    if (!visible || pictureCache.current.has(username)) return undefined;
+    const controller = new AbortController();
+    getInfo({ username, signal: controller.signal, timeout: 10_000 })
+      .then(({ data }) => {
+        if (controller.signal.aborted) return;
+        const next = data?.hasPicture && data.picture ? data.picture : null;
+        pictureCache.current.set(username, next);
+        if (next) setPicture(next);
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [pictureCache, username, visible]);
+
+  return (
+    <span
+      aria-hidden="true"
+      className="ul-user-avatar"
+      ref={avatarRef}
+    >
+      {picture ? (
+        <img
+          alt=""
+          onError={() => {
+            pictureCache.current.set(username, null);
+            setPicture(null);
+          }}
+          src={`data:image/jpeg;base64,${picture}`}
+        />
+      ) : (
+        username.slice(0, 1).toUpperCase()
+      )}
+    </span>
+  );
+};
+
 const useFolderTracks = (username, expanded, folders) => {
   const openFolders = JSON.stringify(
     (folders ?? []).filter(({ directory }) => expanded.folders.has(directory)),
@@ -245,6 +305,7 @@ const UploadsTable = ({
   const selected = queueUsers.find(
     (recipient) => recipient.username === selectedUsername,
   );
+  const pictureCache = useRef(new Map());
   const lastActiveAt = useRef(new Map());
   const now = Date.now();
   const currentUsernames = new Set(queueUsers.map(({ username }) => username));
@@ -441,33 +502,34 @@ const UploadsTable = ({
                     : 'Status unknown';
 
                   return (
-                    <button
-                      aria-label={`View uploads for ${recipient.username}`}
+                    <article
                       className="ul-user-card"
                       key={recipient.username}
-                      onClick={() => {
-                        setOpenedUsername(recipient.username);
-                        if (recipient.username !== selectedUsername)
-                          onSelectUploadUser?.(recipient.username);
-                      }}
-                      type="button"
                     >
+                      <button
+                        aria-label={`View uploads for ${recipient.username}`}
+                        className="ul-user-card-hitbox"
+                        onClick={() => {
+                          setOpenedUsername(recipient.username);
+                          if (recipient.username !== selectedUsername)
+                            onSelectUploadUser?.(recipient.username);
+                        }}
+                        type="button"
+                      />
                       <span className="ul-user-card-top">
-                        <span
-                          aria-hidden="true"
-                          className="ul-user-avatar"
-                        >
-                          {recipient.username.slice(0, 1).toUpperCase()}
-                        </span>
+                        <RecipientAvatar
+                          pictureCache={pictureCache}
+                          username={recipient.username}
+                        />
                         <span className="ul-user-card-status">
                           {visibleGroup.label === 'Downloading'
                             ? 'Downloading'
                             : status}
                         </span>
                       </span>
-                      <strong className="ul-user-card-name">
-                        {recipient.username}
-                      </strong>
+                      <span className="ul-user-card-name">
+                        <UsernameLink username={recipient.username} />
+                      </span>
                       <span className="ul-user-card-stats">
                         {activeCount > 0 && (
                           <span>
@@ -491,7 +553,7 @@ const UploadsTable = ({
                       <span className="ul-user-card-open">
                         View details <ChevronRight size={16} />
                       </span>
-                    </button>
+                    </article>
                   );
                 })}
               </div>
