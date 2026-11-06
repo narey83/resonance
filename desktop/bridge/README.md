@@ -182,7 +182,7 @@ The instance serves signed release metadata at
 `/api/v0/bridge/updates/{os}/{arch}` and its binary at the corresponding
 `/binary?sha256=...` endpoint. Both require a current pairing. `os` is `darwin`,
 `windows` or `linux`; `arch` is `arm64` or `amd64`. The default release directory is `bridge-releases` under the backend application
-directory (`RESONANCE_APP_DIR`, or the executable directory). Override it with an
+directory (`--app-dir`/`APP_DIR`, or the executable directory). Override it with an
 absolute `RESONANCE_BRIDGE_RELEASE_ROOT` and mount that release directory
 read-only into its backend. Publish binaries before discovery metadata. Existing
 USB-only tokens do not authorize updates; pair Bridge in Settings first.

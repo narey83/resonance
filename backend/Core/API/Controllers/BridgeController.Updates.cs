@@ -124,7 +124,7 @@ namespace resonance.Core.API
         {
             var root = Environment.GetEnvironmentVariable("RESONANCE_BRIDGE_RELEASE_ROOT")
                 ?? Environment.GetEnvironmentVariable("RESONANCE_HELPER_RELEASE_ROOT")
-                ?? Path.Combine(Environment.GetEnvironmentVariable("RESONANCE_APP_DIR") ?? AppContext.BaseDirectory, "bridge-releases");
+                ?? Path.Combine(Program.AppDirectory ?? Environment.GetEnvironmentVariable("RESONANCE_APP_DIR") ?? AppContext.BaseDirectory, "bridge-releases");
             return Path.IsPathFullyQualified(root) ? root : null;
         }
 

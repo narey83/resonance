@@ -65,6 +65,34 @@ public class BridgeUpdateTests : IDisposable
     }
 
     [Fact]
+    public void Update_Uses_The_Active_Application_Directory_When_No_Release_Root_Is_Configured()
+    {
+        var appDirectory = Path.Combine(root, "app");
+        var releaseDirectory = Path.Combine(appDirectory, "bridge-releases");
+        Directory.CreateDirectory(releaseDirectory);
+        var manifest = Path.Combine(releaseDirectory, "darwin-arm64.json");
+        File.WriteAllText(manifest, "{}");
+
+        var appDirectoryProperty = typeof(global::resonance.Program).GetProperty("AppDirectory", BindingFlags.Public | BindingFlags.Static)!;
+        var previousAppDirectory = appDirectoryProperty.GetValue(null);
+        var previousExplicitRoot = Environment.GetEnvironmentVariable("RESONANCE_BRIDGE_RELEASE_ROOT");
+        Environment.SetEnvironmentVariable("RESONANCE_BRIDGE_RELEASE_ROOT", null);
+        Environment.SetEnvironmentVariable("RESONANCE_HELPER_RELEASE_ROOT", null);
+        appDirectoryProperty.SetValue(null, appDirectory);
+        try
+        {
+            var result = Assert.IsType<PhysicalFileResult>(Controller(DateTimeOffset.UtcNow.AddHours(1)).BridgeUpdate("darwin", "arm64"));
+            Assert.Equal(manifest, result.FileName);
+        }
+        finally
+        {
+            appDirectoryProperty.SetValue(null, previousAppDirectory);
+            Environment.SetEnvironmentVariable("RESONANCE_BRIDGE_RELEASE_ROOT", previousExplicitRoot);
+            Environment.SetEnvironmentVariable("RESONANCE_HELPER_RELEASE_ROOT", root);
+        }
+    }
+
+    [Fact]
     public void A_Single_Bridge_Pairing_Can_Be_Revoked_By_Its_Public_Id()
     {
         var controller = Controller(DateTimeOffset.UtcNow.AddHours(1));
