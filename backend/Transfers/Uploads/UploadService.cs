@@ -775,8 +775,9 @@ namespace resonance.Transfers.Uploads
                         .Where(t => t.EndedAt == null || !t.State.HasFlag(TransferStates.Completed))
                         .ExecuteUpdate(setters => setters
                             .SetProperty(t => t.State, TransferStates.Completed | TransferStates.Cancelled)
+                            .SetProperty(t => t.StateDescription, "Completed, Cancelled")
                             .SetProperty(t => t.EndedAt, now)
-                            .SetProperty(t => t.Exception, "Recipient disconnected")
+                            .SetProperty(t => t.Exception, Transfer.ForgottenUploadReason)
                             .SetProperty(t => t.Removed, true));
                 }
                 catch

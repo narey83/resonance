@@ -164,6 +164,30 @@ public class OverviewReportCorrectnessTests : IDisposable
     }
 
     [Fact]
+    public void HistoryForgetsDisconnectedUploadsButRetainsOtherRemovedTransfers()
+    {
+        Add("abandoned", TransferStates.Cancelled, 0, 0, start.AddHours(3));
+        Add("retained", TransferStates.Errored, 0, 0, start.AddHours(2));
+        Add("ordinary", TransferStates.Succeeded, 100, 0, start.AddHours(1));
+        var abandoned = context.Transfers.Local.Single(item => item.Username == "abandoned");
+        abandoned.Removed = true;
+        abandoned.Exception = global::resonance.Transfers.Transfer.ForgottenUploadReason;
+        context.Transfers.Local.Single(item => item.Username == "retained").Removed = true;
+        context.SaveChanges();
+
+        // A bulk update can leave the text used by the UI stale on existing rows.
+        context.Database.ExecuteSqlRaw("UPDATE Transfers SET StateDescription = 'Queued, Locally' WHERE Id = {0}", abandoned.Id);
+
+        var history = reports.GetTransferHistory(direction: TransferDirection.Upload, start: start, end: end, limit: 1);
+        Assert.Equal("retained", Assert.Single(history.Items).Username);
+        Assert.Equal(2, history.Total);
+        var next = reports.GetTransferHistory(direction: TransferDirection.Upload, start: start, end: end, limit: 1, offset: 1);
+        Assert.Equal("ordinary", Assert.Single(next.Items).Username);
+        Assert.DoesNotContain(reports.GetTransferHistory(direction: TransferDirection.Upload, state: "Failed", start: start, end: end).Items,
+            item => item.Username == "abandoned");
+    }
+
+    [Fact]
     public void UserPagesSortsAndSearchesReuseOneAggregateSnapshot()
     {
         Add("alpha", TransferStates.Succeeded, 200, 100, start.AddHours(1));

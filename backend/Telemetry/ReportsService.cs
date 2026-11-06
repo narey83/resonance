@@ -1235,9 +1235,12 @@ public class ReportsService
             // Retried-and-superseded attempts are hidden from this list -- a later row's RetryOfId
             // points back at them -- so the failure appears as a footnote on the successful retry
             // rather than as its own unresolved-looking row. Retry details are fetched on demand.
+            // Removed also marks ordinary retention records, which remain useful in history.
+            // Exclude only uploads deliberately forgotten after their recipient disconnected.
             var where = $@"
                 WHERE ""EndedAt"" IS NOT NULL
                     AND ""EndedAt"" BETWEEN @Start AND @End
+                    AND NOT (t.""Removed"" AND COALESCE(t.""Exception"", '') = @AbandonedReason)
                     AND NOT EXISTS (SELECT 1 FROM transfers.""Transfers"" retry WHERE retry.""RetryOfId"" = t.""Id"")
                     {dirClause}
                     {stateClause}
@@ -1296,6 +1299,7 @@ public class ReportsService
             var where = $@"
                 WHERE EndedAt IS NOT NULL
                     AND EndedAt BETWEEN @Start AND @End
+                    AND NOT (t.Removed = 1 AND COALESCE(t.Exception, '') = @AbandonedReason)
                     AND NOT EXISTS (SELECT 1 FROM Transfers retry WHERE retry.RetryOfId = t.Id)
                     {dirClause}
                     {stateClause}
@@ -1342,6 +1346,7 @@ public class ReportsService
             Start = s,
             End = e,
             Search = search is not null ? "%" + EscapeLike(search) + "%" : null,
+            AbandonedReason = global::resonance.Transfers.Transfer.ForgottenUploadReason,
             Limit = limit + 1,
             Offset = offset,
         };

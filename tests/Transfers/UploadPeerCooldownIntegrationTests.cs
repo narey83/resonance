@@ -43,6 +43,8 @@ public sealed partial class UploadEnqueueTests
             Assert.All(db.Transfers.Where(t => t.Username == "alice"), t =>
             {
                 Assert.Equal(TransferStates.Completed | TransferStates.Cancelled, t.State);
+                Assert.Equal("Completed, Cancelled", t.StateDescription);
+                Assert.Equal(Transfer.ForgottenUploadReason, t.Exception);
                 Assert.True(t.Removed);
                 Assert.NotNull(t.EndedAt);
             });
@@ -73,6 +75,8 @@ public sealed partial class UploadEnqueueTests
         using var db = factory.CreateDbContext();
         var saved = Assert.Single(db.Transfers);
         Assert.Equal(TransferStates.Completed | TransferStates.Cancelled, saved.State);
+        Assert.Equal("Completed, Cancelled", saved.StateDescription);
+        Assert.Equal(Transfer.ForgottenUploadReason, saved.Exception);
         Assert.True(saved.Removed);
     }
 

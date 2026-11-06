@@ -43,6 +43,8 @@ namespace resonance.Transfers
 
     public class Transfer
     {
+        public const string ForgottenUploadReason = "Recipient disconnected";
+
         public Guid? BatchId { get; init; } = null;
         public string? DestinationFolder { get; init; } = null;
 
@@ -65,8 +67,9 @@ namespace resonance.Transfers
         /// </summary>
         /// <remarks>
         ///     This is a hack to get the string into the database. *DO NOT* use this property in code
-        ///     and especially **DO NOT** set the value. The getter and setter can't be protected because
-        ///     EF Core needs them to be public.
+        ///     and especially **DO NOT** set the value during normal tracked updates. Bulk updates
+        ///     bypass SaveChanges and must set this field alongside State. The getter and setter can't
+        ///     be protected because EF Core needs them to be public.
         /// </remarks>
         public string? StateDescription { get; set; }
         public DateTime RequestedAt { get; set; }
