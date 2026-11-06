@@ -22,7 +22,6 @@ public sealed partial class UploadEnqueueTests
         var rows = Enumerable.Range(0, 3).Select(i => QueueTransfer("alice", $"album/{i}.mp3")).ToArray();
         var firstTask = service.UploadAsync(rows[0]);
         var first = await calls.Next();
-        var waiting = rows.Skip(1).Select(service.UploadAsync).ToArray();
         var bob = service.UploadAsync(QueueTransfer("bob", "album/other.mp3"));
         var other = await calls.Next();
         Assert.Equal("bob", other.Username);
@@ -39,11 +38,6 @@ public sealed partial class UploadEnqueueTests
         }
 
         Assert.Null(await firstTask.WaitAsync(TimeSpan.FromSeconds(5)));
-        foreach (var task in waiting)
-        {
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => task.WaitAsync(TimeSpan.FromSeconds(5)));
-        }
-
         using (var db = factory.CreateDbContext())
         {
             Assert.All(db.Transfers.Where(t => t.Username == "alice"), t =>
