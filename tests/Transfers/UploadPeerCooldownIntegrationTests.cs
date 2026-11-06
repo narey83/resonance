@@ -12,483 +12,222 @@ public sealed partial class UploadEnqueueTests
 {
     [Theory]
     [InlineData(null)]
-    [InlineData("Connection reset by peer")]
     [InlineData("Broken pipe")]
-    public async Task FailuresAcrossFilesPauseThePeerKeepExistingAndNewFilesQueuedAndAllowOtherPeers(string? writeError)
+    [InlineData("Connection reset by peer")]
+    public async Task ConnectionOrWriteFailureForgetsRecipientAndOtherPeersContinue(string? writeError)
     {
         var clock = new ManualUploadClock();
         var calls = new UploadCalls();
         await using var service = CreateService([], upload: calls.Upload, cooldown: new UploadPeerCooldown(clock));
-        var rows = Enumerable.Range(0, 4).Select(i => QueueTransfer("alice", $"album/{i}.mp3")).ToArray();
-        var tasks = new List<Task<Transfer>>();
-        try
+        var rows = Enumerable.Range(0, 3).Select(i => QueueTransfer("alice", $"album/{i}.mp3")).ToArray();
+        var firstTask = service.UploadAsync(rows[0]);
+        var first = await calls.Next();
+        var waiting = rows.Skip(1).Select(service.UploadAsync).ToArray();
+        var bob = service.UploadAsync(QueueTransfer("bob", "album/other.mp3"));
+        var other = await calls.Next();
+        Assert.Equal("bob", other.Username);
+
+        if (writeError is not null)
         {
-            tasks.Add(service.UploadAsync(rows[0]));
-            var first = await calls.Next();
-            tasks.AddRange(rows.Skip(1).Select(service.UploadAsync));
-            Fail(first);
-            for (var i = 1; i < 3; i++)
+            first.ChangeState(TransferStates.InProgress, bytes: 10, started: clock.GetUtcNow().UtcDateTime);
+            first.ChangeState(TransferStates.Completed | TransferStates.Errored, bytes: 10);
+            first.Completion.SetException(new TransferException($"Transfer failed: Write error: Unable to write data to the transport connection: {writeError}."));
+        }
+        else
+        {
+            first.FailConnection();
+        }
+
+        Assert.Null(await firstTask.WaitAsync(TimeSpan.FromSeconds(5)));
+        foreach (var task in waiting)
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => task.WaitAsync(TimeSpan.FromSeconds(5)));
+        }
+
+        using (var db = factory.CreateDbContext())
+        {
+            Assert.All(db.Transfers.Where(t => t.Username == "alice"), t =>
             {
-                var next = await calls.Next();
-                Assert.Equal(rows[i].Filename, next.Filename);
-                Fail(next);
-            }
-
-            Assert.Equal(TimeSpan.FromMinutes(5), await clock.NextDelay());
-            Assert.Equal(3, calls.Count);
-            Assert.Equal(0, service.Queue.GetGroupInfo(Application.DefaultGroup).UsedSlots);
-            AssertAllQueued(rows);
-            Assert.Equal(clock.GetUtcNow().AddMinutes(5), Assert.Single(service.ListQueuePage("alice", 0, 10).Users).RetryAt);
-            Assert.Null(await service.EnqueueAsync("alice", rows[0].Filename));
-            var newRow = await service.EnqueueAsync("alice", "album/new.mp3");
-            Assert.NotNull(newRow);
-            AssertAllQueued([newRow!]);
-            using (var db = factory.CreateDbContext()) { Assert.Equal(5, db.Transfers.Count()); }
-
-            var bob = QueueTransfer("bob", "album/other.mp3");
-            var otherPeer = service.UploadAsync(bob);
-            var otherCall = await calls.Next();
-            Assert.Equal("bob", otherCall.Username);
-            otherCall.Succeed(clock);
-            Assert.Equal(TransferStates.Completed | TransferStates.Succeeded, (await otherPeer)!.State);
-            Assert.Equal(4, calls.Count);
-            AssertAllQueued(rows);
-
-            clock.Advance(TimeSpan.FromMinutes(5));
-            var probe = await calls.Next();
-            Assert.Equal(rows[3].Filename, probe.Filename);
-            probe.Succeed(clock);
-            Assert.NotNull(await tasks[3].WaitAsync(TimeSpan.FromSeconds(5)));
-            var resumed = await calls.Next();
-            Assert.Equal("alice", resumed.Username);
-            Assert.Equal(rows[0].Filename, resumed.Filename);
-            Assert.Null(Assert.Single(service.ListQueuePage("alice", 0, 10).Users).RetryAt);
-        }
-        finally
-        {
-            await service.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));
-            await Task.WhenAll(tasks).WaitAsync(TimeSpan.FromSeconds(5));
+                Assert.Equal(TransferStates.Completed | TransferStates.Cancelled, t.State);
+                Assert.True(t.Removed);
+                Assert.NotNull(t.EndedAt);
+            });
         }
 
-        AssertAllQueued(rows.Take(3));
+        Assert.DoesNotContain(service.ListQueuePage("alice", 0, 10).Users, u => u.Username == "alice");
+        Assert.Equal(1, service.Queue.GetGroupInfo(Application.DefaultGroup).UsedSlots);
+        other.Succeed(clock);
+        Assert.NotNull(await bob.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.Equal(2, calls.Count);
 
-        void Fail(PendingUpload call)
-        {
-            var started = clock.GetUtcNow().UtcDateTime;
-            if (writeError is null)
-            {
-                call.ChangeState(TransferStates.Completed | TransferStates.Errored, started: started);
-                call.FailConnection();
-                return;
-            }
-
-            call.ChangeState(TransferStates.InProgress, bytes: 10, started: started);
-            call.ChangeState(TransferStates.Completed | TransferStates.Errored, bytes: 10, started: started);
-            call.Completion.SetException(new TransferException(
-                $"Transfer failed: Write error: Unable to write data to the transport connection: {writeError}."));
-        }
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task CooldownRetriesTheSameRecordAndLateCallbacksCannotUndoParkingOrSuccess(bool timeout)
-    {
-        var clock = new ManualUploadClock();
-        var calls = new UploadCalls();
-        await using var service = CreateService([], upload: calls.Upload, cooldown: new UploadPeerCooldown(clock));
-        var row = QueueTransfer("alice", "album/retry.mp3");
-        var task = service.UploadAsync(row);
-        PendingUpload? stale = null;
-        try
-        {
-            for (var i = 0; i < 3; i++)
-            {
-                stale = await calls.Next();
-                stale.ChangeState(TransferStates.Initializing);
-                if (timeout) { stale.Completion.SetException(new InvalidOperationException("upload failed", new TimeoutException("connection timed out"))); }
-                else { stale.FailConnection(); }
-            }
-
-            await clock.NextDelay();
-            stale!.ChangeState(TransferStates.Completed | TransferStates.Errored);
-            AssertAllQueued([row]);
-            clock.Advance(TimeSpan.FromMinutes(5));
-            var probe = await calls.Next();
-            Assert.Equal(row.Filename, probe.Filename);
-            Assert.False(task.IsCompleted);
-            Assert.Equal(4, calls.Count);
-            probe.Succeed(clock);
-            Assert.Equal(row.Id, (await task.WaitAsync(TimeSpan.FromSeconds(5)))!.Id);
-            stale.ChangeState(TransferStates.Completed | TransferStates.Errored);
-            using var db = factory.CreateDbContext();
-            var saved = Assert.Single(db.Transfers);
-            Assert.Equal(TransferStates.Completed | TransferStates.Succeeded, saved.State);
-            Assert.Equal(100, saved.BytesTransferred);
-            Assert.Null(saved.Exception);
-        }
-        finally
-        {
-            await service.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));
-            await task.WaitAsync(TimeSpan.FromSeconds(5));
-        }
+        var requestedAgain = await service.EnqueueAsync("alice", rows[0].Filename);
+        Assert.NotNull(requestedAgain);
+        Assert.NotEqual(rows[0].Id, requestedAgain!.Id);
+        (await calls.Next()).Succeed(clock);
+        await WaitUntilCompleted(requestedAgain.Id);
     }
 
     [Fact]
-    public async Task FailedProbeKeepsTheFileQueuedAndPausesAgainWithoutTryingTheNextFile()
-    {
-        var clock = new ManualUploadClock();
-        var calls = new UploadCalls();
-        await using var service = CreateService([], upload: calls.Upload, cooldown: new UploadPeerCooldown(clock));
-        var row = QueueTransfer("alice", "album/retry.mp3");
-        var task = service.UploadAsync(row);
-        try
-        {
-            for (var i = 0; i < 3; i++) { (await calls.Next()).FailConnection(); }
-            await clock.NextDelay();
-            clock.Advance(TimeSpan.FromMinutes(5));
-            (await calls.Next()).FailConnection();
-            Assert.Equal(TimeSpan.FromMinutes(5), await clock.NextDelay());
-            Assert.Equal(4, calls.Count);
-            AssertAllQueued([row]);
-            Assert.True(service.TryCancel(row.Id));
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => task);
-            using var db = factory.CreateDbContext();
-            var saved = Assert.Single(db.Transfers);
-            Assert.Equal(TransferStates.Completed | TransferStates.Cancelled, saved.State);
-            Assert.NotNull(saved.EndedAt);
-        }
-        finally
-        {
-            await service.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));
-        }
-    }
-
-    [Fact]
-    public async Task ConnectionFailureWithSdkStartTimestampStillKeepsTheOriginalFileQueued()
+    public async Task OfflinePresenceForgetsPendingUploadsWithoutStartingThem()
     {
         var calls = new UploadCalls();
-        var clock = new ManualUploadClock();
-        await using var service = CreateService([], upload: calls.Upload, cooldown: new UploadPeerCooldown(clock));
-        var row = QueueTransfer("alice", "album/unreachable.mp3");
-        var task = service.UploadAsync(row);
-        try
-        {
-            for (var i = 0; i < 3; i++)
-            {
-                var attempt = await calls.Next();
-                // Soulseek.NET stamps a start time even when connection establishment fails.
-                attempt.ChangeState(TransferStates.Completed | TransferStates.Errored, started: clock.GetUtcNow().UtcDateTime);
-                attempt.FailConnection();
-            }
-
-            Assert.Equal(TimeSpan.FromMinutes(5), await clock.NextDelay());
-            AssertAllQueued([row]);
-            Assert.False(task.IsCompleted);
-            Assert.Equal(3, calls.Count);
-        }
-        finally
-        {
-            await service.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));
-            await task.WaitAsync(TimeSpan.FromSeconds(5));
-        }
-    }
-
-    [Theory]
-    [InlineData(0)]
-    [InlineData(10)]
-    public async Task ConnectionFailureAfterProgressRemainsTerminalAndIsNotRetried(long bytes)
-    {
-        var calls = new UploadCalls();
-        var clock = new ManualUploadClock();
-        await using var service = CreateService([], upload: calls.Upload, cooldown: new UploadPeerCooldown(clock));
-        var row = QueueTransfer("alice", "album/interrupted.mp3");
-        var task = service.UploadAsync(row);
-        var attempt = await calls.Next();
-        attempt.ChangeState(TransferStates.InProgress, bytes: bytes, started: clock.GetUtcNow().UtcDateTime);
-        attempt.FailConnection();
-        await Assert.ThrowsAnyAsync<Exception>(() => task);
+        await using var service = CreateService([], upload: calls.Upload, cachedPresence: UserPresence.Offline);
+        var row = QueueTransfer("alice", "album/offline.mp3");
+        Assert.Null(await service.UploadAsync(row));
+        Assert.Equal(0, calls.Count);
+        Assert.DoesNotContain(service.ListQueuePage("alice", 0, 10).Users, u => u.Username == "alice");
         using var db = factory.CreateDbContext();
         var saved = Assert.Single(db.Transfers);
-        Assert.Equal(TransferStates.Completed | TransferStates.Errored, saved.State);
-        Assert.Equal(bytes, saved.BytesTransferred);
-        Assert.NotNull(saved.EndedAt);
-        Assert.Equal(1, calls.Count);
+        Assert.Equal(TransferStates.Completed | TransferStates.Cancelled, saved.State);
+        Assert.True(saved.Removed);
     }
 
     [Fact]
-    public async Task OfflinePeerIsParkedWithoutAnAutomaticRetryLoop()
+    public async Task OfflineStatusForgetsIdleQueueAndAllowsLaterRequest()
     {
         var calls = new UploadCalls();
+        var clock = new ManualUploadClock();
         await using var service = CreateService([], upload: calls.Upload);
-        var row = QueueTransfer("alice", "album/offline.mp3");
-        var task = service.UploadAsync(row);
-        (await calls.Next()).Completion.SetException(new UserOfflineException("peer is offline"));
-        Assert.Null(await task);
-        AssertAllQueued([row]);
-        Assert.Equal(1, calls.Count);
+        var old = QueueTransfer("alice", "album/offline.mp3");
+        Assert.Equal(1, service.ForgetPendingUploads("alice"));
+        Assert.Empty(service.ListQueuePage("alice", 0, 10).Users);
+
+        var replacement = await service.EnqueueAsync("alice", old.Filename);
+        Assert.NotNull(replacement);
+        Assert.NotEqual(old.Id, replacement!.Id);
+        (await calls.Next()).Succeed(clock);
+        await WaitUntilCompleted(replacement.Id);
+        using var db = factory.CreateDbContext();
+        Assert.True(db.Transfers.Single(t => t.Id == old.Id).Removed);
+        Assert.Equal(TransferStates.Completed | TransferStates.Succeeded,
+            db.Transfers.Single(t => t.Id == replacement.Id).State);
     }
 
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task OfflineSdkCallbacksCannotFailOrOverwriteAParkedUpload(bool wrapped)
+    public async Task OfflineSdkCallbackCannotResurrectForgottenUpload(bool wrapped)
     {
         var calls = new UploadCalls();
-        var clock = new ManualUploadClock();
         await using var service = CreateService([], upload: calls.Upload);
         var row = QueueTransfer("alice", "album/offline-callback.mp3");
         var task = service.UploadAsync(row);
         var attempt = await calls.Next();
         attempt.ChangeState(TransferStates.Initializing);
-        attempt.ChangeState(TransferStates.Completed | TransferStates.Errored, started: clock.GetUtcNow().UtcDateTime);
         Exception offline = new UserOfflineException("peer is offline");
         attempt.Completion.SetException(wrapped ? new InvalidOperationException("upload failed", offline) : offline);
         Assert.Null(await task.WaitAsync(TimeSpan.FromSeconds(5)));
-        AssertAllQueued([row]);
         attempt.ChangeState(TransferStates.Completed | TransferStates.Errored);
-        AssertAllQueued([row]);
-        Assert.Equal(1, calls.Count);
-        var resumed = service.UploadAsync(row);
-        (await calls.Next()).Succeed(clock);
-        Assert.Equal(row.Id, (await resumed.WaitAsync(TimeSpan.FromSeconds(5)))!.Id);
         using var db = factory.CreateDbContext();
         var saved = Assert.Single(db.Transfers);
-        Assert.Equal(TransferStates.Completed | TransferStates.Succeeded, saved.State);
-    }
-
-    [Theory]
-    [InlineData(0)]
-    [InlineData(10)]
-    public async Task OfflineFailureAfterDataFlowRemainsTerminal(long bytes)
-    {
-        var calls = new UploadCalls();
-        await using var service = CreateService([], upload: calls.Upload);
-        var row = QueueTransfer("alice", "album/offline-in-progress.mp3");
-        var task = service.UploadAsync(row);
-        var attempt = await calls.Next();
-        attempt.ChangeState(TransferStates.InProgress, bytes: bytes, started: DateTime.UtcNow);
-        attempt.Completion.SetException(new UserOfflineException("peer is offline"));
-        await Assert.ThrowsAnyAsync<Exception>(() => task);
-        using var db = factory.CreateDbContext();
-        var saved = Assert.Single(db.Transfers);
-        Assert.True(saved.State.HasFlag(TransferStates.Completed));
-        Assert.NotNull(saved.EndedAt);
-        Assert.Equal(bytes, saved.BytesTransferred);
-        Assert.Equal(1, calls.Count);
-    }
-
-    [Fact]
-    public async Task LingeringCompletedSdkEntryDoesNotFailOrDuplicateTheQueuedRetry()
-    {
-        var calls = new UploadCalls();
-        var tracked = new ObservedUploads();
-        var clock = new ManualUploadClock();
-        await using var service = CreateService(tracked, upload: calls.Upload);
-        var row = QueueTransfer("alice", "album/lingering.mp3");
-        var task = service.UploadAsync(row);
-        try
-        {
-            var first = await calls.Next();
-            tracked.Add(new Soulseek.Transfer(TransferDirection.Upload, "alice", row.Filename, 1,
-                TransferStates.Completed | TransferStates.Errored, 100, 0));
-            first.FailConnection();
-            await tracked.Observed.Task.WaitAsync(TimeSpan.FromSeconds(5));
-            Assert.Equal(1, calls.Count);
-            AssertAllQueued([row]);
-            tracked.Clear();
-            (await calls.Next()).Succeed(clock);
-            Assert.NotNull(await task.WaitAsync(TimeSpan.FromSeconds(5)));
-            using var db = factory.CreateDbContext();
-            Assert.Equal(TransferStates.Completed | TransferStates.Succeeded, Assert.Single(db.Transfers).State);
-        }
-        finally
-        {
-            await service.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));
-            await task.WaitAsync(TimeSpan.FromSeconds(5));
-        }
-    }
-
-    [Theory]
-    [InlineData("io")]
-    [InlineData("empty-aggregate")]
-    [InlineData("mixed-aggregate")]
-    [InlineData("cancelled")]
-    [InlineData("application")]
-    public async Task NonConnectionFailureInsideSdkRemainsTerminalInsteadOfTriggeringPeerRetries(string kind)
-    {
-        var calls = new UploadCalls();
-        await using var service = CreateService([], upload: calls.Upload);
-        var row = QueueTransfer("alice", "album/io-error.mp3");
-        var task = service.UploadAsync(row);
-        Exception failure = kind switch
-        {
-            "io" => new IOException("local file read failed"),
-            "empty-aggregate" => new AggregateException(),
-            "mixed-aggregate" => new AggregateException(new ConnectionException("connection failed"), new IOException("local failure")),
-            "cancelled" => new OperationCanceledException(),
-            _ => new InvalidOperationException("application failure"),
-        };
-        (await calls.Next()).Completion.SetException(failure);
-        Assert.Same(failure, await Assert.ThrowsAnyAsync<Exception>(() => task));
-        using var db = factory.CreateDbContext();
-        var saved = Assert.Single(db.Transfers);
-        Assert.Equal(TransferStates.Completed | (kind == "cancelled" ? TransferStates.Cancelled : TransferStates.Errored), saved.State);
-        Assert.Equal(1, calls.Count);
+        Assert.True(saved.Removed);
+        Assert.Equal(TransferStates.Completed | TransferStates.Cancelled, saved.State);
     }
 
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task PeerCancellationsPauseRemainingQueueAndCancelledProbePausesAgain(bool wrapped)
+    public async Task RemoteCancellationForgetsOtherPendingFiles(bool wrapped)
     {
-        var clock = new ManualUploadClock();
         var calls = new UploadCalls();
-        await using var service = CreateService([], upload: calls.Upload, cooldown: new UploadPeerCooldown(clock));
-        var rows = Enumerable.Range(0, 5).Select(i => QueueTransfer("alice", $"album/cancel-{i}.mp3")).ToArray();
-        var tasks = new List<Task<Transfer>>();
-        try
+        await using var service = CreateService([], upload: calls.Upload);
+        var cancelled = QueueTransfer("alice", "album/cancelled.mp3");
+        var waiting = QueueTransfer("alice", "album/waiting.mp3");
+        var firstTask = service.UploadAsync(cancelled);
+        var first = await calls.Next();
+        var waitingTask = service.UploadAsync(waiting);
+        first.ChangeState(TransferStates.Completed | TransferStates.Rejected);
+        Exception rejection = new TransferRejectedException("Transfer rejected: Cancelled");
+        first.Completion.SetException(wrapped ? new InvalidOperationException("upload failed", rejection) : rejection);
+        await Assert.ThrowsAnyAsync<Exception>(() => firstTask.WaitAsync(TimeSpan.FromSeconds(5)));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waitingTask.WaitAsync(TimeSpan.FromSeconds(5)));
+        using var db = factory.CreateDbContext();
+        Assert.Equal(TransferStates.Completed | TransferStates.Rejected, db.Transfers.Single(t => t.Id == cancelled.Id).State);
+        var forgotten = db.Transfers.Single(t => t.Id == waiting.Id);
+        Assert.Equal(TransferStates.Completed | TransferStates.Cancelled, forgotten.State);
+        Assert.True(forgotten.Removed);
+        Assert.DoesNotContain(service.ListQueuePage("alice", 0, 10).Users, u => u.Username == "alice");
+        Assert.Equal(1, calls.Count);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(10)]
+    public async Task DisconnectAfterProgressForgetsRemainingFiles(long bytes)
+    {
+        var calls = new UploadCalls();
+        await using var service = CreateService([], upload: calls.Upload);
+        var row = QueueTransfer("alice", "album/interrupted.mp3");
+        var waiting = QueueTransfer("alice", "album/next.mp3");
+        var task = service.UploadAsync(row);
+        var attempt = await calls.Next();
+        attempt.ChangeState(TransferStates.InProgress, bytes: bytes, started: DateTime.UtcNow);
+        attempt.FailConnection();
+        await Assert.ThrowsAnyAsync<Exception>(() => task.WaitAsync(TimeSpan.FromSeconds(5)));
+        using var db = factory.CreateDbContext();
+        Assert.Equal(TransferStates.Completed | TransferStates.Errored, db.Transfers.Single(t => t.Id == row.Id).State);
+        var forgotten = db.Transfers.Single(t => t.Id == waiting.Id);
+        Assert.True(forgotten.Removed);
+        Assert.Equal(TransferStates.Completed | TransferStates.Cancelled, forgotten.State);
+    }
+
+    [Theory]
+    [InlineData("local")]
+    [InlineData("cancelled-locally")]
+    [InlineData("other-rejection")]
+    [InlineData("mixed")]
+    [InlineData("empty-aggregate")]
+    [InlineData("application")]
+    public async Task NonDisconnectFailurePreservesOtherQueuedFiles(string kind)
+    {
+        var calls = new UploadCalls();
+        await using var service = CreateService([], upload: calls.Upload);
+        var row = QueueTransfer("alice", "album/error.mp3");
+        var waiting = QueueTransfer("alice", "album/waiting.mp3");
+        var task = service.UploadAsync(row);
+        Exception failure = kind switch
         {
-            tasks.Add(service.UploadAsync(rows[0]));
-            var first = await calls.Next();
-            tasks.AddRange(rows.Skip(1).Select(service.UploadAsync));
-            Reject(first);
-            await Assert.ThrowsAnyAsync<Exception>(() => tasks[0]);
-            for (var i = 1; i < 3; i++)
-            {
-                Reject(await calls.Next());
-                await Assert.ThrowsAnyAsync<Exception>(() => tasks[i]);
-            }
-
-            Assert.Equal(TimeSpan.FromMinutes(5), await clock.NextDelay());
-            Assert.Equal(3, calls.Count);
-            AssertAllQueued(rows.Skip(3));
-            Assert.Equal(0, service.Queue.GetGroupInfo(Application.DefaultGroup).UsedSlots);
-            Assert.Equal(clock.GetUtcNow().AddMinutes(5), Assert.Single(service.ListQueuePage("alice", 0, 10).Users).RetryAt);
-            var added = await service.EnqueueAsync("alice", "album/added-during-pause.mp3");
-            Assert.NotNull(added);
-            AssertAllQueued([added!]);
-            using (var db = factory.CreateDbContext())
-            {
-                Assert.Equal(6, db.Transfers.Count());
-                Assert.All(db.Transfers.Where(t => t.EndedAt != null), t =>
-                    Assert.Equal(TransferStates.Completed | TransferStates.Rejected, t.State));
-            }
-
-            var bob = service.UploadAsync(QueueTransfer("bob", "album/other.mp3"));
-            (await calls.Next()).Succeed(clock);
-            Assert.NotNull(await bob.WaitAsync(TimeSpan.FromSeconds(5)));
-
-            clock.Advance(TimeSpan.FromMinutes(5));
-            var probe = await calls.Next();
-            Assert.Equal(rows[3].Filename, probe.Filename);
-            Reject(probe);
-            await Assert.ThrowsAnyAsync<Exception>(() => tasks[3]);
-            Assert.Equal(TimeSpan.FromMinutes(5), await clock.NextDelay());
-            Assert.Equal(5, calls.Count);
-            AssertAllQueued([rows[4], added!]);
-
-            clock.Advance(TimeSpan.FromMinutes(5));
-            (await calls.Next()).Succeed(clock);
-            Assert.NotNull(await tasks[4].WaitAsync(TimeSpan.FromSeconds(5)));
-            var resumed = await calls.Next();
-            Assert.Equal(added!.Filename, resumed.Filename);
-            Assert.Null(Assert.Single(service.ListQueuePage("alice", 0, 10).Users).RetryAt);
-        }
-        finally
-        {
-            await service.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));
-            foreach (var task in tasks)
-            {
-                try
-                {
-                    await task.WaitAsync(TimeSpan.FromSeconds(5));
-                }
-                catch (Exception) when (task.IsFaulted || task.IsCanceled)
-                {
-                    // Rejections were asserted above; shutdown may cancel the remaining work.
-                }
-            }
-        }
-
-        void Reject(PendingUpload call)
-        {
-            call.ChangeState(TransferStates.Completed | TransferStates.Rejected);
-            Exception rejection = new TransferRejectedException("Transfer rejected: Cancelled");
-            call.Completion.SetException(wrapped ? new InvalidOperationException("upload failed", rejection) : rejection);
-        }
+            "local" => new IOException("local file read failed"),
+            "cancelled-locally" => new OperationCanceledException(),
+            "other-rejection" => new TransferRejectedException("Transfer rejected: Complete"),
+            "mixed" => new AggregateException(new ConnectionException("connection failed"), new IOException("local failure")),
+            "empty-aggregate" => new AggregateException(),
+            _ => new InvalidOperationException("application failure"),
+        };
+        (await calls.Next()).Completion.SetException(failure);
+        Assert.Same(failure, await Assert.ThrowsAnyAsync<Exception>(() => task.WaitAsync(TimeSpan.FromSeconds(5))));
+        AssertAllQueued([waiting]);
     }
 
     [Fact]
-    public async Task SuccessfulUploadClearsTheRecipientCancellationStreak()
+    public async Task RepeatedCancellationDoesNotHoldARecipientCooldown()
     {
-        var clock = new ManualUploadClock();
         var calls = new UploadCalls();
-        var cooldown = new UploadPeerCooldown(clock);
+        var cooldown = new UploadPeerCooldown(new ManualUploadClock());
         await using var service = CreateService([], upload: calls.Upload, cooldown: cooldown);
-        for (var i = 0; i < 6; i++)
+        for (var i = 0; i < 3; i++)
         {
-            var task = service.UploadAsync(QueueTransfer("alice", $"album/reset-{i}.mp3"));
-            var call = await calls.Next();
-            if (i % 3 == 2)
-            {
-                call.Succeed(clock);
-                Assert.NotNull(await task.WaitAsync(TimeSpan.FromSeconds(5)));
-            }
-            else
-            {
-                call.Completion.SetException(new TransferRejectedException("Transfer rejected: Cancelled"));
-                await Assert.ThrowsAsync<TransferRejectedException>(() => task);
-            }
-
+            var row = QueueTransfer("alice", $"album/retry-{i}.mp3");
+            var task = service.UploadAsync(row);
+            (await calls.Next()).Completion.SetException(new TransferRejectedException("Transfer rejected: Cancelled"));
+            await Assert.ThrowsAnyAsync<Exception>(() => task.WaitAsync(TimeSpan.FromSeconds(5)));
             Assert.Null(cooldown.GetRetryAt("alice"));
         }
     }
 
-    [Fact]
-    public async Task CancellationAndConnectionFailuresShareTheRecipientThreshold()
+    private async Task WaitUntilCompleted(Guid id)
     {
-        var clock = new ManualUploadClock();
-        var calls = new UploadCalls();
-        var cooldown = new UploadPeerCooldown(clock);
-        await using var service = CreateService([], upload: calls.Upload, cooldown: cooldown);
-        var row = QueueTransfer("alice", "album/mixed.mp3");
-        var task = service.UploadAsync(row);
-        (await calls.Next()).FailConnection();
-        (await calls.Next()).FailConnection();
-        (await calls.Next()).Completion.SetException(new TransferRejectedException("Transfer rejected: Cancelled"));
-        await Assert.ThrowsAsync<TransferRejectedException>(() => task);
-        Assert.Equal(clock.GetUtcNow().AddMinutes(5), cooldown.GetRetryAt("alice"));
-        Assert.Equal(3, calls.Count);
-    }
-
-    [Theory]
-    [InlineData("Complete")]
-    [InlineData("File not shared")]
-    [InlineData("local")]
-    [InlineData("mixed")]
-    public async Task OtherRejectionsAndLocalCancellationDoNotPauseRecipient(string reason)
-    {
-        var clock = new ManualUploadClock();
-        var calls = new UploadCalls();
-        var cooldown = new UploadPeerCooldown(clock);
-        await using var service = CreateService([], upload: calls.Upload, cooldown: cooldown);
-        for (var i = 0; i < 4; i++)
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while (true)
         {
-            var task = service.UploadAsync(QueueTransfer("alice", $"album/other-{i}.mp3"));
-            var call = await calls.Next();
-            Exception failure = reason switch
+            using var db = factory.CreateDbContext();
+            if (db.Transfers.Single(t => t.Id == id).State.HasFlag(TransferStates.Completed))
             {
-                "local" => new OperationCanceledException(),
-                "mixed" => new AggregateException(new TransferRejectedException("Transfer rejected: Cancelled"), new IOException("local failure")),
-                _ => new TransferRejectedException($"Transfer rejected: {reason}"),
-            };
-            call.Completion.SetException(failure);
-            Assert.Same(failure, await Assert.ThrowsAnyAsync<Exception>(() => task));
-        }
+                return;
+            }
 
-        Assert.Equal(4, calls.Count);
-        Assert.Null(cooldown.GetRetryAt("alice"));
+            await Task.Delay(10, timeout.Token);
+        }
     }
 
     private Transfer QueueTransfer(string username, string filename)

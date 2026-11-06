@@ -1903,9 +1903,21 @@ namespace resonance
                 return;
             }
 
-            // Keep offline peers' files queued until they return or the user cancels them.
-            // A temporary absence during deployment must not silently erase a recovered backlog.
-            if (args.Presence == UserPresence.Offline || (!OptionsAtStartup.Flags.NoShareScan && !Shares.StateMonitor.CurrentValue.Ready))
+            if (args.Presence == UserPresence.Offline)
+            {
+                try
+                {
+                    Transfers.Uploads.ForgetPendingUploads(args.Username);
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "Failed to forget uploads to offline recipient {Username}: {Message}", args.Username, ex.Message);
+                }
+
+                return;
+            }
+
+            if (!OptionsAtStartup.Flags.NoShareScan && !Shares.StateMonitor.CurrentValue.Ready)
             {
                 return;
             }
@@ -1916,7 +1928,7 @@ namespace resonance
             }
             catch (Exception ex)
             {
-                Log.Warning(ex, "Failed to resume parked uploads to {Username}: {Message}", args.Username, ex.Message);
+                Log.Warning(ex, "Failed to resume queued uploads to {Username}: {Message}", args.Username, ex.Message);
             }
         }
 

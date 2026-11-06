@@ -78,35 +78,40 @@ public sealed partial class UploadEnqueueTests
     }
 
     [Fact]
-    public async Task CooldownQueueSurvivesServiceShutdownAndNewInstanceResumesTheSameRows()
+    public async Task DisconnectedQueueDoesNotSurviveServiceRestart()
     {
         using var storage = new RecoveryDatabase();
         var queued = Enumerable.Range(0, 4).Select(i => StoredUpload($"album/{i}.mp3")).ToArray();
         storage.Save(queued);
-        var clock = new ManualUploadClock();
         var oldCalls = new UploadCalls();
-        await using (var old = CreateService([], upload: oldCalls.Upload, cooldown: new UploadPeerCooldown(clock), contexts: storage))
+        await using (var old = CreateService([], upload: oldCalls.Upload, contexts: storage))
         {
             var tasks = queued.Select(old.UploadAsync).ToArray();
-            for (var i = 0; i < 3; i++) { (await oldCalls.Next()).FailConnection(); }
-            await clock.NextDelay();
+            (await oldCalls.Next()).FailConnection();
+            Assert.Null(await tasks[0].WaitAsync(TimeSpan.FromSeconds(5)));
+            foreach (var task in tasks.Skip(1))
+            {
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => task.WaitAsync(TimeSpan.FromSeconds(5)));
+            }
+
             await old.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));
-            await Task.WhenAll(tasks).WaitAsync(TimeSpan.FromSeconds(5));
         }
 
         var newCalls = new UploadCalls();
         await using var replacement = CreateService([], upload: newCalls.Upload, contexts: storage);
         var retained = await UploadRestartRecovery.PrepareAsync(replacement, "Application shut down", CancellationToken.None);
-        Assert.Equal(4, retained.Count);
+        Assert.Empty(retained);
         Assert.Equal(0, newCalls.Count);
         Assert.Empty(UploadRestartRecovery.Resume(replacement, retained));
-        for (var i = 0; i < 4; i++) { (await newCalls.Next()).Succeed(clock); }
-        await WaitForSuccess(storage, 4);
         await replacement.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));
         using var reopened = storage.CreateDbContext();
         var saved = reopened.Transfers.ToList();
         Assert.True(queued.Select(t => t.Id).ToHashSet().SetEquals(saved.Select(t => t.Id)));
-        Assert.All(saved, row => Assert.Equal(TransferStates.Completed | TransferStates.Succeeded, row.State));
+        Assert.All(saved, row =>
+        {
+            Assert.Equal(TransferStates.Completed | TransferStates.Cancelled, row.State);
+            Assert.True(row.Removed);
+        });
     }
 
     [Fact]
@@ -214,7 +219,7 @@ public sealed partial class UploadEnqueueTests
     }
 
     [Fact]
-    public async Task OfflineRecoveredFileRemainsQueuedUntilThePeerReturns()
+    public async Task OfflineRecoveredFileIsForgottenAndNotRestored()
     {
         using var storage = new RecoveryDatabase();
         var row = StoredUpload("offline.mp3");
@@ -230,13 +235,13 @@ public sealed partial class UploadEnqueueTests
 
         await using var online = CreateService([], upload: calls.Upload, contexts: storage);
         var restored = await UploadRestartRecovery.PrepareAsync(online, "Application shut down", CancellationToken.None);
-        Assert.Equal(row.Id, Assert.Single(restored));
+        Assert.Empty(restored);
         Assert.Empty(UploadRestartRecovery.Resume(online, restored));
-        (await calls.Next()).Succeed(new ManualUploadClock());
-        await WaitForSuccess(storage, 1);
-        await online.StopAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(0, calls.Count);
         using var db = storage.CreateDbContext();
-        Assert.Equal(TransferStates.Completed | TransferStates.Succeeded, Assert.Single(db.Transfers).State);
+        var forgotten = Assert.Single(db.Transfers);
+        Assert.Equal(TransferStates.Completed | TransferStates.Cancelled, forgotten.State);
+        Assert.True(forgotten.Removed);
     }
 
     [Fact]

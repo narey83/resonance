@@ -1,4 +1,15 @@
-# Upload peer connection cooldown
+# Upload peer connection cooldown (historical)
+
+In the source as of 6 November 2026, the cooldown described below is superseded. When a
+recipient goes offline, disconnects during an upload, or remotely cancels a
+transfer, Resonance cancels and hides that recipient's unfinished upload queue.
+It does not retain a retry time or automatically resume those files. A later
+request from the recipient creates a new transfer. Completed transfer history
+is unaffected; forgotten unfinished rows are retained as removed, cancelled
+records for database consistency and are excluded from the active queue.
+
+The following describes the earlier implementation and its 4 November
+deployment verification.
 
 An upload peer that cannot establish connections can consume time on thousands of
 files even when each individual file has failed only once. The upload service now

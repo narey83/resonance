@@ -104,20 +104,15 @@ namespace resonance.Transfers.Uploads
         Task<Transfer> UploadAsync(Transfer transfer);
 
         /// <summary>
-        ///     Restarts any uploads to the specified <paramref name="username"/> that were parked because the user was
-        ///     offline when the upload was last attempted.
+        ///     Restarts queued uploads to the specified <paramref name="username"/>, such as those recovered after restart.
         /// </summary>
         /// <param name="username">The username of the user.</param>
         /// <returns>The number of uploads for which a restart was scheduled.</returns>
         int ResumeParkedUploads(string username);
 
-        /// <summary>
-        ///     Cancels any uploads to the specified <paramref name="username"/> that are parked because the user was
-        ///     offline when the upload was last attempted.
-        /// </summary>
-        /// <param name="username">The username of the user.</param>
-        /// <returns>The number of uploads that were cancelled.</returns>
-        int PurgeParkedUploads(string username);
+        /// <summary>Forgets unfinished uploads to a disconnected recipient so a later request starts fresh.</summary>
+        /// <returns>The number of uploads forgotten.</returns>
+        int ForgetPendingUploads(string username);
 
         /// <summary>
         ///     Finds a single upload matching the specified <paramref name="expression"/>.
@@ -288,6 +283,8 @@ namespace resonance.Transfers.Uploads
 
         private FileService Files { get; }
         private ConcurrentDictionary<Guid, CancellationTokenSource> CancellationTokens { get; } = new ConcurrentDictionary<Guid, CancellationTokenSource>();
+        private ConcurrentDictionary<Guid, byte> ForgottenInFlight { get; } = new();
+        private object ForgetUpdateGate { get; } = new();
         private ISoulseekClient Client { get; set; }
         private IDbContextFactory<TransfersDbContext> ContextFactory { get; }
         private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", Logs.Transfers.Uploads);
@@ -437,36 +434,26 @@ namespace resonance.Transfers.Uploads
                     }
                     catch (Exception ex) when (!cts.IsCancellationRequested && IsPeerCancellation(ex))
                     {
-                        // The cancelled file remains terminal. Hold this peer's lease until the
-                        // cooldown is recorded so the next queued file cannot bypass the pause.
-                        var cancellationRetryAt = peer.RecordFailure();
-                        if (cancellationRetryAt.HasValue)
-                        {
-                            Log.Warning("Pausing uploads to {Username} after repeated peer cancellations or connection failures until {RetryAt:u}; remaining files stay queued", transfer.Username, cancellationRetryAt.Value);
-                        }
-
+                        ForgetPendingUploads(transfer.Username);
+                        throw;
+                    }
+                    catch (Exception ex) when (!cts.IsCancellationRequested && (IsConnectionFailure(ex) || IsInterruptedUploadWrite(ex) || IsUserOffline(ex)))
+                    {
+                        ForgetPendingUploads(transfer.Username);
                         throw;
                     }
 
-                    if (attempt.ConnectionFailure is null)
+                    if (attempt.ConnectionFailure is not null || attempt.Transfer is null)
                     {
-                        if (attempt.Transfer?.State.HasFlag(TransferStates.Succeeded) == true)
+                        if (!Work.Token.IsCancellationRequested)
                         {
-                            peer.RecordSuccess();
+                            ForgetPendingUploads(transfer.Username);
                         }
 
-                        return attempt.Transfer;
+                        return null;
                     }
 
-                    var retryAt = peer.RecordFailure();
-                    if (retryAt.HasValue)
-                    {
-                        Log.Warning("Pausing uploads to {Username} after repeated connection failures or peer cancellations until {RetryAt:u}; files remain queued. Last error: {Message}", transfer.Username, retryAt.Value, attempt.ConnectionFailure.Message);
-                    }
-                    else
-                    {
-                        Log.Warning("Connection attempt to {Username} failed: {Message}; keeping {Filename} queued for retry", transfer.Username, attempt.ConnectionFailure.Message, transfer.Filename);
-                    }
+                    return attempt.Transfer;
                 }
             }
             catch (OperationCanceledException) when (Work.Token.IsCancellationRequested)
@@ -484,6 +471,7 @@ namespace resonance.Transfers.Uploads
                 Locks.TryRemove(lockName, out _);
                 CancellationTokens.TryRemove(transfer.Id, out _);
                 Queue.TryComplete(transfer.Username, transfer.Filename);
+                ForgottenInFlight.TryRemove(transfer.Id, out _);
             }
         }
 
@@ -515,9 +503,9 @@ namespace resonance.Transfers.Uploads
                 was assumed not to be asking, but a peer sending us a request is by definition reachable, so the gate
                 mostly fired on a stale presence cache.
 
-                storm protection is instead the existing duplicate check below, which is per-file rather than per-user:
+                duplicate handling is instead the existing check below, which is per-file rather than per-user:
                 the first request for a file does the resolve/insert work, every repeat is a cheap indexed lookup that
-                returns here. an offline peer's transfers are parked by UploadAsync rather than attempted.
+                returns here. UploadAsync forgets the queue if the peer is actually offline.
             */
             var lockName = $"{nameof(EnqueueAsync)}:{username}:{filename}";
 
@@ -562,9 +550,9 @@ namespace resonance.Transfers.Uploads
 
                     /*
                         the peer asking for a file they already have queued is proof they're reachable, so this is also
-                        the cue to restart it if it was parked while they were offline.
+                        the cue to restart it if it was recovered after a process restart.
 
-                        a parked record can't be told apart from a live one by state alone (both sit in Queued | Locally
+                        a recovered record can't be told apart from a live one by state alone (both sit in Queued | Locally
                         until Soulseek.NET reports otherwise), so just start them all: UploadAsync holds a lock per
                         username/filename for as long as it runs, so this is a no-op for anything already in flight.
 
@@ -597,23 +585,6 @@ namespace resonance.Transfers.Uploads
                     // as queued when no active upload can fulfil it; let the peer retry instead.
                     Log.Information("Upload of {Filename} to {Username} deferred while the previous transfer is being released", filename, username);
                     throw new DownloadEnqueueException("Previous upload is finishing cleanup; please retry shortly.");
-                }
-
-                /*
-                    A peer can re-request an upload immediately after a connection error. Repeated
-                    failures for the same peer/file used to create an unbounded succession of records.
-                    Stop admitting new attempts for a short cooldown after three actual network
-                    failures. Offline parked requests never enter this count, nor do manual
-                    cancellations or a file disappearing from the share.
-                */
-                var retryBlockUntil = UploadRetryBlockedUntil(existingRecords, DateTime.UtcNow);
-                if (retryBlockUntil is not null)
-                {
-                    Log.Warning(
-                        "Rejecting repeatedly failing upload of {Filename} to {Username} until {RetryAt:u}",
-                        filename, username, retryBlockUntil.Value);
-                    throw new DownloadEnqueueException(
-                        "Upload cancelled after repeated transfer errors; please retry later.");
                 }
 
                 var repeatBlockUntil = RepeatedUploadBlockedUntil(existingRecords, DateTime.UtcNow);
@@ -736,8 +707,7 @@ namespace resonance.Transfers.Uploads
         }
 
         /// <summary>
-        ///     Restarts any uploads to the specified <paramref name="username"/> that were parked because the user was
-        ///     offline when the upload was last attempted.
+        ///     Restarts queued uploads to the specified <paramref name="username"/>, such as those recovered after restart.
         /// </summary>
         /// <param name="username">The username of the user.</param>
         /// <returns>The number of uploads for which a restart was scheduled.</returns>
@@ -748,7 +718,7 @@ namespace resonance.Transfers.Uploads
                 return 0;
             }
 
-            // as in EnqueueAsync, a parked transfer is indistinguishable from a live one by state alone, so restart
+            // as in EnqueueAsync, a recovered transfer is indistinguishable from a live one by state alone, so restart
             // every queued record and let UploadAsync's per-file lock discard the redundant ones
             var parked = List(
                 t => t.Username == username && t.EndedAt == null && t.State == (TransferStates.Queued | TransferStates.Locally),
@@ -759,7 +729,7 @@ namespace resonance.Transfers.Uploads
                 return 0;
             }
 
-            Log.Information("Resuming {Count} parked upload(s) to {Username}", parked.Count, username);
+            Log.Information("Resuming {Count} queued upload(s) to {Username}", parked.Count, username);
 
             foreach (var transfer in parked)
             {
@@ -769,36 +739,76 @@ namespace resonance.Transfers.Uploads
             return parked.Count;
         }
 
-        /// <summary>
-        ///     Cancels any uploads to the specified <paramref name="username"/> that are parked because the user was
-        ///     offline when the upload was last attempted.
-        /// </summary>
-        /// <param name="username">The username of the user.</param>
-        /// <returns>The number of uploads that were cancelled.</returns>
-        public int PurgeParkedUploads(string username)
+        /// <inheritdoc/>
+        public int ForgetPendingUploads(string username)
         {
             if (string.IsNullOrEmpty(username))
             {
                 return 0;
             }
 
-            var parked = List(
-                t => t.Username == username && t.EndedAt == null && t.State == (TransferStates.Queued | TransferStates.Locally),
-                includeRemoved: false);
-
-            if (parked.Count == 0)
+            int forgotten;
+            Guid[] pending;
+            lock (ForgetUpdateGate)
             {
-                return 0;
+                using var context = ContextFactory.CreateDbContext();
+                pending = context.Transfers
+                    .Where(t => t.Direction == TransferDirection.Upload && t.Username == username && !t.Removed)
+                    .Where(t => t.EndedAt == null || !t.State.HasFlag(TransferStates.Completed))
+                    .Select(t => t.Id).ToArray();
+
+                foreach (var id in pending.Where(CancellationTokens.ContainsKey))
+                {
+                    ForgottenInFlight.TryAdd(id, 0);
+                }
+
+                try
+                {
+                    var now = DateTime.UtcNow;
+                    forgotten = context.Transfers
+                        .Where(t => t.Direction == TransferDirection.Upload && t.Username == username && !t.Removed)
+                        .Where(t => t.EndedAt == null || !t.State.HasFlag(TransferStates.Completed))
+                        .ExecuteUpdate(setters => setters
+                            .SetProperty(t => t.State, TransferStates.Completed | TransferStates.Cancelled)
+                            .SetProperty(t => t.EndedAt, now)
+                            .SetProperty(t => t.Exception, "Recipient disconnected")
+                            .SetProperty(t => t.Removed, true));
+                }
+                catch
+                {
+                    foreach (var id in pending)
+                    {
+                        ForgottenInFlight.TryRemove(id, out _);
+                    }
+
+                    throw;
+                }
             }
 
-            var cancelled = parked.Count(t => TryCancel(t.Id));
-
-            if (cancelled > 0)
+            foreach (var id in pending)
             {
-                Log.Information("Cancelled {Count} parked upload(s) to {Username}, who is offline", cancelled, username);
+                if (CancellationTokens.TryGetValue(id, out var cts))
+                {
+                    try
+                    {
+                        cts.Cancel();
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Warning(ex, "Failed to stop forgotten upload {Id} to {Username}", id, username);
+                    }
+                }
             }
 
-            return cancelled;
+            if (forgotten > 0)
+            {
+                Log.Information("Forgot {Count} unfinished upload(s) to disconnected recipient {Username}", forgotten, username);
+            }
+
+            return forgotten;
         }
 
         /// <summary>
@@ -1039,8 +1049,8 @@ namespace resonance.Transfers.Uploads
             }
 
             /*
-                no token means either the upload already ended, or the record is 'stuck': parked while the peer was
-                offline, or orphaned by a restart. a stuck record is never Completed, and EnqueueAsync refuses to
+                no token means either the upload already ended, or the record is 'stuck' after a restart.
+                a stuck record is never Completed, and EnqueueAsync refuses to
                 enqueue a file that already has a non-completed record -- so leaving it as-is would mean the peer
                 could never request that file again. disposition it here, the same way DownloadService does.
             */
@@ -1091,10 +1101,17 @@ namespace resonance.Transfers.Uploads
         /// <param name="transfer">The transfer to update.</param>
         public void Update(Transfer transfer)
         {
-            using var context = ContextFactory.CreateDbContext();
+            lock (ForgetUpdateGate)
+            {
+                if (ForgottenInFlight.ContainsKey(transfer.Id))
+                {
+                    return;
+                }
 
-            context.Update(transfer);
-            context.SaveChanges();
+                using var context = ContextFactory.CreateDbContext();
+                context.Update(transfer);
+                context.SaveChanges();
+            }
         }
 
         /// <summary>
@@ -1183,41 +1200,6 @@ namespace resonance.Transfers.Uploads
             return blockedUntil > utcNow ? blockedUntil : null;
         }
 
-        /// <summary>
-        ///     Enforces a short peer/file cooldown after repeated real transfer failures.
-        ///     A successful upload resets the failure streak; cancellations, offline parking,
-        ///     and missing files are not evidence of a broken peer connection.
-        /// </summary>
-        private static DateTime? UploadRetryBlockedUntil(IEnumerable<Transfer> records, DateTime utcNow)
-        {
-            const int failureLimit = 3;
-            var window = TimeSpan.FromMinutes(30);
-            var cutoff = utcNow - window;
-            var recent = records
-                .Where(t => t.EndedAt.HasValue && t.EndedAt.Value >= cutoff)
-                .OrderByDescending(t => t.EndedAt.Value)
-                .ToList();
-
-            var lastSuccess = recent.FirstOrDefault(t =>
-                t.State == (TransferStates.Completed | TransferStates.Succeeded))?.EndedAt;
-
-            var failures = recent
-                .Where(t => (!lastSuccess.HasValue || t.EndedAt > lastSuccess)
-                    && (t.State == (TransferStates.Completed | TransferStates.Errored)
-                        || t.State == (TransferStates.Completed | TransferStates.TimedOut)
-                        || t.State == (TransferStates.Completed | TransferStates.Rejected)))
-                .ToList();
-
-            if (failures.Count < failureLimit)
-            {
-                return null;
-            }
-
-            // Count the most recent streak only; the block expires 30 minutes after
-            // its latest failure and does not extend merely because the peer polls.
-            return failures[0].EndedAt.Value + window;
-        }
-
         private static bool IsPeerCancellation(Exception exception)
         {
             for (var error = exception; error is not null; error = error.InnerException)
@@ -1228,8 +1210,8 @@ namespace resonance.Transfers.Uploads
                         && aggregate.Flatten().InnerExceptions.All(IsPeerCancellation);
                 }
 
-                // Only a remote rejection with this reason counts. Local cancellation,
-                // "Complete" and other rejection reasons must not pause the recipient.
+                // Only a remote rejection with this reason means the recipient abandoned
+                // the transfer. Local cancellation and other rejection reasons do not.
                 if (error is TransferRejectedException
                     && string.Equals(error.Message, "Transfer rejected: Cancelled", StringComparison.OrdinalIgnoreCase))
                 {
@@ -1412,18 +1394,12 @@ namespace resonance.Transfers.Uploads
                     now that the user is watched, if their last known presence is offline, don't hand a doomed transfer
                     to Soulseek.NET (which would hold a slot and wait on a long connection timeout before failing).
 
-                    park the transfer rather than failing it: leave the record in Queued | Locally and return without an
-                    in-flight task. a queued upload is meant to survive the peer going offline -- that's what the peer's
-                    place-in-queue polling is for -- so completing it as Errored here means a single dropped connection
-                    terminates every file the peer still had queued. their client reacts by re-requesting the whole
-                    folder, which is exactly the request storm this check was added to avoid.
-
-                    parking keeps the resource win of not holding a slot or a task per waiting file, without throwing
-                    the queue away. see the comment above for what un-parks it.
+                    Return without starting a network transfer. UploadAsync forgets the recipient's
+                    unfinished queue; they can request again after reconnecting.
                 */
                 if (Users.TryGetCachedPresence(transfer.Username, out var presence) && presence == UserPresence.Offline)
                 {
-                    Log.Debug("Parked upload of {Filename} to {Username}; user is offline", transfer.Filename, transfer.Username);
+                    Log.Debug("Upload of {Filename} to {Username} stopped; recipient is offline", transfer.Filename, transfer.Username);
                     return new UploadAttempt(null, null);
                 }
 
@@ -1652,11 +1628,11 @@ namespace resonance.Transfers.Uploads
             }
             catch (Exception ex)
             {
-                // Offline failures before SDK handoff also keep the upload parked. Attempts with
-                // SDK state callbacks are reset under the callback lock by the earlier catch.
+                // UploadAsync forgets the recipient's queue after this offline result.
+                // Attempts with SDK state callbacks are reset under the callback lock above.
                 if (IsUserOffline(ex) && transfer.State == (TransferStates.Queued | TransferStates.Locally))
                 {
-                    Log.Debug("Parked upload of {Filename} to {Username}; user is offline", transfer.Filename, transfer.Username);
+                    Log.Debug("Upload of {Filename} to {Username} stopped; recipient is offline", transfer.Filename, transfer.Username);
                     return new UploadAttempt(null, null);
                 }
 

@@ -67,14 +67,14 @@ public sealed partial class UploadEnqueueTests : IDisposable
     }
 
     [Fact]
-    public async Task ThreeRecentNetworkFailuresRejectAnotherRequestWithoutCreatingAQueueRecord()
+    public async Task ThreeRecentNetworkFailuresAllowAnotherRequest()
     {
         SeedAttempts("alice", "album/track.mp3",
             TransferStates.Errored, TransferStates.TimedOut, TransferStates.Errored);
-        var service = CreateService([]);
-        var error = await Assert.ThrowsAsync<DownloadEnqueueException>(
+        var service = CreateService([], new IOException("share lookup reached"));
+        var error = await Assert.ThrowsAsync<IOException>(
             () => service.EnqueueAsync("alice", "album/track.mp3"));
-        Assert.Contains("repeated transfer errors", error.Message);
+        Assert.Equal("share lookup reached", error.Message);
         using var db = factory.CreateDbContext();
         Assert.Equal(3, db.Transfers.Count());
     }
