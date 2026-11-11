@@ -23,3 +23,22 @@ export const clusterVisiblePeers = (peers, bounds, project, zoom, cellSize) => {
 
   return [...cells.values()];
 };
+
+// Place each member of a grouped marker on concentric clock faces. More peers
+// get larger rings so their click targets remain separate at the current zoom.
+export const radialOffsets = (count) => {
+  const offsets = [];
+  for (let ring = 0; offsets.length < count; ring += 1) {
+    const slots = Math.min(count - offsets.length, 8 + ring * 4);
+    const radius = 56 + ring * 42;
+    for (let slot = 0; slot < slots; slot += 1) {
+      const angle = -Math.PI / 2 + (2 * Math.PI * slot) / slots;
+      offsets.push({
+        x: Math.round(Math.cos(angle) * radius) || 0,
+        y: Math.round(Math.sin(angle) * radius) || 0,
+      });
+    }
+  }
+
+  return offsets;
+};

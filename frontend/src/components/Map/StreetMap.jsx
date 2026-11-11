@@ -2,10 +2,16 @@ import 'leaflet/dist/leaflet.css';
 import './StreetMap.css';
 import { formatBitrate, formatBytes, parseUtcDate } from '../../lib/util';
 import UserReportWindow from '../Overview/UserReportWindow';
-import { clusterVisiblePeers, isLocated } from './location';
+import { clusterVisiblePeers, isLocated, radialOffsets } from './location';
 import { locateLivePeers } from './mapData';
 import L from 'leaflet';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 const TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 const MAX_ZOOM = 19;
@@ -35,9 +41,9 @@ const collectLive = (groups, direction) =>
       ),
     }));
 
-const markerIcon = (count, kind, selected) =>
+const markerIcon = (count, kind, selected, spread = false) =>
   L.divIcon({
-    className: `street-peer street-peer--${kind}${count > 1 ? ' street-peer--cluster' : ''}${selected ? ' street-peer--selected' : ''}`,
+    className: `street-peer street-peer--${kind}${count > 1 ? ' street-peer--cluster' : ''}${selected ? ' street-peer--selected' : ''}${spread ? ' street-peer--spread' : ''}`,
     html: `<span class="street-peer-cross"></span><span class="street-peer-core">${count > 1 ? count : ''}</span>`,
     iconSize: [32, 32],
     iconAnchor: [16, 16],
@@ -67,6 +73,9 @@ const StreetMap = ({
   const mapRef = useRef(null);
   const layerRef = useRef(null);
   const originLayerRef = useRef(null);
+  const flowRendererRef = useRef(null);
+  const spreadLayerRef = useRef(null);
+  const expandedGroupRef = useRef(null);
   const geoCache = useRef(new Map());
   const centeredRef = useRef(false);
   const previousOriginRef = useRef(null);
@@ -75,8 +84,15 @@ const StreetMap = ({
   const [livePeers, setLivePeers] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [reportPeer, setReportPeer] = useState(null);
+  const [expandedGroupKey, setExpandedGroupKey] = useState(null);
   const [mapReady, setMapReady] = useState(false);
   const [tileError, setTileError] = useState(false);
+
+  const closeGroup = useCallback(() => {
+    spreadLayerRef.current?.clearLayers();
+    expandedGroupRef.current = null;
+    setExpandedGroupKey(null);
+  }, []);
 
   const liveCandidates = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -126,6 +142,10 @@ const StreetMap = ({
     ],
     [livePeers, pastPeers, vpnOnly],
   );
+  const peerMembership = useMemo(
+    () => JSON.stringify(peers.map(peerId)),
+    [peers],
+  );
   const selectedPeer = peers.find((peer) => peerId(peer) === selectedId);
   const nearbyPeers = selectedPeer
     ? peers
@@ -156,7 +176,12 @@ const StreetMap = ({
     L.control.zoom({ position: 'bottomright' }).addTo(map);
     layerRef.current = L.layerGroup().addTo(map);
     originLayerRef.current = L.layerGroup().addTo(map);
+    spreadLayerRef.current = L.layerGroup().addTo(map);
+    // Keep transfer lines as SVG paths even while dense peer markers use canvas.
+    flowRendererRef.current = L.svg({ padding: 0.5 });
     map.on('zoomend', () => setZoom(map.getZoom()));
+    map.on('zoomstart', closeGroup);
+    map.on('click', closeGroup);
     mapRef.current = map;
     setMapReady(true);
     return () => {
@@ -164,8 +189,11 @@ const StreetMap = ({
       mapRef.current = null;
       layerRef.current = null;
       originLayerRef.current = null;
+      flowRendererRef.current = null;
+      spreadLayerRef.current = null;
+      expandedGroupRef.current = null;
     };
-  }, []);
+  }, [closeGroup]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -175,18 +203,27 @@ const StreetMap = ({
     for (const peer of livePeers.filter(
       (item) => item.active && isLocated(item),
     )) {
-      L.polyline(
-        [
-          [origin.lat, origin.lon],
-          [peer.lat, peer.lon],
-        ],
-        {
-          color: peer.direction === 'download' ? '#52a3ff' : '#44d39a',
-          weight: 1.5,
-          opacity: 0.55,
-          interactive: false,
-        },
-      ).addTo(originLayerRef.current);
+      const points = [
+        [origin.lat, origin.lon],
+        [peer.lat, peer.lon],
+      ];
+      const color = peer.direction === 'download' ? '#52a3ff' : '#44d39a';
+      L.polyline(points, {
+        color: '#123149',
+        weight: 5,
+        opacity: 0.55,
+        interactive: false,
+      }).addTo(originLayerRef.current);
+      L.polyline(points, {
+        renderer: flowRendererRef.current,
+        className: `street-flow street-flow--${peer.direction}`,
+        color,
+        weight: 3.5,
+        opacity: 1,
+        dashArray: '5 10',
+        lineCap: 'round',
+        interactive: false,
+      }).addTo(originLayerRef.current);
     }
 
     L.marker([origin.lat, origin.lon], {
@@ -196,6 +233,7 @@ const StreetMap = ({
     }).addTo(originLayerRef.current);
     const originKey = `${origin.lat}:${origin.lon}`;
     if (!centeredRef.current || previousOriginRef.current !== originKey) {
+      closeGroup();
       map.setView(
         [origin.lat, origin.lon],
         centeredRef.current ? Math.max(map.getZoom(), 5) : 4,
@@ -204,7 +242,7 @@ const StreetMap = ({
     }
 
     previousOriginRef.current = originKey;
-  }, [livePeers, mapReady, origin, originConfirmed]);
+  }, [closeGroup, livePeers, mapReady, origin, originConfirmed]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -215,6 +253,10 @@ const StreetMap = ({
     map.getContainer().classList.toggle('street-map--picking', pickingLocation);
     return () => map.off('click', handleClick);
   }, [mapReady, onPickLocation, pickingLocation]);
+
+  useEffect(() => {
+    closeGroup();
+  }, [closeGroup, peerMembership]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -230,8 +272,9 @@ const StreetMap = ({
       CELL_SIZE,
     );
     for (const group of groups) {
-      const lead =
-        group.find((peer) => peerId(peer) === selectedId) ?? group[0];
+      const groupKey = JSON.stringify(group.map(peerId));
+      if (expandedGroupKey && groupKey !== expandedGroupKey) continue;
+      const lead = group[0];
       const kind =
         group.length > 1
           ? 'group'
@@ -246,35 +289,77 @@ const StreetMap = ({
           kind,
           group.some((peer) => peerId(peer) === selectedId),
         ),
-        keyboard: group.length === 1,
+        keyboard: true,
         title:
           group.length > 1
-            ? `${group.length} peers. Click to zoom in.`
+            ? `${group.length} peers. Click to spread users.`
             : `${lead.username || 'Unknown peer'}. Click for details.`,
         bubblingMouseEvents: false,
       });
       marker.on('click', () => {
-        if (group.length === 1 || map.getZoom() >= MAX_ZOOM) {
+        if (group.length === 1) {
+          closeGroup();
           setSelectedId(peerId(lead));
           return;
         }
 
-        const clusterBounds = L.latLngBounds(
-          group.map((peer) => [peer.lat, peer.lon]),
-        );
-        if (clusterBounds.getNorthEast().equals(clusterBounds.getSouthWest()))
-          map.setView(
-            [lead.lat, lead.lon],
-            Math.min(MAX_ZOOM, map.getZoom() + 3),
-          );
-        else
-          map.fitBounds(clusterBounds.pad(0.5), {
-            maxZoom: Math.min(MAX_ZOOM, map.getZoom() + 4),
-          });
+        if (expandedGroupRef.current === groupKey) {
+          closeGroup();
+          setSelectedId(null);
+          return;
+        }
+
+        closeGroup();
+        setSelectedId(null);
+        expandedGroupRef.current = groupKey;
+        setExpandedGroupKey(groupKey);
+        const anchor = L.latLng(lead.lat, lead.lon);
+        map.panTo(anchor, { animate: false });
+        const center = map.latLngToLayerPoint(anchor);
+        const targets = [];
+        const offsets = radialOffsets(group.length);
+        for (const [index, peer] of group.entries()) {
+          const { x, y } = offsets[index];
+          const target = map.layerPointToLatLng(center.add(L.point(x, y)));
+          L.polyline([anchor, target], {
+            color: '#d6a66d',
+            weight: 1.5,
+            opacity: 0.72,
+            interactive: false,
+          }).addTo(spreadLayerRef.current);
+          const peerKind = peer.active
+            ? 'active'
+            : peer.direction === 'past'
+              ? recencyKind(peer.lastSeen)
+              : peer.direction;
+          const spreadMarker = L.marker(anchor, {
+            icon: markerIcon(1, peerKind, false, true),
+            keyboard: true,
+            title: `${peer.username || 'Unknown peer'}. Click for details.`,
+            bubblingMouseEvents: false,
+          }).addTo(spreadLayerRef.current);
+          spreadMarker.on('click', () => setSelectedId(peerId(peer)));
+          targets.push([spreadMarker, target]);
+        }
+
+        requestAnimationFrame(() => {
+          for (const [spreadMarker, target] of targets) {
+            if (spreadLayerRef.current?.hasLayer(spreadMarker))
+              spreadMarker.setLatLng(target);
+          }
+        });
       });
       marker.addTo(layer);
     }
-  }, [mapReady, peers, selectedId, viewVersion, zoom]);
+  }, [
+    closeGroup,
+    expandedGroupKey,
+    mapReady,
+    peers,
+    selectedId,
+    viewVersion,
+    zoom,
+  ]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -284,14 +369,18 @@ const StreetMap = ({
     return () => map.off('moveend', refresh);
   }, [mapReady]);
 
-  const zoomTo = (peer) =>
+  const zoomTo = (peer) => {
+    closeGroup();
     mapRef.current?.flyTo(
       [peer.lat, peer.lon],
       Math.max(mapRef.current.getZoom(), 16),
     );
+  };
+
   const showPeers = () => {
     const map = mapRef.current;
     if (!map || peers.length === 0) return;
+    closeGroup();
     if (peers.length === 1) {
       map.flyTo([peers[0].lat, peers[0].lon], 14);
       return;
@@ -304,15 +393,19 @@ const StreetMap = ({
   };
 
   const zoomHome = () => {
-    if (origin && isLocated(origin))
+    if (origin && isLocated(origin)) {
+      closeGroup();
       mapRef.current?.flyTo(
         [origin.lat, origin.lon],
         Math.max(mapRef.current.getZoom(), 12),
       );
+    }
   };
 
   return (
-    <div className="street-map-wrap">
+    <div
+      className={`street-map-wrap${expandedGroupKey ? ' street-map-wrap--group-open' : ''}`}
+    >
       <div
         aria-label="Interactive street map"
         className="street-map"
@@ -321,8 +414,9 @@ const StreetMap = ({
       {!reportPeer && (
         <div className="street-map-tools">
           <span>
-            Street map · Peer points are approximate IP locations · Click
-            targets for details
+            {expandedGroupKey
+              ? 'Grouped peers spread for selection · Click centre to close'
+              : 'Street map · Peer points are approximate IP locations · Click targets for details'}
           </span>
           {peers.length > 0 && (
             <button
