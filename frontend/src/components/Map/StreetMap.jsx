@@ -200,30 +200,32 @@ const StreetMap = ({
     if (!map) return;
     originLayerRef.current.clearLayers();
     if (!origin || !isLocated(origin)) return;
-    for (const peer of livePeers.filter(
-      (item) => item.active && isLocated(item),
-    )) {
-      const points = [
-        [origin.lat, origin.lon],
-        [peer.lat, peer.lon],
-      ];
-      const color = peer.direction === 'download' ? '#52a3ff' : '#44d39a';
-      L.polyline(points, {
-        color: '#123149',
-        weight: 5,
-        opacity: 0.55,
-        interactive: false,
-      }).addTo(originLayerRef.current);
-      L.polyline(points, {
-        renderer: flowRendererRef.current,
-        className: `street-flow street-flow--${peer.direction}`,
-        color,
-        weight: 3.5,
-        opacity: 1,
-        dashArray: '5 10',
-        lineCap: 'round',
-        interactive: false,
-      }).addTo(originLayerRef.current);
+    if (!expandedGroupKey) {
+      for (const peer of livePeers.filter(
+        (item) => item.active && isLocated(item),
+      )) {
+        const points = [
+          [origin.lat, origin.lon],
+          [peer.lat, peer.lon],
+        ];
+        const color = peer.direction === 'download' ? '#52a3ff' : '#44d39a';
+        L.polyline(points, {
+          color: '#123149',
+          weight: 5,
+          opacity: 0.55,
+          interactive: false,
+        }).addTo(originLayerRef.current);
+        L.polyline(points, {
+          renderer: flowRendererRef.current,
+          className: `street-flow street-flow--${peer.direction}`,
+          color,
+          weight: 3.5,
+          opacity: 1,
+          dashArray: '5 10',
+          lineCap: 'round',
+          interactive: false,
+        }).addTo(originLayerRef.current);
+      }
     }
 
     L.marker([origin.lat, origin.lon], {
@@ -242,7 +244,14 @@ const StreetMap = ({
     }
 
     previousOriginRef.current = originKey;
-  }, [closeGroup, livePeers, mapReady, origin, originConfirmed]);
+  }, [
+    closeGroup,
+    expandedGroupKey,
+    livePeers,
+    mapReady,
+    origin,
+    originConfirmed,
+  ]);
 
   useEffect(() => {
     const map = mapRef.current;
