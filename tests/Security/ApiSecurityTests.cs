@@ -108,6 +108,32 @@ public class ApiSecurityTests
     }
 
     [Fact]
+    public void UnknownRefreshWarningIsSummarisedWithoutBlockingAuthentication()
+    {
+        var aggregator = new RefreshWarningAggregator();
+        var now = new DateTime(2026, 11, 11, 12, 0, 0, DateTimeKind.Utc);
+        Assert.Equal((true, 0, false), aggregator.Record("192.0.2.1", now));
+        Assert.Equal((false, 0, false), aggregator.Record("192.0.2.1", now.AddSeconds(2)));
+        Assert.Equal((true, 0, false), aggregator.Record("192.0.2.2", now.AddSeconds(2)));
+        Assert.Equal((true, 1, false), aggregator.Record("192.0.2.1", now.AddMinutes(1)));
+    }
+
+    [Fact]
+    public void UnknownRefreshWarningCacheBoundsDistinctClientIps()
+    {
+        var aggregator = new RefreshWarningAggregator();
+        var now = new DateTime(2026, 11, 11, 12, 0, 0, DateTimeKind.Utc);
+        for (var i = 0; i < 4096; i++)
+        {
+            Assert.Equal((true, 0, false), aggregator.Record($"client-{i}", now));
+        }
+
+        Assert.Equal((true, 0, true), aggregator.Record("extra-client", now));
+        Assert.Equal((false, 0, true), aggregator.Record("another-client", now.AddSeconds(2)));
+        Assert.Equal((true, 1, true), aggregator.Record("third-client", now.AddMinutes(1)));
+    }
+
+    [Fact]
     public void Role_Changes_And_Deleted_Users_Invalidate_Existing_Jwt_Sessions()
     {
         using var connection = new SqliteConnection("Data Source=:memory:"); connection.Open();

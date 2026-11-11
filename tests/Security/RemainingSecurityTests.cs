@@ -163,7 +163,7 @@ public sealed class RemainingSecurityTests
             var client = Stub<IClientProxy>((_, _) => { broadcasts++; return Task.CompletedTask; });
             var clients = Stub<IHubClients>((_, _) => client);
             var hub = Stub<IHubContext<ApplicationHub>>((_, _) => clients);
-            var controller = new SessionController(null!, users, sessions, null!, null!, null!, hub)
+            var controller = new SessionController(null!, users, sessions, null!, new RefreshWarningAggregator(), null!, null!, hub)
             {
                 ControllerContext = new() { HttpContext = new DefaultHttpContext() },
             };

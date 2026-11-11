@@ -58,6 +58,16 @@ export const clearRefreshToken = () => {
   sessionStorage.removeItem(refreshTokenKey);
 };
 
+export const clearMatchingRefreshToken = (token) => {
+  if (!token) return;
+  for (const storage of [sessionStorage, localStorage]) {
+    if (storage.getItem(refreshTokenKey) !== token) continue;
+    storage.removeItem(tokenKey);
+    storage.removeItem(refreshTokenKey);
+    storage.removeItem(sessionIdKey);
+  }
+};
+
 export const getRefreshTokenStorage = () =>
   sessionStorage.getItem(refreshTokenKey) !== null
     ? sessionStorage

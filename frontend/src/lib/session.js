@@ -98,6 +98,9 @@ export const setup = async ({ username, password }) => {
       existingSessionId: getSessionId(),
     })
   ).data;
+  clearToken();
+  clearRefreshToken();
+  clearSessionId();
   setToken(localStorage, token);
   if (refreshToken) setRefreshToken(localStorage, refreshToken);
   if (sessionId) setSessionId(localStorage, sessionId);
@@ -129,6 +132,9 @@ export const login = async ({ username, password, rememberMe = false }) => {
       existingSessionId: getSessionId(),
     })
   ).data;
+  clearToken();
+  clearRefreshToken();
+  clearSessionId();
   setToken(storage, token);
   if (refreshToken) setRefreshToken(storage, refreshToken);
   if (sessionId) setSessionId(storage, sessionId);
@@ -195,11 +201,13 @@ export const setStatus = async ({ presence, description }) => {
 };
 
 export const check = async () => {
+  const checkedSessionId = getSessionId();
   try {
     await api.get('/session');
     return true;
   } catch (error) {
     if (error.response?.status === 401) {
+      if (getSessionId() !== checkedSessionId) return Boolean(getToken());
       clearToken();
       clearRefreshToken();
       clearSessionId();

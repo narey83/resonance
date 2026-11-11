@@ -36,10 +36,8 @@
 import { hubBaseUrl } from '../config';
 import { attemptRefresh } from './api';
 import {
-  clearRefreshToken,
-  clearSessionId,
-  clearToken,
   getRefreshToken,
+  getSessionId,
   getToken,
   isPassthroughEnabled,
 } from './token';
@@ -49,7 +47,8 @@ import {
   LogLevel,
 } from '@microsoft/signalr';
 
-const getValidToken = async () => {
+const getValidToken = async (sessionId) => {
+  if (getSessionId() !== sessionId) return null;
   const token = getToken();
   if (!token) return token;
 
@@ -66,10 +65,7 @@ const getValidToken = async () => {
       try {
         await attemptRefresh();
       } catch (error) {
-        if (error.response?.status === 401) {
-          clearToken();
-          clearRefreshToken();
-          clearSessionId();
+        if (error.response?.status === 401 && !getToken()) {
           window.location.reload(true);
           return null;
         }
@@ -77,11 +73,12 @@ const getValidToken = async () => {
     }
   }
 
-  return getToken();
+  return getSessionId() === sessionId ? getToken() : null;
 };
 
-const createInfiniteRetryPolicy = (onRetry) => ({
+export const createInfiniteRetryPolicy = (onRetry, sessionId) => ({
   nextRetryDelayInMilliseconds: (context) => {
+    if (getSessionId() !== sessionId) return null;
     onRetry?.(context);
     if (context.elapsedMilliseconds < 10_000)
       return Math.min(2 ** context.previousRetryCount * 500, 5_000);
@@ -89,13 +86,20 @@ const createInfiniteRetryPolicy = (onRetry) => ({
   },
 });
 
+export const createHubAccessTokenFactory = (sessionId = getSessionId()) => {
+  return () => getValidToken(sessionId);
+};
+
 export const createHubConnection = ({ onRetry, url }) => {
+  const sessionId = getSessionId();
   const connection = new HubConnectionBuilder()
     .withUrl(url, {
-      accessTokenFactory: isPassthroughEnabled() ? undefined : getValidToken,
+      accessTokenFactory: isPassthroughEnabled()
+        ? undefined
+        : createHubAccessTokenFactory(sessionId),
       withCredentials: true,
     })
-    .withAutomaticReconnect(createInfiniteRetryPolicy(onRetry))
+    .withAutomaticReconnect(createInfiniteRetryPolicy(onRetry, sessionId))
     .withHubProtocol(new JsonHubProtocol())
     .configureLogging(LogLevel.Error)
     .build();

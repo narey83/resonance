@@ -65,6 +65,7 @@ namespace resonance.Core.API
             AppUserService userService,
             SessionService sessionService,
             LoginRateLimiter loginRateLimiter,
+            RefreshWarningAggregator refreshWarningAggregator,
             MobilePairingService mobilePairingService,
             IOptionsSnapshot<resonance.Options> optionsSnapshot,
             IHubContext<ApplicationHub> hub)
@@ -73,6 +74,7 @@ namespace resonance.Core.API
             Users = userService;
             Sessions = sessionService;
             LoginAttempts = loginRateLimiter;
+            RefreshWarnings = refreshWarningAggregator;
             Pairing = mobilePairingService;
             OptionsSnapshot = optionsSnapshot;
             Hub = hub;
@@ -82,6 +84,7 @@ namespace resonance.Core.API
         private AppUserService Users { get; }
         private SessionService Sessions { get; }
         private LoginRateLimiter LoginAttempts { get; }
+        private RefreshWarningAggregator RefreshWarnings { get; }
         private MobilePairingService Pairing { get; }
         private IOptionsSnapshot<resonance.Options> OptionsSnapshot { get; }
         private IHubContext<ApplicationHub> Hub { get; }
@@ -346,15 +349,24 @@ namespace resonance.Core.API
             }
             catch (RefreshTokenRejectedException ex)
             {
-                Log.Warning(
-                    "Token refresh rejected: {Reason}; account {Username}; session {SessionId}; device {DeviceName}; client IP {IP}; client {Client}; request {RequestId}",
-                    ex.Message,
-                    ex.Username is null ? "unmatched" : RefreshLogValues.Safe(ex.Username, 80),
-                    ex.SessionId?.ToString() ?? "unmatched",
-                    ex.DeviceName is null ? "unmatched" : RefreshLogValues.Safe(ex.DeviceName, 80),
-                    GetCallerIp() ?? "unknown",
-                    RefreshLogValues.Safe(Request.Headers.UserAgent.ToString(), 160),
-                    RefreshLogValues.Safe(HttpContext.TraceIdentifier, 100));
+                var clientIp = GetCallerIp();
+                var warning = ex.SessionId.HasValue
+                    ? (Emit: true, Suppressed: 0, MultipleIps: false)
+                    : RefreshWarnings.Record(clientIp, DateTime.UtcNow);
+                if (warning.Emit)
+                {
+                    Log.Warning(
+                        "Token refresh rejected: {Reason}; account {Username}; session {SessionId}; device {DeviceName}; client IP {IP}; client {Client}; request {RequestId}; suppressed unknown-token attempts {SuppressedCount}",
+                        ex.Message,
+                        ex.Username is null ? "unmatched" : RefreshLogValues.Safe(ex.Username, 80),
+                        ex.SessionId?.ToString() ?? "unmatched",
+                        ex.DeviceName is null ? "unmatched" : RefreshLogValues.Safe(ex.DeviceName, 80),
+                        warning.MultipleIps ? "multiple IPs" : clientIp ?? "unknown",
+                        warning.MultipleIps ? "multiple clients" : RefreshLogValues.Safe(Request.Headers.UserAgent.ToString(), 160),
+                        RefreshLogValues.Safe(HttpContext.TraceIdentifier, 100),
+                        warning.Suppressed);
+                }
+
                 return Unauthorized();
             }
         }
