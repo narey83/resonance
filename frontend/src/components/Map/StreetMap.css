@@ -44,6 +44,11 @@
   color: #fff;
 }
 
+.street-map .leaflet-top,
+.street-map .leaflet-bottom {
+  z-index: 800;
+}
+
 .street-peer {
   border: 0;
   background: transparent;
@@ -189,7 +194,7 @@
 .street-map-tools,
 .street-map-stats {
   position: absolute;
-  z-index: 1000;
+  z-index: 850;
   display: flex;
   gap: 10px;
   align-items: center;
@@ -230,7 +235,7 @@
 
 .street-map-error {
   position: absolute;
-  z-index: 1000;
+  z-index: 850;
   top: 60px;
   left: 12px;
   max-width: min(320px, calc(100% - 24px));
@@ -245,7 +250,7 @@
   position: absolute;
   top: 55px;
   right: 14px;
-  z-index: 1100;
+  z-index: 860;
   width: min(330px, calc(100% - 28px));
   max-height: calc(100% - 130px);
   overflow-y: auto;
@@ -333,6 +338,72 @@
 }
 .street-selection-nearby button.active {
   background: #dc9655;
+}
+
+.street-report-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 870;
+  width: 100%;
+  border: 0;
+  background: rgba(3, 14, 25, 0.5);
+  backdrop-filter: blur(2px);
+  cursor: default;
+}
+
+.user-report-window--map,
+.user-report-dock--map {
+  --bg-primary: #0b1723;
+  --bg-surface: #10283e;
+  --surface-card: #17374f;
+  --surface-hover: #244b65;
+  --surface-active: #28536e;
+  --border: rgba(151, 206, 239, 0.24);
+  --text-primary: #f2f9fe;
+  --text-muted: #a8c9dd;
+  --text-dim: #83a9bf;
+  --accent: #85ceff;
+  --accent-rgb: 133, 206, 255;
+}
+
+.user-report-window.user-report-window--map {
+  width: min(900px, 92vw);
+  max-height: min(760px, calc(100vh - 72px));
+  border-color: rgba(151, 206, 239, 0.38);
+  box-shadow: 0 24px 70px rgba(4, 13, 24, 0.55);
+}
+
+.user-report-window--map .user-report-hero {
+  background: linear-gradient(135deg, #214962 0%, #17374f 58%, #112e44 100%);
+}
+
+.user-report-window--map .user-report-action--minimize {
+  display: none;
+}
+
+.user-report-dock--map {
+  border-color: rgba(151, 206, 239, 0.38);
+}
+
+@media (max-width: 640px) {
+  .user-report-window.user-report-window--map {
+    width: auto;
+    max-height: none;
+  }
+
+  .user-report-window--map .user-report-kpis {
+    display: flex;
+    overflow-x: auto;
+    gap: 8px;
+    padding-bottom: 6px;
+    scrollbar-width: thin;
+    scroll-snap-type: x proximity;
+  }
+
+  .user-report-window--map .user-report-kpi {
+    flex: 0 0 138px;
+    scroll-snap-align: start;
+  }
 }
 
 @media (max-width: 600px) {

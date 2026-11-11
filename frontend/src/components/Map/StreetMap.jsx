@@ -318,29 +318,31 @@ const StreetMap = ({
         className="street-map"
         ref={containerRef}
       />
-      <div className="street-map-tools">
-        <span>
-          Street map · Peer points are approximate IP locations · Click targets
-          for details
-        </span>
-        {peers.length > 0 && (
-          <button
-            onClick={showPeers}
-            type="button"
-          >
-            Show peers
-          </button>
-        )}
-        {origin && (
-          <button
-            onClick={zoomHome}
-            type="button"
-          >
-            ⌖ {originConfirmed ? 'My location' : 'Server estimate'}
-          </button>
-        )}
-      </div>
-      {tileError && (
+      {!reportPeer && (
+        <div className="street-map-tools">
+          <span>
+            Street map · Peer points are approximate IP locations · Click
+            targets for details
+          </span>
+          {peers.length > 0 && (
+            <button
+              onClick={showPeers}
+              type="button"
+            >
+              Show peers
+            </button>
+          )}
+          {origin && (
+            <button
+              onClick={zoomHome}
+              type="button"
+            >
+              ⌖ {originConfirmed ? 'My location' : 'Server estimate'}
+            </button>
+          )}
+        </div>
+      )}
+      {tileError && !reportPeer && (
         <div
           className="street-map-error"
           role="status"
@@ -348,31 +350,33 @@ const StreetMap = ({
           Street tiles could not load. Check the connection and try again.
         </div>
       )}
-      <div className="street-map-stats">
-        <span>{peers.length} located peers</span>
-        <span>{peers.filter((peer) => peer.active).length} active</span>
-        <span>
-          ↓{' '}
-          {formatBitrate(
-            (downloads ?? [])
-              .flatMap((group) => group.directories ?? [])
-              .flatMap((directory) => directory.files ?? [])
-              .filter((file) => file.state === 'InProgress')
-              .reduce((total, file) => total + (file.averageSpeed ?? 0), 0),
-          )}
-        </span>
-        <span>
-          ↑{' '}
-          {formatBitrate(
-            (uploads ?? [])
-              .flatMap((group) => group.directories ?? [])
-              .flatMap((directory) => directory.files ?? [])
-              .filter((file) => file.state === 'InProgress')
-              .reduce((total, file) => total + (file.averageSpeed ?? 0), 0),
-          )}
-        </span>
-      </div>
-      {selectedPeer && (
+      {!reportPeer && (
+        <div className="street-map-stats">
+          <span>{peers.length} located peers</span>
+          <span>{peers.filter((peer) => peer.active).length} active</span>
+          <span>
+            ↓{' '}
+            {formatBitrate(
+              (downloads ?? [])
+                .flatMap((group) => group.directories ?? [])
+                .flatMap((directory) => directory.files ?? [])
+                .filter((file) => file.state === 'InProgress')
+                .reduce((total, file) => total + (file.averageSpeed ?? 0), 0),
+            )}
+          </span>
+          <span>
+            ↑{' '}
+            {formatBitrate(
+              (uploads ?? [])
+                .flatMap((group) => group.directories ?? [])
+                .flatMap((directory) => directory.files ?? [])
+                .filter((file) => file.state === 'InProgress')
+                .reduce((total, file) => total + (file.averageSpeed ?? 0), 0),
+            )}
+          </span>
+        </div>
+      )}
+      {selectedPeer && !reportPeer && (
         <aside
           aria-label="Selected peer"
           className="street-selection"
@@ -460,6 +464,15 @@ const StreetMap = ({
         </aside>
       )}
       {reportPeer && (
+        <button
+          aria-label="Close user report"
+          className="street-report-backdrop"
+          onClick={() => setReportPeer(null)}
+          tabIndex={-1}
+          type="button"
+        />
+      )}
+      {reportPeer && (
         <UserReportWindow
           onClose={() => setReportPeer(null)}
           seed={{
@@ -469,6 +482,7 @@ const StreetMap = ({
             isVpn: reportPeer.isVpn,
           }}
           username={reportPeer.username}
+          variant="map"
         />
       )}
     </div>

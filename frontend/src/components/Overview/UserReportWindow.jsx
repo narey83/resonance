@@ -896,7 +896,7 @@ const BrowseTab = ({ username }) => {
 
 // ─── Modal ──────────────────────────────────────────────────────────────────
 
-const UserReportWindow = ({ initialTab, onClose, seed, username }) => {
+const UserReportWindow = ({ initialTab, onClose, seed, username, variant }) => {
   const history = useHistory();
   const [activeTab, setActiveTab] = useState(initialTab || 'overview');
   const [detail, setDetail] = useState(null);
@@ -1156,7 +1156,7 @@ const UserReportWindow = ({ initialTab, onClose, seed, username }) => {
   return createPortal(
     <>
       <div
-        className={`user-report-window${position ? ' user-report-window--placed' : ''}${minimized ? ' user-report-window--minimized' : ''}`}
+        className={`user-report-window${variant ? ` user-report-window--${variant}` : ''}${position ? ' user-report-window--placed' : ''}${minimized ? ' user-report-window--minimized' : ''}`}
         onPointerDown={() => raiseWindow(username)}
         ref={windowRef}
         style={{ zIndex, ...position }}
@@ -1437,7 +1437,7 @@ const UserReportWindow = ({ initialTab, onClose, seed, username }) => {
           fetched data, active tab and scroll position survive a restore. */}
       {minimized ? (
         <div
-          className="user-report-dock"
+          className={`user-report-dock${variant ? ` user-report-dock--${variant}` : ''}`}
           style={{ right: 16 + Math.max(dockSlot, 0) * 208 }}
         >
           <button
