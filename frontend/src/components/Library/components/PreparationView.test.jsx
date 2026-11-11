@@ -89,6 +89,28 @@ describe('Preparation workspace', () => {
     await click(container, 'Background waiting');
     expect(usePagedList.mock.calls.at(-1)[1].state).toBe('waiting');
   });
+  it('distinguishes a candidate check from active metadata lookup', async () => {
+    expect.hasAssertions();
+    status.enrichment = { enabled: true, scanning: true, total: 0, written: 0 };
+    await render();
+    expect(container.textContent).toContain(
+      'Checking for tracks with missing metadata',
+    );
+    expect(container.textContent).not.toContain('Enriching');
+
+    status.enrichment = { enabled: true, scanning: true, total: 3, written: 1 };
+    await render();
+    expect(container.textContent).toContain('Enriching 3 tracks · 1 updated');
+
+    status.enrichment = {
+      enabled: true,
+      scanning: false,
+      total: 0,
+      written: 0,
+    };
+    await render();
+    expect(container.textContent).toContain('Saved audio analysis is separate');
+  });
   it('queues playback with the current BPM and key intact', async () => {
     expect.hasAssertions();
     await render();

@@ -151,9 +151,11 @@ const BackgroundAnalysisQueue = ({ onRefresh, status, statusError }) => {
             {!enriched
               ? 'Checking your existing enrichment service…'
               : enriched.scanning
-                ? `Enriching your library · ${enriched.written} updated${enriched.total ? ` of ${enriched.total} candidates` : ''}`
+                ? enriched.total > 0
+                  ? `Enriching ${enriched.total} tracks · ${enriched.written} updated`
+                  : 'Checking for tracks with missing metadata…'
                 : enriched.enabled
-                  ? 'Your existing enrichment runs automatically with its current settings.'
+                  ? 'Automatic metadata lookup is on. Saved audio analysis is separate and is not repeated by this check.'
                   : 'Automatic enrichment is off in your current settings. Audio analysis is controlled separately.'}
           </p>
         </div>
