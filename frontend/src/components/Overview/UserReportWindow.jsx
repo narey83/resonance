@@ -86,6 +86,10 @@ const TREND_INTERVAL_MINUTES = 1_440;
 // thousands of records), so hold off until typing settles.
 const SEARCH_DEBOUNCE_MS = 300;
 
+const stopRowKeyboardActivation = (event) => {
+  if (event.key === 'Enter' || event.key === ' ') event.stopPropagation();
+};
+
 const formatSpeed = (speed) => (speed > 0 ? formatBitrate(speed) : '—');
 
 // Show only the immediate parent folder, dropping the share-root segments
@@ -1042,10 +1046,14 @@ const UserReportWindow = ({ initialTab, onClose, seed, username, variant }) => {
   // an ancestor's overflow while the window should stay put.
   // The regular report carries the workspace palette into that portal; the map
   // variant supplies its own palette in StreetMap.css.
+  // React still bubbles portal events through the source table row. Stop its
+  // click and keyboard activation without swallowing Escape or other shortcuts.
   return createPortal(
     <>
       <div
         className={`user-report-window${variant ? ` user-report-window--${variant}` : ' dj-workspace'}${minimized ? ' user-report-window--minimized' : ''}`}
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={stopRowKeyboardActivation}
         onPointerDown={() => raiseWindow(username)}
         style={{ zIndex }}
       >
@@ -1322,6 +1330,8 @@ const UserReportWindow = ({ initialTab, onClose, seed, username, variant }) => {
       {minimized ? (
         <div
           className={`user-report-dock${variant ? ` user-report-dock--${variant}` : ' dj-workspace'}`}
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={stopRowKeyboardActivation}
           style={{ right: 16 + Math.max(dockSlot, 0) * 208 }}
         >
           <button
