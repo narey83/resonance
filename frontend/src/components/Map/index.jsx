@@ -40,10 +40,11 @@ import * as optionsAPI from '../../lib/options';
 import * as prefs from '../../lib/prefs';
 import * as transfersAPI from '../../lib/transfers';
 import { keepIfEqual } from '../../lib/util';
-import WorldMap from '../Overview/WorldMap';
+import { validCoordinates } from './location';
 import { loadMapPeers, MAP_PEER_LIMIT } from './mapData';
+import StreetMap from './StreetMap';
 import { ExternalLink } from 'lucide-react';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
 const RANGES = [
   { hours: 1, label: '1h' },
@@ -63,6 +64,10 @@ const DIRECTIONS = [
 ];
 
 const pad2 = (n) => String(n).padStart(2, '0');
+const savedLocation = () => {
+  const value = prefs.get('map:my-location');
+  return value && validCoordinates(value.lat, value.lon) ? value : null;
+};
 
 // <input type="datetime-local"> wants local time with no timezone suffix.
 const toDatetimeLocal = (isoOrDate) => {
@@ -77,6 +82,12 @@ const MapPage = ({ popoutUrl }) => {
   const [uploads, setUploads] = useState([]);
   const [serverLat, setServerLat] = useState(null);
   const [serverLon, setServerLon] = useState(null);
+  const [myLocation, setMyLocation] = useState(savedLocation);
+  const [showLocationEditor, setShowLocationEditor] = useState(false);
+  const [locationLatInput, setLocationLatInput] = useState('');
+  const [locationLonInput, setLocationLonInput] = useState('');
+  const [pickingLocation, setPickingLocation] = useState(false);
+  const [locationError, setLocationError] = useState('');
   // Shared with the Overview page via the `overview:range-h` preference.
   const [range, setRange] = useState(() => {
     const n = Number(prefs.get('overview:range-h', 24));
@@ -227,6 +238,56 @@ const MapPage = ({ popoutUrl }) => {
   };
 
   const hasCustomRange = customRange != null;
+  const mapOrigin = useMemo(
+    () =>
+      myLocation ??
+      (validCoordinates(serverLat, serverLon)
+        ? { lat: serverLat, lon: serverLon }
+        : null),
+    [myLocation, serverLat, serverLon],
+  );
+
+  const saveLocation = (lat, lon) => {
+    if (!validCoordinates(lat, lon)) {
+      setLocationError(
+        'Enter a latitude from −90 to 90 and a longitude from −180 to 180.',
+      );
+      return;
+    }
+
+    const location = { lat, lon };
+    prefs.set('map:my-location', location);
+    setMyLocation(location);
+    setLocationError('');
+    setPickingLocation(false);
+    setShowLocationEditor(false);
+  };
+
+  const pickLocation = useCallback((lat, lon) => {
+    setLocationLatInput(lat.toFixed(6));
+    setLocationLonInput(lon.toFixed(6));
+    setPickingLocation(false);
+    setLocationError('Review the coordinates, then save your location.');
+  }, []);
+
+  const useBrowserLocation = () => {
+    if (!navigator.geolocation) {
+      setLocationError(
+        'Browser location is unavailable. Enter coordinates or pick a point on the map.',
+      );
+      return;
+    }
+
+    setLocationError('Finding your location…');
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => saveLocation(coords.latitude, coords.longitude),
+      () =>
+        setLocationError(
+          'Could not get browser location. Enter coordinates or pick a point on the map.',
+        ),
+      { enableHighAccuracy: true, timeout: 15_000, maximumAge: 0 },
+    );
+  };
 
   return (
     <div className={`map-page${popoutUrl ? ' map-page--embedded' : ''}`}>
@@ -364,17 +425,106 @@ const MapPage = ({ popoutUrl }) => {
           >
             VPN only
           </button>
+          <button
+            className={`map-pill hover-fx${showLocationEditor ? ' active' : ''}`}
+            onClick={() => {
+              setLocationLatInput(mapOrigin?.lat?.toString() ?? '');
+              setLocationLonInput(mapOrigin?.lon?.toString() ?? '');
+              setLocationError('');
+              setPickingLocation(false);
+              setShowLocationEditor((value) => !value);
+            }}
+            type="button"
+          >
+            ⌖ My location
+          </button>
         </div>
+        {showLocationEditor && (
+          <div className="map-location-editor">
+            <div>
+              <strong>My location</strong>
+              <span>
+                Sets the origin shown on this map and its live connection lines.
+              </span>
+            </div>
+            <button
+              className="map-pill"
+              onClick={useBrowserLocation}
+              type="button"
+            >
+              Use browser location
+            </button>
+            <button
+              className={`map-pill${pickingLocation ? ' active' : ''}`}
+              onClick={() => setPickingLocation((value) => !value)}
+              type="button"
+            >
+              {pickingLocation ? 'Click the map…' : 'Pick on map'}
+            </button>
+            <label>
+              Latitude
+              <input
+                aria-label="My latitude"
+                onChange={(event) => setLocationLatInput(event.target.value)}
+                step="any"
+                type="number"
+                value={locationLatInput}
+              />
+            </label>
+            <label>
+              Longitude
+              <input
+                aria-label="My longitude"
+                onChange={(event) => setLocationLonInput(event.target.value)}
+                step="any"
+                type="number"
+                value={locationLonInput}
+              />
+            </label>
+            <button
+              className="map-pill active"
+              onClick={() =>
+                saveLocation(
+                  locationLatInput.trim() === ''
+                    ? Number.NaN
+                    : Number(locationLatInput),
+                  locationLonInput.trim() === ''
+                    ? Number.NaN
+                    : Number(locationLonInput),
+                )
+              }
+              type="button"
+            >
+              Save location
+            </button>
+            {myLocation && (
+              <button
+                className="map-pill"
+                onClick={() => {
+                  prefs.set('map:my-location', null);
+                  setMyLocation(null);
+                  setLocationError('Using server location again.');
+                }}
+                type="button"
+              >
+                Use server location
+              </button>
+            )}
+            {locationError && <span role="status">{locationError}</span>}
+          </div>
+        )}
       </div>
 
       <div className="map-canvas">
-        <WorldMap
+        <StreetMap
           direction={direction}
           downloads={downloads}
+          onPickLocation={pickLocation}
+          origin={mapOrigin}
+          originConfirmed={myLocation != null}
           pastPeers={filteredPastPeers}
+          pickingLocation={pickingLocation}
           search={search}
-          serverLat={serverLat}
-          serverLon={serverLon}
           uploads={uploads}
           vpnOnly={vpnOnly}
         />
