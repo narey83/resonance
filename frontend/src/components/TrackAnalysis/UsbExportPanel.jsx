@@ -273,7 +273,7 @@ const UsbExportPanel = ({
               aria-current={step === index ? 'step' : undefined}
               key={label}
             >
-              <span>{index + 1}</span> {label}
+              <span>Step {index + 1}</span> {label}
             </li>
           ))}
         </ol>

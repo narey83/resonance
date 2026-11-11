@@ -534,4 +534,33 @@ describe('USB export selection and failures', () => {
       profile: 'dual',
     });
   });
+  it('distinguishes the wizard step and folder counts from the whole selection', async () => {
+    expect.hasAssertions();
+    const paths = Array.from(
+      { length: 15 },
+      (_, index) => `/music/folder-${index}/track.flac`,
+    );
+    api.post.mockResolvedValueOnce({
+      data: {
+        enabled: true,
+        tracks: paths.map((path, index) => ({ path, title: `Track ${index}` })),
+      },
+    });
+    await act(async () => {
+      ReactDOM.render(
+        <UsbExportPanel
+          initialPaths={paths}
+          wizard
+        />,
+        container,
+      );
+    });
+    expect(
+      container.querySelector('[aria-current="step"]').textContent,
+    ).toContain('Step 1 Select tracks');
+    expect(container.textContent).toContain('15 of 15 tracks selected');
+    expect(
+      container.querySelector('.usb-picker-folder-row > span').textContent,
+    ).toBe('1 of 1 selected in this folder');
+  });
 });

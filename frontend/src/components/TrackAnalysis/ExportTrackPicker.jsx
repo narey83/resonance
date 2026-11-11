@@ -116,7 +116,8 @@ const FolderSelection = ({
           <strong>{node.name}</strong>
         </button>
         <span>
-          {count} / {node.paths.length} tracks
+          {count} of {node.paths.length} selected in this{' '}
+          {kind === 'folder' ? 'folder' : 'group'}
         </span>
       </div>
       {expanded && (
