@@ -378,6 +378,7 @@ const YtDlp = ({ view }) => {
       return (
         <EventsPane
           events={events}
+          jobs={jobs}
           onClear={handleClearEvents}
           onClearJob={handleClearJobEvents}
         />

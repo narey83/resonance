@@ -760,10 +760,37 @@
 }
 
 .ytdlp-event-ts {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
   color: var(--text-muted, #4a5568);
   flex-shrink: 0;
   font-size: 11px;
+  font-variant-numeric: tabular-nums;
   user-select: none;
+}
+
+.ytdlp-event-date {
+  min-width: 88px;
+  white-space: nowrap;
+}
+
+.ytdlp-event-time {
+  white-space: nowrap;
+}
+
+.ytdlp-event-when {
+  display: inline-flex;
+  gap: 6px;
+  flex-shrink: 0;
+  color: var(--text-muted, #718096);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ytdlp-event-when .ytdlp-event-date {
+  min-width: 0;
 }
 
 .ytdlp-event-dot {
@@ -936,6 +963,63 @@
   padding-left: 14px;
   border-left: 2px solid var(--border);
   margin-left: 5px;
+}
+
+@media (max-width: 700px) {
+  .ytdlp-events-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .ytdlp-events-count {
+    margin-left: 0;
+    margin-right: auto;
+  }
+
+  .ytdlp-events-log {
+    padding: 8px;
+  }
+
+  .ytdlp-event-row {
+    flex-wrap: wrap;
+    column-gap: 6px;
+    padding: 5px 0;
+  }
+
+  .ytdlp-event-msg {
+    flex-basis: 100%;
+    padding-left: 14px;
+  }
+
+  .ytdlp-event-group-header {
+    flex-wrap: wrap;
+  }
+
+  .ytdlp-event-group-title,
+  .ytdlp-event-track-title {
+    flex-basis: calc(100% - 20px);
+    white-space: normal;
+    overflow: visible;
+    overflow-wrap: anywhere;
+  }
+
+  .ytdlp-event-group-header > .ytdlp-event-when,
+  .ytdlp-event-track-header > .ytdlp-event-when {
+    margin-left: 20px;
+  }
+
+  .ytdlp-event-track-header {
+    flex-wrap: wrap;
+  }
+
+  .ytdlp-event-track-title {
+    max-width: none;
+  }
+
+  .ytdlp-event-track-summary {
+    order: 1;
+    flex-basis: 100%;
+    padding-left: 18px;
+  }
 }
 
 /* ── Subscriptions ──────────────────────────────────────────────────────── */

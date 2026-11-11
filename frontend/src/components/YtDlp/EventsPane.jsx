@@ -47,12 +47,44 @@ const LEVEL_DOT = {
   raw: '#4a5568',
 };
 
-const fmt = (iso) => {
-  const d = parseUtcDate(iso);
-  const hh = d.getHours().toString().padStart(2, '0');
-  const mm = d.getMinutes().toString().padStart(2, '0');
-  const ss = d.getSeconds().toString().padStart(2, '0');
-  return `${hh}:${mm}:${ss}`;
+const untitledJobLabel = (url) => {
+  if (!url) return 'Untitled download';
+  try {
+    const parsed = new URL(url);
+    const id =
+      parsed.searchParams.get('v') ||
+      parsed.searchParams.get('list') ||
+      parsed.pathname.split('/').filter(Boolean).pop();
+    return id ? `Untitled · ${id}` : `Untitled · ${parsed.hostname}`;
+  } catch {
+    return 'Untitled download';
+  }
+};
+
+const dateFormatter = new Intl.DateTimeFormat(undefined, {
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+});
+const timeFormatter = new Intl.DateTimeFormat(undefined, {
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23',
+});
+
+const EventTime = ({ summary = false, timestamp }) => {
+  const date = parseUtcDate(timestamp);
+  return (
+    <time
+      className={summary ? 'ytdlp-event-when' : 'ytdlp-event-ts'}
+      dateTime={date.toISOString()}
+      title={date.toLocaleString()}
+    >
+      <span className="ytdlp-event-date">{dateFormatter.format(date)}</span>
+      <span className="ytdlp-event-time">{timeFormatter.format(date)}</span>
+    </time>
+  );
 };
 
 const useAvailableHeight = (ref) => {
@@ -73,7 +105,7 @@ const useAvailableHeight = (ref) => {
 
 const EventRow = ({ ev }) => (
   <div className="ytdlp-event-row">
-    <span className="ytdlp-event-ts">{fmt(ev.timestamp)}</span>
+    <EventTime timestamp={ev.timestamp} />
     <span
       className="ytdlp-event-dot"
       style={{ background: LEVEL_DOT[ev.level] || LEVEL_DOT.raw }}
@@ -115,6 +147,10 @@ const TrackGroup = ({ track }) => {
         >
           {last.message}
         </span>
+        <EventTime
+          summary
+          timestamp={last.timestamp}
+        />
         {track.events.length > 1 && (
           <span className="ytdlp-event-group-count">{track.events.length}</span>
         )}
@@ -156,6 +192,10 @@ const JobGroup = ({ defaultOpen, group, onClearJob }) => {
           strokeWidth={1.75}
         />
         <span className="ytdlp-event-group-title">{group.title}</span>
+        <EventTime
+          summary
+          timestamp={group.latestTimestamp}
+        />
         <span className="ytdlp-event-group-count">{group.count}</span>
         {group.errorCount > 0 && (
           <span className="ytdlp-event-group-errors">
@@ -202,7 +242,7 @@ const JobGroup = ({ defaultOpen, group, onClearJob }) => {
   );
 };
 
-const EventsPane = ({ events, onClear, onClearJob }) => {
+const EventsPane = ({ events, jobs = [], onClear, onClearJob }) => {
   const [levelFilter, setLevelFilter] = useState('structured');
   const [activeJob, setActiveJob] = useState('all');
   const [autoScroll, setAutoScroll] = useState(true);
@@ -211,6 +251,20 @@ const EventsPane = ({ events, onClear, onClearJob }) => {
   const logHeight = useAvailableHeight(logRef);
 
   const groups = useMemo(() => {
+    const jobsById = new Map(jobs.map((job) => [job.id, job]));
+    const eventNames = new Map();
+    for (const event_ of events) {
+      if (!event_.jobId || !event_.jobTitle) continue;
+      const names = eventNames.get(event_.jobId) || {};
+      if (/^https?:\/\//iu.test(event_.jobTitle)) {
+        names.sourceUrl = event_.jobTitle;
+      } else {
+        names.title = event_.jobTitle;
+      }
+
+      eventNames.set(event_.jobId, names);
+    }
+
     const filtered = events.filter((event_) => {
       if (levelFilter === 'structured' && event_.level === 'raw') return false;
       if (
@@ -229,17 +283,16 @@ const EventsPane = ({ events, onClear, onClearJob }) => {
       if (!groupMap.has(key)) {
         groupMap.set(key, {
           id: key,
-          title:
-            event_.jobTitle ||
-            (key === '__system__' ? 'System' : key.slice(0, 8)),
           generalEvents: [],
           trackMap: new Map(),
+          latestTimestamp: event_.timestamp,
           errorCount: 0,
           warnCount: 0,
         });
       }
 
       const g = groupMap.get(key);
+      g.latestTimestamp = event_.timestamp;
       if (event_.level === 'error') g.errorCount++;
       if (event_.level === 'warning') g.warnCount++;
 
@@ -269,9 +322,16 @@ const EventsPane = ({ events, onClear, onClearJob }) => {
       const count =
         g.generalEvents.length +
         trackGroups.reduce((n, t) => n + t.events.length, 0);
-      return { ...g, trackGroups, count };
+      const job = jobsById.get(g.id);
+      const names = eventNames.get(g.id);
+      const title =
+        (g.id === '__system__' && 'System') ||
+        job?.title ||
+        names?.title ||
+        untitledJobLabel(job?.url || names?.sourceUrl);
+      return { ...g, title, trackGroups, count };
     });
-  }, [events, levelFilter]);
+  }, [events, jobs, levelFilter]);
 
   // Fall back to "All" if the selected job's events have aged out of the buffer.
   React.useEffect(() => {
