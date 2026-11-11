@@ -69,13 +69,7 @@ import {
   ShieldCheck,
   X,
 } from 'lucide-react';
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useHistory } from 'react-router-dom';
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis } from 'recharts';
@@ -170,111 +164,6 @@ const PRESENCE_TONE = {
   Online: 'online',
   Away: 'away',
   Offline: 'offline',
-};
-
-// How much of the window must stay on screen when dragged, so it can always be
-// grabbed again — the title bar is the drag handle, so the vertical limit keeps
-// that bar itself reachable rather than merely some part of the window.
-const DRAG_KEEP_VISIBLE_X = 120;
-const DRAG_TITLEBAR_H = 44;
-
-const clampToViewport = (left, top, width) => ({
-  left: Math.min(
-    Math.max(left, DRAG_KEEP_VISIBLE_X - width),
-    window.innerWidth - DRAG_KEEP_VISIBLE_X,
-  ),
-  top: Math.min(Math.max(top, 0), window.innerHeight - DRAG_TITLEBAR_H),
-});
-
-/**
- * Drag-by-the-title-bar for a fixed-position element.
- *
- * Pointer moves are written straight to the node's style rather than through
- * state: this window renders a chart and a 25-row table, and re-rendering that
- * on every pointermove visibly stutters. React is told the final position once,
- * on release, so it stays the source of truth between drags.
- */
-const useWindowDrag = (nodeRef) => {
-  const [position, setPosition] = useState(null);
-  const dragRef = useRef(null);
-
-  const onPointerDown = useCallback(
-    (event) => {
-      // Let the title bar's own controls (close, minimise, chat…) behave
-      // normally, and ignore anything but a primary-button drag.
-      if (event.button !== 0 || event.target.closest('button, a, input')) {
-        return;
-      }
-
-      const node = nodeRef.current;
-      if (!node) return;
-
-      const rect = node.getBoundingClientRect();
-      dragRef.current = {
-        offsetX: event.clientX - rect.left,
-        offsetY: event.clientY - rect.top,
-        width: rect.width,
-        last: null,
-      };
-
-      // Adopt the current visual position before handing over to explicit
-      // left/top, so switching off the centring transform doesn't jump.
-      setPosition({ left: rect.left, top: rect.top });
-      event.currentTarget.setPointerCapture(event.pointerId);
-    },
-    [nodeRef],
-  );
-
-  const onPointerMove = useCallback(
-    (event) => {
-      const drag = dragRef.current;
-      const node = nodeRef.current;
-      if (!drag || !node) return;
-
-      const next = clampToViewport(
-        event.clientX - drag.offsetX,
-        event.clientY - drag.offsetY,
-        drag.width,
-      );
-
-      node.style.left = `${next.left}px`;
-      node.style.top = `${next.top}px`;
-      drag.last = next;
-    },
-    [nodeRef],
-  );
-
-  const onPointerUp = useCallback((event) => {
-    const drag = dragRef.current;
-    dragRef.current = null;
-    if (drag?.last) setPosition(drag.last);
-    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-  }, []);
-
-  // A window parked against an edge would otherwise end up off-screen (or
-  // under the viewport) when the browser is resized.
-  useEffect(() => {
-    if (!position) return undefined;
-    const onResize = () => {
-      const node = nodeRef.current;
-      if (!node) return;
-      setPosition((current) =>
-        current
-          ? clampToViewport(current.left, current.top, node.offsetWidth)
-          : current,
-      );
-    };
-
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, [nodeRef, position]);
-
-  return {
-    position,
-    dragHandlers: { onPointerDown, onPointerMove, onPointerUp },
-  };
 };
 
 // ─── Presentational primitives ──────────────────────────────────────────────
@@ -911,9 +800,7 @@ const UserReportWindow = ({ initialTab, onClose, seed, username, variant }) => {
   const [events, setEvents] = useState(null);
   const [firstSeen, setFirstSeen] = useState(null);
 
-  const windowRef = useRef(null);
   const [minimized, setMinimized] = useState(false);
-  const { dragHandlers, position } = useWindowDrag(windowRef);
 
   // Subscribes to the shared stack/dock, so this window re-renders when a
   // sibling is raised, docks, or restores ahead of it.
@@ -1156,16 +1043,11 @@ const UserReportWindow = ({ initialTab, onClose, seed, username, variant }) => {
   return createPortal(
     <>
       <div
-        className={`user-report-window${variant ? ` user-report-window--${variant}` : ''}${position ? ' user-report-window--placed' : ''}${minimized ? ' user-report-window--minimized' : ''}`}
+        className={`user-report-window${variant ? ` user-report-window--${variant}` : ''}${minimized ? ' user-report-window--minimized' : ''}`}
         onPointerDown={() => raiseWindow(username)}
-        ref={windowRef}
-        style={{ zIndex, ...position }}
+        style={{ zIndex }}
       >
-        {/* Title bar doubles as the drag handle. */}
-        <div
-          className="user-report-hero"
-          {...dragHandlers}
-        >
+        <div className="user-report-hero">
           <div className="user-report-identity">
             <div
               className="user-report-avatar"

@@ -367,8 +367,6 @@
 }
 
 .user-report-window.user-report-window--map {
-  width: min(900px, 92vw);
-  max-height: min(760px, calc(100vh - 72px));
   border-color: rgba(151, 206, 239, 0.38);
   box-shadow: 0 24px 70px rgba(4, 13, 24, 0.55);
 }
@@ -386,11 +384,6 @@
 }
 
 @media (max-width: 640px) {
-  .user-report-window.user-report-window--map {
-    width: auto;
-    max-height: none;
-  }
-
   .user-report-window--map .user-report-kpis {
     display: flex;
     overflow-x: auto;

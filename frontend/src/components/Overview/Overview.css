@@ -1726,17 +1726,8 @@ html.amoled {
 
 /* ─── User Report Window ────────────────────────────────────────────────────── */
 
-/* A plain fixed-position window rather than a semantic-ui Modal. Drag and
-   minimise are incompatible with a modal: the dimmer blocks the page behind, so
-   minimising to reach it would be pointless, and semantic re-measures and
-   repositions the modal every frame. Owning the element outright also drops the
-   overrides that fight it had needed (`display: flex !important` against
-   transition.less, a max-height reserve to dodge its canFit() "scrolling" mode,
-   and working around the dimmer's un-reset 1em padding).
-
-   Flex column: title bar and tabs hold their height, the body takes the rest.
-   Centred until dragged, at which point --placed hands positioning to the
-   inline left/top the drag writes. */
+/* Keep the report inside a padded viewport frame on every tab. The title bar
+   and tabs keep their height while the active tab scrolls within the body. */
 .user-report-window {
   position: fixed;
   left: 50%;
@@ -1744,16 +1735,14 @@ html.amoled {
   transform: translate(-50%, -50%);
   display: flex;
   flex-direction: column;
-  width: min(1080px, 94vw);
-  max-height: min(860px, calc(100vh - 80px));
+  width: min(1200px, calc(100vw - 96px));
+  height: min(860px, calc(100dvh - 96px));
   overflow: hidden;
   border-radius: 12px;
   border: 1px solid var(--border);
   background: var(--bg-surface);
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.28);
 }
-
-.user-report-window--placed { transform: none; }
 
 /* Kept mounted so a restore doesn't refetch or lose the active tab. */
 .user-report-window--minimized { display: none; }
@@ -1862,13 +1851,8 @@ html.amoled {
 
 /* ── Hero / title bar ──────────────────────────────────────────────────────── */
 
-/* Doubles as the drag handle. `touch-action: none` is what lets a touch drag
-   move the window instead of scrolling the page behind it; without it the
-   browser claims the gesture and pointermove never fires. */
 .user-report-hero {
   flex-shrink: 0;
-  cursor: grab;
-  touch-action: none;
   user-select: none;
   padding: 18px 20px 14px;
   border-bottom: 1px solid var(--border);
@@ -1880,8 +1864,6 @@ html.amoled {
     ),
     var(--surface-card);
 }
-
-.user-report-hero:active { cursor: grabbing; }
 
 /* The controls in the title bar are click targets, not drag surfaces. */
 .user-report-hero button,
@@ -2803,24 +2785,13 @@ html.amoled {
   .user-report-folder-text { max-width: 34ch; }
 }
 
-/* Phones: full-screen sheet, and not draggable — there's nowhere to drag to,
-   and the title bar would eat the scroll gesture. `inset` must win over the
-   inline left/top a drag may already have written, hence !important. */
+/* Phones retain a smaller gutter around the fixed-size report. */
 @media (max-width: 640px) {
-  .user-report-window,
-  .user-report-window--placed {
-    inset: 0 !important;
+  .user-report-window {
+    inset: 12px;
     width: auto;
-    max-width: none;
-    max-height: none;
+    height: auto;
     transform: none;
-    border: none;
-    border-radius: 0;
-  }
-
-  .user-report-hero {
-    cursor: default;
-    touch-action: auto;
   }
 
   .user-report-dock {
