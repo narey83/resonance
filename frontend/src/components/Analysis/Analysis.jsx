@@ -39,6 +39,7 @@ import { djSummary } from '../../lib/libraryWorkbench';
 import {
   getPreparationStatus,
   pausePreparation,
+  setPreparationMode,
 } from '../../lib/libraryWorkspace';
 import * as musicLibraryApi from '../../lib/musicLibrary';
 import {
@@ -736,6 +737,9 @@ const Analysis = ({
   );
   const [inspectedTrack, setInspectedTrack] = useState(null);
   const [preparation, setPreparation] = useState(null);
+  const automaticMode = preparation
+    ? preparation.mode ?? (preparation.enhancedEnabled ? 'enhanced' : 'basic')
+    : null;
   const [preparationBusy, setPreparationBusy] = useState('');
   const [scanControlBusy, setScanControlBusy] = useState('');
   const [stopRequested, setStopRequested] = useState(false);
@@ -1235,6 +1239,23 @@ const Analysis = ({
         action === 'stop' && schedulingPaused
           ? 'Automatic scheduling is stopped. Could not refresh scan status; updates will retry.'
           : 'Could not update analysis. Please retry.',
+      );
+    } finally {
+      if (mountedRef.current) setPreparationBusy('');
+    }
+  };
+
+  const handlePreparationMode = async (mode) => {
+    if (!preparation || preparationBusy || stopRequested) return;
+    setPreparationBusy('mode');
+    try {
+      await setPreparationMode(mode);
+      const next = await getPreparationStatus();
+      if (mountedRef.current) setPreparation(next);
+    } catch (caughtError) {
+      toast.error(
+        caughtError?.response?.data?.message ||
+          'Could not change automatic analysis mode. Please retry.',
       );
     } finally {
       if (mountedRef.current) setPreparationBusy('');
@@ -2082,6 +2103,45 @@ const Analysis = ({
               Automatically analyses tracks in the background. This setting does
               not pause or resume a scan you start manually.
             </p>
+            <fieldset
+              className="ka-preparation-modes"
+              disabled={
+                !preparation || Boolean(preparationBusy) || stopRequested
+              }
+            >
+              <legend>Automatic track analysis</legend>
+              <label>
+                <input
+                  checked={automaticMode === 'basic'}
+                  name="automatic-analysis-mode"
+                  onChange={() => handlePreparationMode('basic')}
+                  type="radio"
+                  value="basic"
+                />
+                <span>
+                  <strong>Basic</strong> — BPM, key, waveform and loudness.
+                  Usually under a minute per track.
+                </span>
+              </label>
+              <label>
+                <input
+                  checked={automaticMode === 'enhanced'}
+                  disabled={preparation?.enhancedEnabled === false}
+                  name="automatic-analysis-mode"
+                  onChange={() => handlePreparationMode('enhanced')}
+                  type="radio"
+                  value="enhanced"
+                />
+                <span>
+                  <strong>Enhanced</strong> — Basic plus beat grids, vocals,
+                  structure and genre. Often several minutes per track.
+                </span>
+              </label>
+              <small>
+                Times vary with track length, file format, hardware and
+                available models. Tracks waiting in the queue take longer.
+              </small>
+            </fieldset>
             <div className="ka-analysis-context">
               <div className="ka-preparation-actions">
                 <button

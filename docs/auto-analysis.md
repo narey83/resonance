@@ -31,9 +31,19 @@ one thread per worker, preventing nested full-machine pools from competing.
 ## Analysis engines
 
 Basic analysis provides BPM, key, waveform and loudness. With the optional independent
-worker configured, the same queue also prepares beat/downbeat grids, genre, energy,
+worker configured, Enhanced mode also prepares beat/downbeat grids, genre, energy,
 singing/processed voice and DJ/musical phrases. These are independent estimates;
 uncertain DJ sections use neutral labels. They do not require Rekordbox.
+
+The Analysis page's **Automatic track analysis** setting selects Basic or Enhanced
+for future background batches. The choice persists across restarts and does not
+change a manual scan or a batch already running. Existing installations initially
+keep their prior behaviour: Enhanced when its worker is configured, Basic otherwise.
+Basic usually takes under a minute per track; Enhanced often takes several minutes
+per track. These are rough expectations, not a completion estimate: track length,
+format, hardware, model availability and queue waits all affect the elapsed time.
+If Enhanced was selected and its worker becomes unavailable, the queue waits for
+the worker instead of silently running Basic.
 
 Missing engines or model assets are reported as unavailable or failed rather than
 represented as successful full analysis. Basic BPM/key detection needs a configured

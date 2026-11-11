@@ -50,7 +50,9 @@ public class PreparationService(WorkspaceStore store, MusicRepository repository
     private bool recoveryNeeded;
     public long LastCheckedAt { get; private set; }
     public string DependencyError => analysis.ScanState.DependencyUnavailable ? analysis.ScanState.Error : null;
+    public string Mode => store.PreparationMode ?? (enhanced.Enabled ? "enhanced" : "basic");
     public string WaitingReason => DependencyError ?? (store.Paused ? "Paused after active tracks"
+        : Mode == "enhanced" && !enhanced.Enabled ? "Enhanced analysis worker is not configured"
         : FilesBeingUpdated ? "Waiting for metadata updates to finish"
         : analysis.PlaybackActive ? "Waiting for playback to go idle"
         : analysis.ScanState.Scanning ? "Analysis is running" : null);
@@ -58,6 +60,17 @@ public class PreparationService(WorkspaceStore store, MusicRepository repository
     private static long Now => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
     private bool FilesBeingUpdated => library?.IsQueueActive("metadata") == true || library?.IsQueueActive("tag-sanitization") == true;
     private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", Logs.Music.Analysis);
+
+    public void SetMode(string mode)
+    {
+        if (mode == "enhanced" && !enhanced.Enabled)
+        {
+            throw new InvalidOperationException("The Enhanced analysis worker is not configured.");
+        }
+
+        store.PreparationMode = mode;
+        Interlocked.Exchange(ref reconcileRequested, 1);
+    }
 
     public void Retry(string path)
     {
@@ -77,6 +90,7 @@ public class PreparationService(WorkspaceStore store, MusicRepository repository
     public void Reconcile(CancellationToken ct = default)
     {
         var timer = Stopwatch.StartNew();
+        var requireEnhanced = Mode == "enhanced";
         var checkedTracks = 0;
         var updatedItems = 0;
         string afterPath = null;
@@ -102,7 +116,7 @@ public class PreparationService(WorkspaceStore store, MusicRepository repository
                         continue;
                     }
 
-                    var completed = PreparationPolicy.CompletedState(track, enhanced.Enabled);
+                    var completed = PreparationPolicy.CompletedState(track, requireEnhanced);
                     var changed = existing == null || existing.FileSize != track.FileSize || existing.FileModified != track.FileModified;
                     if (completed != null)
                     {
@@ -136,7 +150,7 @@ public class PreparationService(WorkspaceStore store, MusicRepository repository
 
     internal async Task ProcessNext(CancellationToken ct)
     {
-        if (store.Paused || FilesBeingUpdated || analysis.ScanState.Scanning || playbackGate.ShouldWait(analysis.PlaybackActive, Now))
+        if (store.Paused || (Mode == "enhanced" && !enhanced.Enabled) || FilesBeingUpdated || analysis.ScanState.Scanning || playbackGate.ShouldWait(analysis.PlaybackActive, Now))
         {
             return;
         }
@@ -229,6 +243,7 @@ public class PreparationService(WorkspaceStore store, MusicRepository repository
     private async Task PrepareBatch(IReadOnlyList<PreparationItem> items, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
+        var runEnhanced = Mode == "enhanced";
         var candidates = items.Select(item => (Item: item, Track: Track(item.Path))).ToArray();
         if (candidates.Any(candidate => candidate.Track == null))
         {
@@ -238,7 +253,7 @@ public class PreparationService(WorkspaceStore store, MusicRepository repository
         var batch = new List<(PreparationItem Item, MusicTrack Track)>();
         lock (gate)
         {
-            if (store.Paused)
+            if (store.Paused || (runEnhanced && !enhanced.Enabled))
             {
                 return;
             }
@@ -251,7 +266,7 @@ public class PreparationService(WorkspaceStore store, MusicRepository repository
                     continue;
                 }
 
-                var completed = PreparationPolicy.CompletedState(candidate.Track, enhanced.Enabled);
+                var completed = PreparationPolicy.CompletedState(candidate.Track, runEnhanced);
                 if (completed != null)
                 {
                     store.Put(candidate.Item with { State = completed, Detail = "Analysis available", UpdatedAt = Now });
@@ -282,7 +297,7 @@ public class PreparationService(WorkspaceStore store, MusicRepository repository
         try
         {
             Log.Information("Automatic preparation starting {Tracks} tracks across up to {Workers} CPU workers", batch.Count, Math.Min(batch.Count, Environment.ProcessorCount));
-            await analysis.StartScanAsync(new(OnlyPaths: batch.Select(candidate => candidate.Track.Path).ToArray(), SkipAnalysed: true, Enhanced: enhanced.Enabled));
+            await analysis.StartScanAsync(new(OnlyPaths: batch.Select(candidate => candidate.Track.Path).ToArray(), SkipAnalysed: true, Enhanced: runEnhanced));
         }
         catch (InvalidOperationException)
         {
@@ -306,12 +321,12 @@ public class PreparationService(WorkspaceStore store, MusicRepository repository
             var item = store.Find(candidate.Item.Path);
             if (item?.State == "running")
             {
-                Finish(item);
+                Finish(item, runEnhanced);
             }
         }
     }
 
-    private void Finish(PreparationItem item)
+    private void Finish(PreparationItem item, bool runEnhanced)
     {
         var track = Track(item.Path);
         if (track == null)
@@ -321,7 +336,7 @@ public class PreparationService(WorkspaceStore store, MusicRepository repository
         }
 
         item = item with { FileSize = track.FileSize, FileModified = track.FileModified };
-        var completed = PreparationPolicy.CompletedState(track, enhanced.Enabled);
+        var completed = PreparationPolicy.CompletedState(track, runEnhanced);
         if (completed != null)
         {
             store.Put(item with { State = completed, NextAttemptAt = 0, Detail = "Analysis available", UpdatedAt = Now });

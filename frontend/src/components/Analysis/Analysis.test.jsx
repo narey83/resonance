@@ -4,6 +4,7 @@ import { resolveFailedTrackPaths } from '../../lib/analysisRetry';
 import {
   getPreparationStatus,
   pausePreparation,
+  setPreparationMode,
 } from '../../lib/libraryWorkspace';
 import { getLogs } from '../../lib/logs';
 import * as musicLibraryApi from '../../lib/musicLibrary';
@@ -31,6 +32,7 @@ jest.mock('../../context/PlayerContext', () => ({
 jest.mock('../../lib/libraryWorkspace', () => ({
   getPreparationStatus: jest.fn(),
   pausePreparation: jest.fn(),
+  setPreparationMode: jest.fn(),
 }));
 
 jest.mock(
@@ -95,6 +97,7 @@ describe('analysis folder loading', () => {
     jest.clearAllMocks();
     useLibraryActivity.mockReturnValue({ libraryRevision: 0 });
     pausePreparation.mockResolvedValue({});
+    setPreparationMode.mockResolvedValue({});
     analysisApi.cancelScan.mockResolvedValue({});
     analysisApi.pauseScan.mockResolvedValue({});
     analysisApi.resumeScan.mockResolvedValue({});
@@ -107,6 +110,7 @@ describe('analysis folder loading', () => {
       counts: { complete: 5 },
       paused: true,
       enhancedEnabled: true,
+      mode: 'enhanced',
     });
     useVirtualizer.mockImplementation(
       ({ count, getItemKey, scrollMargin }) => ({
@@ -1121,6 +1125,25 @@ describe('analysis folder loading', () => {
       ),
     ).not.toBeNull();
     expect(analysisApi.startScan).not.toHaveBeenCalled();
+  });
+  it('saves the automatic mode separately from the manual scan mode', async () => {
+    expect.hasAssertions();
+    await render();
+    const panel = container.querySelector('.ka-automatic-details');
+    panel.open = true;
+    expect(panel.textContent).toContain('Usually under a minute per track');
+    expect(panel.textContent).toContain('Often several minutes per track');
+    getPreparationStatus.mockResolvedValue({
+      paused: true,
+      enhancedEnabled: true,
+      mode: 'basic',
+      counts: { basic: 1 },
+    });
+    await act(async () => panel.querySelector('[value="basic"]').click());
+    expect(setPreparationMode).toHaveBeenCalledWith('basic');
+    expect(panel.querySelector('[value="basic"]').checked).toBe(true);
+    expect(analysisApi.startScan).not.toHaveBeenCalled();
+    expect(pausePreparation).not.toHaveBeenCalled();
   });
   it('pauses after active tracks without cancelling them', async () => {
     expect.hasAssertions();

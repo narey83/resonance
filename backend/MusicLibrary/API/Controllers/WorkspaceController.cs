@@ -134,6 +134,7 @@ public class WorkspaceController(WorkspaceStore store, MusicRepository repositor
             total = counts.Values.Sum(),
             paused = store.Paused,
             automatic = true,
+            mode = preparation.Mode,
             enhancedEnabled = enhanced.Enabled,
             waitingReason = preparation.WaitingReason,
             analysisError = preparation.DependencyError,
@@ -167,6 +168,24 @@ public class WorkspaceController(WorkspaceStore store, MusicRepository repositor
         return NoContent();
     }
 
+    [HttpPost("preparation/mode")]
+    public IActionResult SetPreparationMode([FromBody] PreparationModeRequest request)
+    {
+        try
+        {
+            preparation.SetMode(request?.Mode);
+            return NoContent();
+        }
+        catch (ArgumentException exception)
+        {
+            return BadRequest(new { message = exception.Message });
+        }
+        catch (InvalidOperationException exception)
+        {
+            return Conflict(new { message = exception.Message });
+        }
+    }
+
     private static SmartCrateRules ClientRules(SmartCrateRules rules) => rules with { Folder = rules.Folder == null ? null : MusicPath.ToAbsolute(rules.Folder) };
     private MusicTrack Sign(MusicTrack track)
     {
@@ -197,4 +216,5 @@ public class WorkspaceController(WorkspaceStore store, MusicRepository repositor
     public record RetryRequest(string Path);
 
     public record PauseRequest(bool Paused);
+    public record PreparationModeRequest(string Mode);
 }

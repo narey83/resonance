@@ -374,6 +374,38 @@ public class WorkspaceTests : IDisposable
         Assert.Equal(2, analysis.Starts);
         Assert.Equal(3, store.Counts()["basic"]);
     }
+    [Fact] public async Task AutomaticModePersistsAndChangesTheNextBatchWithoutDiscardingBasicResults()
+    {
+        Add("nested/a.mp3");
+        var worker = new CandidateAnalysisOptions("python", "worker.py", "config.json", "results");
+        var service = new PreparationService(store, repository, null!, analysis, worker);
+        Assert.Equal("enhanced", service.Mode);
+        service.SetMode("basic");
+        var reopened = new WorkspaceStore(new(new Dictionary<Database,ConnectionString> { [Database.Music] = connection }, postgres));
+        Assert.Equal("basic", reopened.PreparationMode);
+        service.Reconcile();
+        analysis.OnStart = () => Complete("nested/a.mp3", false);
+        await service.ProcessNext(default);
+        Assert.False(analysis.LastRequest!.Enhanced);
+        Assert.Equal("basic", store.Find("nested/a.mp3").State);
+
+        service.SetMode("enhanced");
+        service.Reconcile();
+        Assert.Equal("queued", store.Find("nested/a.mp3").State);
+        analysis.OnStart = () => Complete("nested/a.mp3", true);
+        await service.ProcessNext(default);
+        Assert.True(analysis.LastRequest!.Enhanced);
+        Assert.Equal("complete", store.Find("nested/a.mp3").State);
+        Assert.Equal("enhanced", reopened.PreparationMode);
+    }
+    [Fact] public void AutomaticModeRejectsUnavailableEnhancedWorkerAndInvalidValues()
+    {
+        var service = Service;
+        Assert.Equal("basic", service.Mode);
+        Assert.Throws<InvalidOperationException>(() => service.SetMode("enhanced"));
+        Assert.Throws<ArgumentException>(() => service.SetMode("other"));
+        Assert.Equal("basic", service.Mode);
+    }
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

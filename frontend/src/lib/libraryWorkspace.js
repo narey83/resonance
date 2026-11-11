@@ -35,6 +35,8 @@ export const getPreparationPage = async (params) => {
 
 export const pausePreparation = async (paused) =>
   api.post('/musiclibrary/preparation/pause', { paused });
+export const setPreparationMode = async (mode) =>
+  api.post('/musiclibrary/preparation/mode', { mode });
 export const retryPreparation = async (path) =>
   api.post('/musiclibrary/preparation/retry', { path });
 export const workspaceError = (error) =>

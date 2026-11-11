@@ -93,6 +93,27 @@ public partial class WorkspaceStore
         }
     }
 
+    // Null keeps the existing worker-dependent default for installations that
+    // have not chosen an automatic analysis mode yet.
+    public string PreparationMode
+    {
+        get
+        {
+            using var db = Open();
+            return db.ExecuteScalar<string>($"SELECT value FROM {Settings} WHERE key='preparation-mode'");
+        }
+        set
+        {
+            if (value is not ("basic" or "enhanced"))
+            {
+                throw new ArgumentException("Choose Basic or Enhanced analysis.", nameof(value));
+            }
+
+            using var db = Open();
+            db.Execute($"INSERT INTO {Settings} (key,value) VALUES ('preparation-mode',@value) ON CONFLICT(key) DO UPDATE SET value=excluded.value", new { value });
+        }
+    }
+
     private string Crates => postgres ? "music.smart_crates" : "smart_crates";
     private string Preparation => postgres ? "music.preparation_items" : "preparation_items";
     private string Settings => postgres ? "music.workspace_settings" : "workspace_settings";

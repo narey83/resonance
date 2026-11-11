@@ -1182,6 +1182,12 @@
 .ka-current-analysis .ka-progress-bar-wrap { max-width: none; min-width: 200px; }
 .ka-automatic-details { margin: 16px 0; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
 .ka-background-help { margin: 10px 0; color: var(--text-muted); font-size: 12px; }
+.ka-preparation-modes { display: grid; gap: 8px; margin: 12px 0; padding: 0; border: 0; font-size: 12px; }
+.ka-preparation-modes legend { margin-bottom: 8px; font-weight: 600; }
+.ka-preparation-modes label { display: flex; align-items: flex-start; gap: 8px; line-height: 1.4; cursor: pointer; }
+.ka-preparation-modes input { margin-top: 2px; }
+.ka-preparation-modes small { color: var(--text-muted); line-height: 1.4; }
+.ka-preparation-modes input:disabled + span { color: var(--text-muted); }
 .ka-automatic-details .ka-analysis-context { padding-top: 10px; }
 .ka-scan-errors { margin-bottom: 12px; color: var(--danger); }
 .ka-idle-status, .ka-stop-status { font-size: 12px; color: var(--text-muted); margin: 8px 0; }
