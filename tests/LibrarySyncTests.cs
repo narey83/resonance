@@ -15,6 +15,7 @@ public sealed class LibrarySyncTests : IDisposable
     private readonly string root = Path.Combine(Path.GetTempPath(), "resonance-sync-" + Guid.NewGuid().ToString("N"));
     private readonly MusicRepository repository;
     private readonly MusicLibraryService service;
+    private readonly string[] shareRoots;
     private readonly List<MusicLibrarySyncState> broadcasts = new();
 
     public LibrarySyncTests()
@@ -32,7 +33,8 @@ public sealed class LibrarySyncTests : IDisposable
         var clients = Stub<IHubClients>((_, _) => client);
         var hub = Stub<IHubContext<LibraryActivityHub>>((_, _) => clients);
         var activity = Stub<ILibraryActivityService>((_, _) => Task.CompletedTask);
-        service = new MusicLibraryService(new OptionsAtStartup { Shares = new() { Directories = [root] } }, repository, null!, hub, activity);
+        shareRoots = [root];
+        service = new MusicLibraryService(new OptionsAtStartup { Shares = new() { Directories = shareRoots } }, repository, null!, hub, activity);
     }
 
     private string Wave(string name)
@@ -113,12 +115,48 @@ public sealed class LibrarySyncTests : IDisposable
     public async Task ADeletionStillRemovesTheIndexedTrack()
     {
         var path = Wave("removed.wav");
+        var retained = Wave("retained.wav");
         await Sync(); broadcasts.Clear();
         File.Delete(path);
         Changed(path);
         await Sync();
         Assert.Contains(broadcasts, state => state.Running);
         Assert.Null(repository.GetByPath(path));
+        Assert.NotNull(repository.GetByPath(retained));
+    }
+
+    [Fact]
+    public async Task UnavailableShareRootPreservesIndexedTracksUntilItRecovers()
+    {
+        var path = Wave("track.wav");
+        await Sync();
+
+        shareRoots[0] = Path.Combine(root, "unavailable");
+        service.TriggerImmediateSync();
+        await Sync();
+        Assert.NotNull(repository.GetByPath(path));
+        Assert.False(service.SyncState.Completed);
+        Assert.Equal(0, service.SyncState.Removed);
+
+        shareRoots[0] = root;
+        service.TriggerImmediateSync();
+        await Sync();
+        Assert.NotNull(repository.GetByPath(path));
+        Assert.True(service.SyncState.Completed);
+    }
+
+    [Fact]
+    public async Task EmptyScanPreservesTheLastIndexedTrack()
+    {
+        var path = Wave("track.wav");
+        await Sync();
+
+        File.Delete(path);
+        Changed(path);
+        await Sync();
+        Assert.NotNull(repository.GetByPath(path));
+        Assert.False(service.SyncState.Completed);
+        Assert.Equal(0, service.SyncState.Removed);
     }
 
     [Fact]

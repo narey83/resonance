@@ -722,14 +722,22 @@ namespace resonance.MusicLibrary
             var removed = 0;
             var unchanged = 0;
             var failed = 0;
+            var scanIncomplete = false;
 
             try
             {
                 // ── 1. Enumerate all audio files on the filesystem ────────────
                 var fsFiles = new Dictionary<string, FileInfo>(StringComparer.Ordinal);
-                foreach (var dir in GetScanDirectories())
+                foreach (var dir in GetConfiguredDirectories())
                 {
                     runToken.ThrowIfCancellationRequested();
+                    if (!Directory.Exists(dir))
+                    {
+                        scanIncomplete = true;
+                        Log.Warning("Music library sync: configured directory is unavailable: {Dir}", dir);
+                        continue;
+                    }
+
                     try
                     {
                         foreach (var fi in EnumerateAudio(dir))
@@ -742,12 +750,18 @@ namespace resonance.MusicLibrary
                     }
                     catch (Exception ex)
                     {
+                        scanIncomplete = true;
                         Log.Warning("Music library sync: cannot scan {Dir}: {Err}", dir, ex.Message);
                     }
                 }
 
                 // ── 2. Load existing fingerprints from DB ─────────────────────
                 var dbPrints = Repository.GetAllFingerprints();
+                if (dbPrints.Count > 0 && fsFiles.Count == 0)
+                {
+                    scanIncomplete = true;
+                }
+
                 var total = fsFiles.Count;
 
                 // ── 3. Partition (cheap, in-memory): which files need a (re)read? ──
@@ -855,7 +869,16 @@ namespace resonance.MusicLibrary
                 }
 
                 // ── 4. Remove stale entries ───────────────────────────────────
-                var stale = dbPrints.Keys.Except(fsFiles.Keys, StringComparer.Ordinal).ToList();
+                // A temporarily unavailable mount can make an entire library disappear from the
+                // enumeration. Keep existing rows until a complete scan can prove they were deleted.
+                var stale = scanIncomplete
+                    ? new List<string>()
+                    : dbPrints.Keys.Except(fsFiles.Keys, StringComparer.Ordinal).ToList();
+                if (scanIncomplete)
+                {
+                    Log.Warning("Music library sync incomplete — preserving indexed tracks until all share roots are readable");
+                }
+
                 if (stale.Count > 0)
                 {
                     Repository.DeletePaths(stale);
@@ -870,7 +893,8 @@ namespace resonance.MusicLibrary
                 var (totalTracks, _) = Repository.GetStats();
 
                 Log.Information(
-                    "Music library sync complete — {Total} tracks · added={A} updated={U} removed={R} unchanged={N} failed={F}",
+                    "Music library sync {Result} — {Total} tracks · added={A} updated={U} removed={R} unchanged={N} failed={F}",
+                    scanIncomplete ? "incomplete" : "complete",
                     totalTracks, added, updated, removed, unchanged, failed);
 
                 if (!newlyAdded.IsEmpty)
@@ -879,7 +903,7 @@ namespace resonance.MusicLibrary
                 }
 
                 SetState(new MusicLibrarySyncState(
-                    false, true, DateTimeOffset.UtcNow.Ticks,
+                    false, !scanIncomplete, DateTimeOffset.UtcNow.Ticks,
                     totalTracks, added, updated, removed, unchanged, failed, 1.0));
 
                 if (added + updated + removed > 0)
@@ -914,7 +938,9 @@ namespace resonance.MusicLibrary
                 // Stamped on every exit path — completed, cancelled or failed. A scan that failed
                 // still cost a full read of the tree, so the watcher floor must apply to it too,
                 // otherwise a repeatedly-failing scan would loop at the debounce interval.
-                lastSyncCompletedUtc = DateTime.UtcNow;
+                // Retry an incomplete scan on the next loop instead of waiting for the six-hour
+                // safety net; network mounts may recover without emitting filesystem events.
+                lastSyncCompletedUtc = scanIncomplete ? DateTime.MinValue : DateTime.UtcNow;
                 currentRunCts?.Dispose();
                 currentRunCts = null;
             }
