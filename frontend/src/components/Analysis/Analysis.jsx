@@ -185,11 +185,15 @@ const MetricCard = ({
 
 const ScanSettings = ({
   enhanced,
+  enhancedFeatures,
   modeSelector,
+  onEnhancedFeaturesChange,
   onStart,
+  onWriteAutoCuesChange,
   scanning,
   selectedCount = 0,
   viewState,
+  writeAutoCues,
 }) => {
   const [skipTagged, setSkipTagged] = useState(
     viewState?.current?.skipTagged ?? true,
@@ -213,6 +217,87 @@ const ScanSettings = ({
 
       <div className="ka-panel-body">
         {modeSelector}
+
+        {enhanced && (
+          <fieldset className="ka-enhanced-features">
+            <legend>Enhanced measurements</legend>
+            <label>
+              <input
+                checked={enhancedFeatures === null}
+                name="enhanced-features-mode"
+                onChange={() => onEnhancedFeaturesChange(null)}
+                type="radio"
+              />
+              Full analysis (USB ready)
+            </label>
+            <label>
+              <input
+                checked={enhancedFeatures !== null}
+                name="enhanced-features-mode"
+                onChange={() =>
+                  onEnhancedFeaturesChange(['beats', 'key', 'waveform'])
+                }
+                type="radio"
+              />
+              Choose measurements
+            </label>
+            {enhancedFeatures !== null && (
+              <div className="ka-enhanced-feature-grid">
+                {[
+                  ['beats', 'Beats and BPM'],
+                  ['key', 'Musical key'],
+                  ['waveform', 'Waveforms'],
+                  ['energy', 'Energy'],
+                  ['loudness', 'Loudness'],
+                  ['embedding', 'Similarity'],
+                  ['structure', 'Sections'],
+                  ['stems', 'Stems'],
+                  ['vocalActivity', 'Vocal activity'],
+                  ['genre', 'Genre'],
+                  ['cues', 'Cue suggestions'],
+                  ['semanticPhrases', 'Song phrases'],
+                  ['loops', 'Loop suggestions'],
+                  ['vocalPresence', 'Vocal presence'],
+                ].map(([feature, label]) => (
+                  <label key={feature}>
+                    <input
+                      checked={enhancedFeatures.includes(feature)}
+                      onChange={() =>
+                        onEnhancedFeaturesChange(
+                          enhancedFeatures.includes(feature)
+                            ? enhancedFeatures.filter(
+                                (item) => item !== feature,
+                              )
+                            : [...enhancedFeatures, feature],
+                        )
+                      }
+                      type="checkbox"
+                    />
+                    {label}
+                  </label>
+                ))}
+                <small>
+                  Dependencies run automatically. A partial result may need more
+                  measurements before USB export.
+                </small>
+              </div>
+            )}
+            <label>
+              <input
+                checked={writeAutoCues}
+                onChange={(event) =>
+                  onWriteAutoCuesChange(event.target.checked)
+                }
+                type="checkbox"
+              />
+              Write auto cues to listening bookmarks and USB hot cues
+            </label>
+            <small>
+              Manual bookmarks are preserved. Cue suggestions fill available
+              positions.
+            </small>
+          </fieldset>
+        )}
 
         <label
           className="ka-toggle-row"
@@ -271,13 +356,18 @@ const ScanSettings = ({
         )}
         <button
           className="ka-btn ka-btn--primary hover-fx"
-          disabled={scanning || selectedCount === 0}
+          disabled={
+            scanning ||
+            selectedCount === 0 ||
+            (enhanced && enhancedFeatures?.length === 0)
+          }
           onClick={() =>
             onStart({
               metrics: METRICS.join(', '),
               skipAnalysed: skipTagged,
               resetAll,
               enhanced,
+              ...(enhanced ? { enhancedFeatures, writeAutoCues } : {}),
             })
           }
           type="button"
@@ -735,6 +825,12 @@ const Analysis = ({
   const [enhanced, setEnhanced] = useState(
     viewState?.current?.enhanced ?? false,
   );
+  const [enhancedFeatures, setEnhancedFeatures] = useState(
+    viewState?.current?.enhancedFeatures ?? null,
+  );
+  const [writeAutoCues, setWriteAutoCues] = useState(
+    viewState?.current?.writeAutoCues ?? false,
+  );
   const [inspectedTrack, setInspectedTrack] = useState(null);
   const [preparation, setPreparation] = useState(null);
   const automaticMode = preparation
@@ -784,6 +880,8 @@ const Analysis = ({
       viewState.current = {
         ...viewState.current,
         enhanced,
+        enhancedFeatures,
+        writeAutoCues,
         search,
         filter,
         sortKey,
@@ -793,6 +891,7 @@ const Analysis = ({
       };
   }, [
     enhanced,
+    enhancedFeatures,
     expandedFolders,
     filter,
     search,
@@ -800,6 +899,7 @@ const Analysis = ({
     sortDirection,
     sortKey,
     viewState,
+    writeAutoCues,
   ]);
   const [recentlyUpdated, setRecentlyUpdated] = useState(new Set());
   const [stats, setStats] = useState(null);
@@ -1158,18 +1258,15 @@ const Analysis = ({
       return;
     }
 
-    const paths =
-      selected.size > 0
-        ? Array.from(new Set([path, ...selected.keys()]))
-        : [path];
     await startScan(
       {
         metrics: METRICS.join(', '),
         skipAnalysed: true,
         resetAll: false,
         enhanced,
+        ...(enhanced ? { enhancedFeatures, writeAutoCues } : {}),
       },
-      paths,
+      [path],
     );
   };
 
@@ -1597,6 +1694,7 @@ const Analysis = ({
         skipAnalysed: true,
         resetAll: false,
         enhanced,
+        ...(enhanced ? { enhancedFeatures, writeAutoCues } : {}),
       },
       paths,
     );
@@ -2044,6 +2142,7 @@ const Analysis = ({
       {(activeView === 'all' || activeView === 'analysis') && (
         <ScanSettings
           enhanced={enhanced}
+          enhancedFeatures={enhancedFeatures}
           modeSelector={
             <div className="ka-analysis-toolbar">
               <fieldset
@@ -2077,12 +2176,15 @@ const Analysis = ({
               </fieldset>
             </div>
           }
+          onEnhancedFeaturesChange={setEnhancedFeatures}
           onStart={handleStartScan}
+          onWriteAutoCuesChange={setWriteAutoCues}
           scanning={
             scanning || selecting || Boolean(preparationBusy) || stopRequested
           }
           selectedCount={selected.size}
           viewState={viewState}
+          writeAutoCues={writeAutoCues}
         />
       )}
       {(activeView === 'all' || activeView === 'overview') && (

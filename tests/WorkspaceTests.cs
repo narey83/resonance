@@ -156,6 +156,19 @@ public class WorkspaceTests : IDisposable
         Assert.Throws<InvalidOperationException>(() => store.SaveTrackPreparation("alice", saved with { Revision = 0 }));
         Assert.Throws<ArgumentException>(() => store.SaveTrackPreparation("alice", saved with { Bookmarks = [new("bad", double.NaN, "Invalid")] }));
     }
+    [Fact] public void AutoCuesPreserveManualBookmarksAndRemainAccountScoped()
+    {
+        store.SaveTrackPreparation("alice", new("nested/a.mp3", "opener", "Keep this note", [new("manual", 10, "My cue")]));
+        var saved = store.SaveAutoCues("alice", "nested/a.mp3", [10.2, 30, 45]);
+        Assert.Equal("Keep this note", saved.Notes);
+        Assert.Equal(3, saved.Bookmarks.Length);
+        Assert.Equal("My cue", saved.Bookmarks[0].Label);
+        Assert.Equal([30.0, 45.0], store.AutoCues("alice", "nested/a.mp3").Select(cue => cue.Seconds).ToArray());
+        Assert.Empty(store.AutoCues("bob", "nested/a.mp3"));
+        saved = store.SaveAutoCues("alice", "nested/a.mp3", [60]);
+        Assert.Equal([60.0], store.AutoCues("alice", "nested/a.mp3").Select(cue => cue.Seconds).ToArray());
+        Assert.Equal("My cue", saved.Bookmarks[0].Label);
+    }
     [Fact] public void WantedSearchesAreAccountScopedAndDeletionsCannotCrossAccounts()
     {
         var wish = store.AddWish("alice", "  Artist release  ");

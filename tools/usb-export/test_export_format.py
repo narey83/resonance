@@ -1,6 +1,6 @@
 from pathlib import Path
 import json,tempfile,unittest,wave
-from anlz_writer import path_for_audio,encode_beats,write_anlz,resample
+from anlz_writer import path_for_audio,encode_beats,encode_cues,write_anlz,resample
 from usb_export import prepare,export_key,sha
 from pyrekordbox.anlz import AnlzFile
 class FormatTests(unittest.TestCase):
@@ -14,6 +14,17 @@ class FormatTests(unittest.TestCase):
   analysis={'features':{'beats':{'result':{'beats_seconds':[.25,.75,1.25,1.75],'downbeats_seconds':[.25]}},'waveform':{'result':{'overallPeaks':[.1,.5,.9,.2],'bands':{'low':[.1,.4,.2,.7],'mid':[.7,.1,.3,.2],'high':[.4,.8,.2,.1]}}}}}
   with tempfile.TemporaryDirectory() as temp:
    audio='/Contents/Resonance/test.wav';track={'usbPath':audio,'anlzPath':path_for_audio(audio),'durationSeconds':2};result=write_anlz(temp,track,analysis);path=Path(temp)/track['anlzPath'].lstrip('/');dat=AnlzFile.parse_file(path);ext=AnlzFile.parse_file(path.with_suffix('.EXT'));two=AnlzFile.parse_file(path.with_suffix('.2EX'));self.assertEqual(result['beatCount'],4);self.assertEqual(dat.get_tag('PWAV').content.len_preview,400);self.assertEqual(ext.get_tag('PWV4').content.len_entries,1200);self.assertEqual(two.get_tag('PWV7').content.len_entries,300)
+ def test_hot_cue_readback_and_invalid_slots(self):
+  analysis={'features':{'beats':{'result':{'beats_seconds':[.25,.75,1.25,1.75],'downbeats_seconds':[.25]}},'waveform':{'result':{'overallPeaks':[.1,.5,.9,.2],'bands':{'low':[.1,.4,.2,.7],'mid':[.7,.1,.3,.2],'high':[.4,.8,.2,.1]}}}}}
+  with tempfile.TemporaryDirectory() as temp:
+   audio='/Contents/Resonance/cues.wav';track={'usbPath':audio,'anlzPath':path_for_audio(audio),'durationSeconds':2,'cues':[{'timeMs':250,'hotCueNumber':1,'name':'Intro'},{'timeMs':1250,'hotCueNumber':2,'name':'Drop'},{'timeMs':1500,'hotCueNumber':7,'name':'Outro'}]}
+   result=write_anlz(temp,track,analysis);self.assertEqual(result['hotCues'],3)
+   path=Path(temp)/track['anlzPath'].lstrip('/');dat=AnlzFile.parse_file(path);ext=AnlzFile.parse_file(path.with_suffix('.EXT'))
+   self.assertEqual([entry.hot_cue for entry in dat.getall_tags('PCOB')[0].content.entries],[2,1]);self.assertEqual([entry.hot_cue for entry in ext.getall_tags('PCOB')[0].content.entries],[7]);self.assertEqual([entry.hot_cue for entry in ext.getall_tags('PCO2')[0].content.entries],[7,2,1])
+  with self.assertRaises(ValueError):encode_cues([{'timeMs':0,'hotCueNumber':1},{'timeMs':500,'hotCueNumber':1}])
+ def test_basic_hot_cue_matches_recorded_export_layout(self):
+  raw=encode_cues([{'hotCueNumber':1,'timeMs':48}])
+  self.assertEqual(raw.hex(),'50434f4200000018000000500000000100000001ffffffff504350540000001c00000038000000010000000000010000ffffffff010003e800000030ffffffff00000000000000000000000000000000')
  def test_existing_destination_refused_before_source_access(self):
   with tempfile.TemporaryDirectory() as temp:
    with self.assertRaises(FileExistsError):prepare({},temp,'dual','unused')

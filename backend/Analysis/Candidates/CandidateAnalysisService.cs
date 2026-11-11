@@ -220,6 +220,42 @@ namespace resonance.Analysis.Candidates
             PruneBulkArtifacts(JobDirectory(generated.JobId), generated.JobId, Log);
         }
 
+        public async Task<JsonElement> EnsureSelectedFeatures(string path, string[] features, CancellationToken ct, bool force = false)
+        {
+            CandidateFeatureSelection.Validate(features);
+            if (features == null)
+            {
+                throw new ArgumentException("Choose enhanced features for this scan.", nameof(features));
+            }
+
+            if (!force)
+            {
+                foreach (var job in await List(path, ct))
+                {
+                    if (job.RequestedSeconds != null || !job.Status.StartsWith("completed", StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    var existing = await Read(job.JobId, ct);
+                    if (existing.ContentCurrent && existing.Analysis.HasValue && HasSelectedFeatures(existing.Analysis.Value, features))
+                    {
+                        return existing.Analysis.Value;
+                    }
+                }
+            }
+
+            var generated = await Analyze(new CandidateAnalysisRequest(path, Features: features), ct);
+            var result = await Read(generated.JobId, ct);
+            if (!result.ContentCurrent || !result.Analysis.HasValue || !HasSelectedFeatures(result.Analysis.Value, features))
+            {
+                throw new InvalidOperationException("Selected enhanced features were not completed for this track.");
+            }
+
+            PruneBulkArtifacts(JobDirectory(generated.JobId), generated.JobId, Log);
+            return result.Analysis.Value;
+        }
+
         public async Task<IReadOnlyList<CandidateJob>> List(string path, CancellationToken ct)
         {
             RequireStorageConfiguration();
@@ -357,6 +393,45 @@ namespace resonance.Analysis.Candidates
             "vocals" or "drums" or "bass" or "other" => stem + ".wav",
             _ => throw new ArgumentException("Choose a valid stem.", nameof(stem)),
         };
+
+        internal static bool HasSelectedFeatures(JsonElement analysis, string[] features)
+        {
+            return analysis.TryGetProperty("scope", out var scope)
+                && scope.TryGetProperty("fullTrack", out var fullTrack) && fullTrack.ValueKind == JsonValueKind.True
+                && analysis.TryGetProperty("featureAvailability", out var availability)
+                && availability.ValueKind == JsonValueKind.Object
+                && features.All(feature => availability.TryGetProperty(feature, out var status)
+                    && status.ValueKind == JsonValueKind.String && status.GetString() == "available");
+        }
+
+        internal static double[] CueSeconds(JsonElement analysis)
+        {
+            if (!analysis.TryGetProperty("featureAvailability", out var availability)
+                || !availability.TryGetProperty("cues", out var status)
+                || status.ValueKind != JsonValueKind.String || status.GetString() != "available"
+                || !analysis.TryGetProperty("features", out var features)
+                || !features.TryGetProperty("cues", out var cues)
+                || !cues.TryGetProperty("result", out var result)
+                || !result.TryGetProperty("cueProposals", out var proposals)
+                || proposals.ValueKind != JsonValueKind.Array
+                || !analysis.TryGetProperty("durationSeconds", out var durationValue)
+                || !durationValue.TryGetDouble(out var duration) || !double.IsFinite(duration) || duration <= 0)
+            {
+                throw new InvalidOperationException("Current cue proposals are unavailable.");
+            }
+
+            return proposals.EnumerateArray()
+                .Where(item => item.ValueKind == JsonValueKind.Object
+                    && item.TryGetProperty("seconds", out var value)
+                    && value.ValueKind == JsonValueKind.Number
+                    && value.TryGetDouble(out var seconds)
+                    && double.IsFinite(seconds) && seconds >= 0 && seconds <= duration)
+                .Select(item => item.GetProperty("seconds").GetDouble())
+                .OrderBy(seconds => seconds)
+                .DistinctBy(seconds => Math.Round(seconds, 1))
+                .Take(8)
+                .ToArray();
+        }
 
         internal static bool HasEnhanced(JsonElement document)
         {

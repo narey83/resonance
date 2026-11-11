@@ -44,6 +44,7 @@ namespace resonance.Analysis.UsbExport
     using resonance.Analysis.Imports;
     using resonance.Common;
     using resonance.MusicLibrary;
+    using Serilog;
 
     public record UsbExportRequest(string[] Paths, string PlaylistName = "Resonance", string Profile = "dual", string SelectionId = null);
     public record UsbExportJob(string JobId, string Status, int Total, int Prepared, string Profile, string PlaylistName, string Error = null, bool DownloadAvailable = false);
@@ -187,7 +188,7 @@ namespace resonance.Analysis.UsbExport
 
             var cancellation = new CancellationTokenSource(TimeSpan.FromHours(6));
             cancellations[id] = cancellation;
-            _ = Task.Run(() => Run(job, tracks, cancellation.Token));
+            _ = Task.Run(() => Run(job, tracks, username, cancellation.Token));
             return job;
         }
 
@@ -383,7 +384,7 @@ namespace resonance.Analysis.UsbExport
             }
         }
 
-        private async Task Run(UsbExportJob job, TrackAnalysisInfo[] tracks, CancellationToken ct)
+        private async Task Run(UsbExportJob job, TrackAnalysisInfo[] tracks, string username, CancellationToken ct)
         {
             var entered = false;
             try
@@ -417,7 +418,13 @@ namespace resonance.Analysis.UsbExport
                         }
                     }
 
-                    manifestTracks.Add(new { id = i + 1, sourceKey = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(MusicPath.ToRelative(path)))).ToLowerInvariant(), sourcePath = path, sourceSha256 = hash, sourceBytes = sourceInfo.Length, title = track.Title ?? Path.GetFileNameWithoutExtension(path), artist = track.Artist ?? string.Empty, album = track.Album ?? string.Empty, genre = string.Empty, bpm = track.Bpm, key = track.Key, analysis = enhanced.Value.Analysis });
+                    var autoCues = workspace?.AutoCues(username, path)
+                        .OrderBy(cue => cue.Seconds)
+                        .Take(8)
+                        .Select((cue, index) => new { timeMs = (int)Math.Round(cue.Seconds * 1000), hotCueNumber = index + 1, name = cue.Label })
+                        .ToArray();
+                    Log.Information("USB export track prepared. Track: {Track}, AutoCues: {AutoCues}", track.OriginalFilename, autoCues?.Length ?? 0);
+                    manifestTracks.Add(new { id = i + 1, sourceKey = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(MusicPath.ToRelative(path)))).ToLowerInvariant(), sourcePath = path, sourceSha256 = hash, sourceBytes = sourceInfo.Length, title = track.Title ?? Path.GetFileNameWithoutExtension(path), artist = track.Artist ?? string.Empty, album = track.Album ?? string.Empty, genre = string.Empty, bpm = track.Bpm, key = track.Key, cues = autoCues ?? [], analysis = enhanced.Value.Analysis });
                     jobs[job.JobId] = job = job with { Prepared = i + 1 };
                 }
 

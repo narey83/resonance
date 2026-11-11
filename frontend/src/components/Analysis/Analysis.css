@@ -1265,3 +1265,26 @@
   .ta-analysis-workspace :is(.ka-automatic-details, .ka-background-queue) { padding: 16px; }
 }
 .ta-analysis-workspace .ka-background-queue > summary { padding: 0; }
+.ka-enhanced-features {
+  flex: 1 1 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.ka-enhanced-features legend { padding: 0 4px; font-weight: 600; }
+.ka-enhanced-features label { display: inline-flex; align-items: center; gap: 6px; margin: 0 18px 8px 0; cursor: pointer; }
+.ka-enhanced-features small { display: block; color: var(--text-muted); line-height: 1.5; }
+.ka-enhanced-feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 6px 12px;
+  margin: 6px 0 12px;
+  padding: 10px;
+  background: var(--bg-elevated);
+  border-radius: 6px;
+}
+.ka-enhanced-feature-grid label { margin: 0; }
+.ka-enhanced-feature-grid small { grid-column: 1 / -1; }

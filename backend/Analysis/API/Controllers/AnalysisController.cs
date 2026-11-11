@@ -29,12 +29,16 @@
 
 namespace resonance.Analysis.API
 {
+    using System;
     using System.Collections.Generic;
+    using System.Linq;
+    using System.Security.Claims;
     using System.Threading;
     using System.Threading.Tasks;
     using Asp.Versioning;
     using Microsoft.AspNetCore.Authorization;
     using Microsoft.AspNetCore.Mvc;
+    using resonance.Analysis.Candidates;
 
     /// <summary>
     ///     Audio analysis — BPM, musical key, waveform peaks and loudness for library tracks.
@@ -99,13 +103,46 @@ namespace resonance.Analysis.API
         {
             try
             {
+                request ??= new AnalysisScanRequest();
+                if (!request.Enhanced && (request.EnhancedFeatures != null || request.WriteAutoCues))
+                {
+                    return BadRequest("Enhanced features require Enhanced analysis mode.");
+                }
+
+                CandidateFeatureSelection.Validate(request.EnhancedFeatures);
+                if ((request.EnhancedFeatures != null || request.WriteAutoCues)
+                    && (request.OnlyPaths?.Length ?? 0) + (request.OnlyFilenames?.Length ?? 0) == 0)
+                {
+                    return BadRequest("Select tracks before requesting enhanced features or auto cues.");
+                }
+
+                if (request.WriteAutoCues && !User.IsInRole("ReadWrite") && !User.IsInRole(AuthRole.AdministratorOnly))
+                {
+                    return Forbid();
+                }
+
+                var features = request.EnhancedFeatures;
+                if (request.WriteAutoCues && features != null && !features.Contains("cues", StringComparer.Ordinal))
+                {
+                    features = [.. features, "cues"];
+                }
+
                 // StartScanAsync only claims the single analysis queue and hands the scan to a
                 // background task, so awaiting it is quick. Discarding the task instead (as this used
                 // to) lost its "already in progress" exception, answering 202 for a scan that never ran.
                 // An analysis always measures key, BPM, loudness and waveform together; there is no
                 // per-metric choice, so whatever a client asks for, the scan covers all four.
-                await Analysis.StartScanAsync((request ?? new AnalysisScanRequest()) with { Metrics = AnalysisMetrics.All });
+                await Analysis.StartScanAsync(request with
+                {
+                    Metrics = AnalysisMetrics.All,
+                    EnhancedFeatures = features,
+                    CueUsername = request.WriteAutoCues ? User.FindFirstValue(ClaimTypes.Name) : null,
+                });
                 return Accepted();
+            }
+            catch (ArgumentException exception)
+            {
+                return BadRequest(exception.Message);
             }
             catch (System.InvalidOperationException)
             {

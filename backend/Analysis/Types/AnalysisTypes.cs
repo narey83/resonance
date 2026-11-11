@@ -294,13 +294,19 @@ namespace resonance.Analysis
     ///     Merged with <see cref="OnlyFilenames"/> when both are given.
     /// </param>
     /// <param name="Enhanced">Also run the independent vocal, phrase, downbeat and genre models.</param>
+    /// <param name="EnhancedFeatures">Optional selected full-track enhanced measurements.</param>
+    /// <param name="WriteAutoCues">Save generated cues into this user's listening bookmarks.</param>
+    /// <param name="CueUsername">Authenticated owner of generated cues; set by the server.</param>
     public record AnalysisScanRequest(
         AnalysisMetrics Metrics = AnalysisMetrics.All,
         bool SkipAnalysed = true,
         bool ResetAll = false,
         string[] OnlyFilenames = null,
         string[] OnlyPaths = null,
-        bool Enhanced = false);
+        bool Enhanced = false,
+        string[] EnhancedFeatures = null,
+        bool WriteAutoCues = false,
+        [property: System.Text.Json.Serialization.JsonIgnore] string CueUsername = null);
 
     /// <summary>API response shape for waveform data.</summary>
     /// <param name="NumBars">How many bars each peaks array holds.</param>

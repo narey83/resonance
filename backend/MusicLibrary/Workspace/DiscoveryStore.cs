@@ -42,14 +42,61 @@ public record DiggingWish(string Id, string Query, long CreatedAt);
 /// <summary>Stores track notes, cue bookmarks and digging wishes.</summary>
 public partial class WorkspaceStore
 {
+    private const string AutoCuePrefix = "resonance-auto-cue:";
+
     private string NotesTable => postgres ? "music.track_preparation" : "track_preparation";
     private string WishesTable => postgres ? "music.digging_wishes" : "digging_wishes";
+
+    public static bool IsAutoCue(CueBookmark bookmark) => bookmark?.Id?.StartsWith(AutoCuePrefix, StringComparison.Ordinal) == true;
 
     public IReadOnlyList<TrackPreparation> ListTrackPreparation(string username)
     {
         using var db = Open();
         return db.Query<string>($"SELECT document FROM {NotesTable} WHERE username=@username", new { username })
             .Select(value => JsonSerializer.Deserialize<TrackPreparation>(value, Json)).ToArray();
+    }
+
+    public TrackPreparation GetTrackPreparation(string username, string path)
+    {
+        using var db = Open();
+        var relative = resonance.Common.MusicPath.ToRelative(path);
+        var document = db.QuerySingleOrDefault<string>($"SELECT document FROM {NotesTable} WHERE username=@username AND path=@relative", new { username, relative });
+        return document == null ? null : JsonSerializer.Deserialize<TrackPreparation>(document, Json);
+    }
+
+    public CueBookmark[] AutoCues(string username, string path) =>
+        GetTrackPreparation(username, path)?.Bookmarks?.Where(IsAutoCue).ToArray() ?? [];
+
+    public TrackPreparation SaveAutoCues(string username, string path, IReadOnlyList<double> seconds)
+    {
+        if (string.IsNullOrWhiteSpace(username) || seconds == null || seconds.Count > 8
+            || seconds.Any(value => !double.IsFinite(value) || value < 0))
+        {
+            throw new ArgumentException("Auto cue positions are invalid.");
+        }
+
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            var current = GetTrackPreparation(username, path)
+                ?? new TrackPreparation(path, string.Empty, string.Empty, []);
+            var manual = (current.Bookmarks ?? []).Where(bookmark => !IsAutoCue(bookmark)).ToArray();
+            var generated = seconds.OrderBy(value => value)
+                .Where(value => manual.All(bookmark => Math.Abs(bookmark.Seconds - value) >= 1.0))
+                .DistinctBy(value => Math.Round(value, 1))
+                .Take(Math.Max(0, 100 - manual.Length))
+                .Select((value, index) => new CueBookmark(AutoCuePrefix + (index + 1), value, $"Auto cue {(char)('A' + index)}"))
+                .ToArray();
+            try
+            {
+                return SaveTrackPreparation(username, current with { Bookmarks = [.. manual, .. generated] });
+            }
+            catch (InvalidOperationException) when (attempt < 2)
+            {
+                // Retry a concurrent manual bookmark or note edit against its new revision.
+            }
+        }
+
+        throw new InvalidOperationException("Preparation details changed while saving auto cues.");
     }
 
     public TrackPreparation SaveTrackPreparation(string username, TrackPreparation request)

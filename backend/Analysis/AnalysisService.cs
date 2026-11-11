@@ -608,7 +608,7 @@ namespace resonance.Analysis
                 {
                     if (request.Enhanced)
                     {
-                        await RunEnhanced(tracks, ct, dispatchToken, controls, !request.SkipAnalysed || request.ResetAll);
+                        await RunEnhanced(tracks, ct, dispatchToken, controls, !request.SkipAnalysed || request.ResetAll, request);
                     }
 
                     SetState(false, true, false, 0, 0, 0, 0, 1.0);
@@ -796,7 +796,7 @@ namespace resonance.Analysis
 
                 if (!dispatchToken.IsCancellationRequested && request.Enhanced)
                 {
-                    await RunEnhanced(tracks, ct, dispatchToken, controls, !request.SkipAnalysed || request.ResetAll);
+                    await RunEnhanced(tracks, ct, dispatchToken, controls, !request.SkipAnalysed || request.ResetAll, request);
                 }
 
                 var cancelled = dispatchToken.IsCancellationRequested;
@@ -849,9 +849,10 @@ namespace resonance.Analysis
             }
         }
 
-        private async Task RunEnhanced(IReadOnlyList<TrackAnalysisInfo> tracks, CancellationToken ct, CancellationToken dispatchToken, AnalysisScanControl controls, bool force)
+        private async Task RunEnhanced(IReadOnlyList<TrackAnalysisInfo> tracks, CancellationToken ct, CancellationToken dispatchToken, AnalysisScanControl controls, bool force, AnalysisScanRequest request)
         {
             var enhanced = Services?.GetService<CandidateAnalysisService>();
+            var workspace = request.WriteAutoCues ? Services?.GetService<resonance.MusicLibrary.Workspace.WorkspaceStore>() : null;
             if (enhanced?.Enabled != true)
             {
                 return;
@@ -861,6 +862,9 @@ namespace resonance.Analysis
             {
                 CurrentState = CurrentState with { Scanning = true, Completed = false, EnhancedTotal = tracks.Count, EnhancedCompleted = 0, EnhancedFailed = 0 };
             }
+
+            Log.Information("Selected enhanced scan started. Tracks: {Tracks}, Features: {Features}, WriteAutoCues: {WriteAutoCues}",
+                tracks.Count, request.EnhancedFeatures == null ? "full" : string.Join(",", request.EnhancedFeatures), request.WriteAutoCues);
 
             await Parallel.ForEachAsync(
                 tracks,
@@ -877,7 +881,34 @@ namespace resonance.Analysis
 
                     try
                     {
-                        await enhanced.EnsureEnhanced(MusicPath.ToAbsolute(track.OriginalFilename), ct, force);
+                        var path = MusicPath.ToAbsolute(track.OriginalFilename);
+                        System.Text.Json.JsonElement? result = null;
+                        if (request.EnhancedFeatures == null)
+                        {
+                            await enhanced.EnsureEnhanced(path, ct, force);
+                            if (request.WriteAutoCues)
+                            {
+                                result = (await enhanced.LatestEnhanced(path, ct))?.Analysis
+                                    ?? throw new InvalidOperationException("Current enhanced result is unavailable.");
+                            }
+                        }
+                        else
+                        {
+                            result = await enhanced.EnsureSelectedFeatures(path, request.EnhancedFeatures, ct, force);
+                        }
+
+                        if (request.WriteAutoCues)
+                        {
+                            if (workspace == null || string.IsNullOrWhiteSpace(request.CueUsername))
+                            {
+                                throw new InvalidOperationException("Auto cue storage is unavailable.");
+                            }
+
+                            var saved = workspace.SaveAutoCues(request.CueUsername, path, CandidateAnalysisService.CueSeconds(result.Value));
+                            Log.Information("Auto cues saved for {Path}. Count: {Count}", track.OriginalFilename,
+                                saved.Bookmarks.Count(resonance.MusicLibrary.Workspace.WorkspaceStore.IsAutoCue));
+                        }
+
                         lock (analysisStateLock)
                         {
                             CurrentState = CurrentState with { EnhancedCompleted = CurrentState.EnhancedCompleted + 1 };

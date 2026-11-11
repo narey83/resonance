@@ -1824,6 +1824,55 @@ describe('analysis folder loading', () => {
         onlyPaths: ['one', 'two', 'three'],
       }),
     );
+    const featureMode = container.querySelector(
+      'input[name="enhanced-features-mode"]:not(:checked)',
+    );
+    await act(async () => featureMode.click());
+    const genre = Array.from(
+      container.querySelectorAll('.ka-enhanced-feature-grid label'),
+    ).find((label) => label.textContent.includes('Genre'));
+    await act(async () => genre.querySelector('input').click());
+    const autoCues = Array.from(
+      container.querySelectorAll('.ka-enhanced-features label'),
+    ).find((label) => label.textContent.includes('Write auto cues'));
+    await act(async () => autoCues.querySelector('input').click());
+    await act(async () =>
+      container.querySelector('.ka-panel .ka-btn--primary').click(),
+    );
+    expect(analysisApi.startScan).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        enhanced: true,
+        enhancedFeatures: ['beats', 'key', 'waveform', 'genre'],
+        writeAutoCues: true,
+        onlyPaths: ['one', 'two', 'three'],
+      }),
+    );
+  });
+  it('keeps a row scan to one track even when other tracks are selected', async () => {
+    expect.hasAssertions();
+    await render();
+    await act(async () => container.querySelector('.ka-folder-expand').click());
+    await act(async () =>
+      container.querySelector('input[value="enhanced"]').click(),
+    );
+    await act(async () =>
+      container.querySelector('.ka-folder-check input').click(),
+    );
+    await act(async () =>
+      container
+        .querySelector('input[name="enhanced-features-mode"]:not(:checked)')
+        .click(),
+    );
+    await act(async () =>
+      container.querySelector('[title="Analyse track"]').click(),
+    );
+    expect(analysisApi.startScan).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        enhanced: true,
+        enhancedFeatures: ['beats', 'key', 'waveform'],
+        onlyPaths: ['one'],
+      }),
+    );
   });
   it('blocks empty selections in both modes including reset and after deselecting', async () => {
     expect.hasAssertions();
