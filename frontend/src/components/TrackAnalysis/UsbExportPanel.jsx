@@ -12,6 +12,12 @@ const message = (error) =>
     : error?.message || 'Export failed.';
 const active = (job) =>
   job && !['completed', 'failed', 'cancelled'].includes(job.status);
+const exportStage = {
+  queued: 'Waiting to start export…',
+  preparing: 'Checking tracks and analysis…',
+  exporting: 'Converting audio and building player databases…',
+  packaging: 'Creating the USB ZIP…',
+};
 const shortenPlaylistName = (name) => {
   const shortened = name.slice(0, 100);
   const last = shortened.codePointAt(shortened.length - 1);
@@ -44,6 +50,7 @@ const UsbExportPanel = ({
   }, [job, onJobChange]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [startingExport, setStartingExport] = useState(false);
   const [analysisStatus, setAnalysisStatus] = useState('idle');
   const [analysisState, setAnalysisState] = useState(null);
   const [analysisError, setAnalysisError] = useState('');
@@ -249,6 +256,7 @@ const UsbExportPanel = ({
 
   const start = async () => {
     setBusy(true);
+    setStartingExport(true);
     setError('');
     setAnalysisStatus('idle');
     setAnalysisError('');
@@ -267,6 +275,7 @@ const UsbExportPanel = ({
       setError(message(error_));
     } finally {
       setBusy(false);
+      setStartingExport(false);
     }
   };
 
@@ -539,17 +548,62 @@ const UsbExportPanel = ({
             onClick={start}
             type="button"
           >
-            {job?.status === 'failed'
-              ? 'Retry USB export'
-              : 'Prepare USB export'}
+            {startingExport ? (
+              <>
+                <span
+                  aria-hidden="true"
+                  className="usb-export-spinner"
+                />{' '}
+                Starting USB export…
+              </>
+            ) : job?.status === 'failed' ? (
+              'Retry USB export'
+            ) : (
+              'Prepare USB export'
+            )}
           </button>
         </p>
       )}
       {job && (
         <div aria-live="polite">
-          <p>
-            Export: {job.status}. Prepared {job.prepared} / {job.total} tracks.
-          </p>
+          {active(job) ? (
+            <div
+              className="usb-export-progress"
+              role="status"
+            >
+              <span
+                aria-hidden="true"
+                className="usb-export-spinner"
+              />
+              <div className="usb-export-progress-details">
+                <strong>
+                  {exportStage[job.status] || 'Preparing USB export…'}
+                </strong>
+                <p>
+                  {job.status === 'preparing'
+                    ? `${job.prepared} of ${job.total} tracks checked`
+                    : `${job.total} tracks in this export`}
+                </p>
+                {job.status === 'preparing' ? (
+                  <progress
+                    aria-label="Tracks checked for export"
+                    max={job.total}
+                    value={job.prepared}
+                  />
+                ) : (
+                  <div
+                    aria-hidden="true"
+                    className="usb-export-progress-indeterminate"
+                  />
+                )}
+              </div>
+            </div>
+          ) : (
+            <p>
+              Export: {job.status}. Prepared {job.prepared} / {job.total}{' '}
+              tracks.
+            </p>
+          )}
           {active(job) && (
             <button
               onClick={cancel}

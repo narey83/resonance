@@ -391,6 +391,38 @@ describe('USB export selection and failures', () => {
     expect(button('Download USB ZIP')).toBeDefined();
     expect(container.textContent).toContain('Hardware verification is pending');
   });
+  it('shows immediate feedback and track progress while the export runs', async () => {
+    expect.hasAssertions();
+    let acceptExport;
+    api.post.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          acceptExport = resolve;
+        }),
+    );
+    await act(async () => {
+      ReactDOM.render(<UsbExportPanel />, container);
+    });
+    act(() => Simulate.click(button('Select all')));
+    act(() => Simulate.click(button('Prepare USB export')));
+    expect(container.textContent).toContain('Starting USB export…');
+    expect(container.querySelector('.usb-export-spinner')).not.toBeNull();
+    await act(async () => {
+      acceptExport({
+        data: {
+          jobId: 'preparing-job',
+          status: 'preparing',
+          total: 2,
+          prepared: 1,
+        },
+      });
+    });
+    expect(container.querySelector('[role="status"]').textContent).toContain(
+      'Checking tracks and analysis…',
+    );
+    expect(container.textContent).toContain('1 of 2 tracks checked');
+    expect(container.querySelector('progress').value).toBe(1);
+  });
   it('shows server validation failures without claiming an export completed', async () => {
     expect.hasAssertions();
     api.post.mockRejectedValue({

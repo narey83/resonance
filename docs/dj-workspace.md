@@ -70,9 +70,12 @@ playback, not the source audio file or its analysis.
 
 ## Independent enhanced analysis
 
-The server invokes `tools/analysis-worker/analyze_track.py` in a separately configured
-Python environment. Model weights, music, runtime caches and local credentials are
-not part of the source repository. Inference does not download models.
+The server invokes `tools/analysis-worker/analyze_track.py` inside the Resonance
+backend. The native Linux app release includes the verified enhanced-analysis
+bundle; its installer places Python, the worker, FFmpeg and models in persistent
+application data, where the backend discovers them on every start. See
+`ops/native/README.md`. Model weights, music, runtime caches and local credentials
+are not part of the source repository. Inference does not download models.
 
 Copy `tools/analysis-worker/config.example.json` to private runtime configuration and
 replace its example absolute paths with installed executables, model assets and the

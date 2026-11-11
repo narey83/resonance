@@ -1096,10 +1096,11 @@ namespace resonance
                 ? configuredCandidateThreads : 0;
             var candidateMemory = int.TryParse(Environment.GetEnvironmentVariable("RESONANCE_CANDIDATE_MEMORY_PER_WORKER_MB"), out var configuredCandidateMemory) && configuredCandidateMemory > 0
                 ? configuredCandidateMemory * 1024L * 1024L : 5L * 1024 * 1024 * 1024;
+            var candidateRuntime = resonance.Analysis.Candidates.BundledCandidateRuntime.ResolveWithOverrides(DataDirectory);
             services.AddSingleton(new resonance.Analysis.Candidates.CandidateAnalysisOptions(
-                Environment.GetEnvironmentVariable("RESONANCE_CANDIDATE_PYTHON"),
-                Environment.GetEnvironmentVariable("RESONANCE_CANDIDATE_WORKER"),
-                Environment.GetEnvironmentVariable("RESONANCE_CANDIDATE_CONFIG"),
+                candidateRuntime.Python,
+                candidateRuntime.Worker,
+                candidateRuntime.Config,
                 Environment.GetEnvironmentVariable("RESONANCE_CANDIDATE_OUTPUT_ROOT") ?? Path.Combine(DataDirectory, "candidates"),
                 TimeoutSeconds: candidateTimeout,
                 MaxParallelJobs: candidateWorkers,
