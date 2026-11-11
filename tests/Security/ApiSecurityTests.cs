@@ -68,11 +68,43 @@ public class ApiSecurityTests
         var (_, rotated, _) = first.RotateRefreshToken(token);
         Assert.False(first.IsJwtRevoked(id, "test", "Administrator"));
         Assert.Equal(id, first.RevokeByToken(token));
-        Assert.Throws<UnauthorizedException>(() => first.RotateRefreshToken(token));
+        Assert.Throws<RefreshTokenRejectedException>(() => first.RotateRefreshToken(token));
         using var restarted = new SessionService(factory, new OptionsAtStartup());
         Assert.True(restarted.IsJwtRevoked(id));
         Assert.True(restarted.IsJwtRevoked(Guid.NewGuid()));
-        Assert.Throws<UnauthorizedException>(() => restarted.RotateRefreshToken(rotated));
+        Assert.Throws<RefreshTokenRejectedException>(() => restarted.RotateRefreshToken(rotated));
+    }
+
+    [Fact]
+    public void RejectedRefreshIdentifiesOnlySessionsThatTheServerCanMatch()
+    {
+        using var connection = new SqliteConnection("Data Source=:memory:"); connection.Open();
+        var factory = new UserFactory(connection);
+        using (var db = factory.CreateDbContext()) { db.Database.EnsureCreated(); }
+        using var service = new SessionService(factory, new OptionsAtStartup());
+
+        var unknown = Assert.Throws<RefreshTokenRejectedException>(() => service.RotateRefreshToken("unknown-token"));
+        Assert.Equal("Invalid refresh token", unknown.Message);
+        Assert.Null(unknown.Username);
+        Assert.Null(unknown.SessionId);
+        Assert.Null(unknown.DeviceName);
+
+        var (token, sessionId) = service.CreateSession("alice", "Alice's tablet");
+        Assert.Equal(sessionId, service.RevokeByToken(token));
+        var revoked = Assert.Throws<RefreshTokenRejectedException>(() => service.RotateRefreshToken(token));
+        Assert.Equal("alice", revoked.Username);
+        Assert.Equal(sessionId, revoked.SessionId);
+        Assert.Equal("Alice's tablet", revoked.DeviceName);
+        Assert.DoesNotContain(token, revoked.Message);
+    }
+
+    [Fact]
+    public void RefreshClientLogValueIsBoundedSingleLineAndRedacted()
+    {
+        var client = RefreshLogValues.Safe("Resonance\r\nBearer secret-token", 160);
+        Assert.Equal("Resonance  Bearer [redacted]", client);
+        Assert.Equal("unknown", RefreshLogValues.Safe("\r\n", 160));
+        Assert.Equal(160, RefreshLogValues.Safe(new string('x', 300), 160).Length);
     }
 
     [Fact]
@@ -113,7 +145,8 @@ public class ApiSecurityTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddAuthorization(options => {
+        services.AddAuthorization(options =>
+        {
             options.AddPolicy(AuthPolicy.Any, p => p.RequireAuthenticatedUser());
             options.AddPolicy(AuthPolicy.FeatureLibrary, p => p.RequireClaim("library", "true"));
         });

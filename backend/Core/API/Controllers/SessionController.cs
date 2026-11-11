@@ -344,9 +344,17 @@ namespace resonance.Core.API
                 var jwt = Security.GenerateJwt(username, role, sessionId: sessionId);
                 return Ok(new TokenResponse(jwt, newRefreshToken, sessionId));
             }
-            catch (UnauthorizedException ex)
+            catch (RefreshTokenRejectedException ex)
             {
-                Log.Warning("Token refresh failed: {Message}", ex.Message);
+                Log.Warning(
+                    "Token refresh rejected: {Reason}; account {Username}; session {SessionId}; device {DeviceName}; client IP {IP}; client {Client}; request {RequestId}",
+                    ex.Message,
+                    ex.Username is null ? "unmatched" : RefreshLogValues.Safe(ex.Username, 80),
+                    ex.SessionId?.ToString() ?? "unmatched",
+                    ex.DeviceName is null ? "unmatched" : RefreshLogValues.Safe(ex.DeviceName, 80),
+                    GetCallerIp() ?? "unknown",
+                    RefreshLogValues.Safe(Request.Headers.UserAgent.ToString(), 160),
+                    RefreshLogValues.Safe(HttpContext.TraceIdentifier, 100));
                 return Unauthorized();
             }
         }

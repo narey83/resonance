@@ -178,7 +178,7 @@ public sealed class SessionService : IDisposable
                 if (IsJwtRevoked(grace.SessionId))
                 {
                     RecentlyRotated.TryRemove(hash, out _);
-                    throw new UnauthorizedException("Session has been revoked");
+                    throw new RefreshTokenRejectedException("Session has been revoked", grace.Username, grace.SessionId);
                 }
 
                 Log.Debug("Refresh token replayed within grace window for user {Username}; reissuing same token", grace.Username);
@@ -196,27 +196,25 @@ public sealed class SessionService : IDisposable
                 var replayed = db.Sessions.FirstOrDefault(s => s.PreviousTokenHash == hash && !s.IsRevoked);
                 if (replayed is not null)
                 {
-                    Log.Warning("Rotated refresh token replayed outside grace window for user {Username}; revoking affected session", replayed.Username);
                     replayed.IsRevoked = true;
                     db.SaveChanges();
                     CacheRevocation(replayed.Id);
 
-                    throw new UnauthorizedException("Refresh token reuse detected");
+                    throw new RefreshTokenRejectedException("Refresh token reuse detected; affected session revoked", replayed);
                 }
 
-                throw new UnauthorizedException("Invalid refresh token");
+                throw new RefreshTokenRejectedException("Invalid refresh token");
             }
 
             if (session.IsRevoked)
             {
                 // A revoked token was presented — could be an old token after logout or a superseded session.
-                Log.Warning("Revoked refresh token presented for user {Username}", session.Username);
-                throw new UnauthorizedException("Refresh token has been revoked");
+                throw new RefreshTokenRejectedException("Refresh token has been revoked", session);
             }
 
             if (session.ExpiresAt < DateTime.UtcNow)
             {
-                throw new UnauthorizedException("Refresh token has expired");
+                throw new RefreshTokenRejectedException("Refresh token has expired", session);
             }
 
             // Idle timeout: a live client refreshes within each JWT TTL window. A session whose token
@@ -227,8 +225,7 @@ public sealed class SessionService : IDisposable
                 session.IsRevoked = true;
                 db.SaveChanges();
                 CacheRevocation(session.Id);
-                Log.Warning("Idle refresh token presented for user {Username}; session revoked", session.Username);
-                throw new UnauthorizedException("Session has expired due to inactivity");
+                throw new RefreshTokenRejectedException("Session has expired due to inactivity; session revoked", session);
             }
 
             // Update the session in place — same ID, new token hash, sliding expiry.
