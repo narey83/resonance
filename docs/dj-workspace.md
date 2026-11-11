@@ -77,7 +77,8 @@ application data, where the backend discovers them on every start. See
 `ops/native/README.md`. Model weights, music, runtime caches and local credentials
 are not part of the source repository. Inference does not download models.
 
-Copy `tools/analysis-worker/config.example.json` to private runtime configuration and
+For legacy or custom deployments without the native bundle, copy
+`tools/analysis-worker/config.example.json` to private runtime configuration and
 replace its example absolute paths with installed executables, model assets and the
 worker source directory. The example retains the tested engine/profile choices;
 it is not usable until the selected assets have been installed. Use dedicated Python
