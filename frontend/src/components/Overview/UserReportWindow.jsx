@@ -1040,10 +1040,12 @@ const UserReportWindow = ({ initialTab, onClose, seed, username, variant }) => {
   // Rendered into <body>: these windows are opened from transient containers
   // (a map tooltip, a table row) whose own subtree can unmount or be clipped by
   // an ancestor's overflow while the window should stay put.
+  // The regular report carries the workspace palette into that portal; the map
+  // variant supplies its own palette in StreetMap.css.
   return createPortal(
     <>
       <div
-        className={`user-report-window${variant ? ` user-report-window--${variant}` : ''}${minimized ? ' user-report-window--minimized' : ''}`}
+        className={`user-report-window${variant ? ` user-report-window--${variant}` : ' dj-workspace'}${minimized ? ' user-report-window--minimized' : ''}`}
         onPointerDown={() => raiseWindow(username)}
         style={{ zIndex }}
       >
@@ -1319,7 +1321,7 @@ const UserReportWindow = ({ initialTab, onClose, seed, username, variant }) => {
           fetched data, active tab and scroll position survive a restore. */}
       {minimized ? (
         <div
-          className={`user-report-dock${variant ? ` user-report-dock--${variant}` : ''}`}
+          className={`user-report-dock${variant ? ` user-report-dock--${variant}` : ' dj-workspace'}`}
           style={{ right: 16 + Math.max(dockSlot, 0) * 208 }}
         >
           <button
