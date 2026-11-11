@@ -82,6 +82,14 @@ Parallel tracks share one GPU slot; CUDA failures retry the stage on CPU. Other
 analysis stages continue on CPU. Each completed track logs the chosen stem device,
 GPU attempt, fallback and peak GPU allocation in the Resonance system log.
 
+Full enhanced analysis uses the four separated stems as intermediate evidence and
+removes their WAV files after saving measurements. In a track's enhanced analysis
+panel, **Generate stem preview** runs a separate stem candidate when requested.
+The default covers the first 30 seconds; the full-track option stores four large
+WAV files. The four listen controls load one retained WAV at a time through
+an authenticated, range-capable endpoint. Preview files are kept with that
+independent candidate; they do not change the track or the USB export result.
+
 For legacy or custom deployments without the native bundle, copy
 `tools/analysis-worker/config.example.json` to private runtime configuration and
 replace its example absolute paths with installed executables, model assets and the

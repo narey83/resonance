@@ -34,6 +34,7 @@ import {
   candidateFeatureRows,
 } from '../../lib/candidateAnalysis';
 import { fullTrackJobs } from '../../lib/independentSummary';
+import StemPreview from './StemPreview';
 import React, { useEffect, useRef, useState } from 'react';
 
 const analysisChoices = [
@@ -226,6 +227,12 @@ const CandidateAnalysisPanel = ({
           ? 'Saved measurements and predictions are kept separate from file tags and your manual edits.'
           : 'Independent engines can differ from Rekordbox. Candidates preserve existing analysis and manual edits.'}
       </p>
+      <StemPreview
+        enabled={enabled}
+        key={path}
+        onGenerated={() => refresh().catch(() => {})}
+        path={path}
+      />
       {!resultsOnly && (
         <fieldset
           className="candidate-analysis-settings"
@@ -354,6 +361,7 @@ const CandidateAnalysisPanel = ({
         <label>
           {resultsOnly ? 'Saved full-track result' : 'Candidate'}
           <select
+            aria-label={resultsOnly ? 'Saved full-track result' : 'Candidate'}
             disabled={busy}
             onChange={(event) =>
               load(event.target.value).catch(() =>

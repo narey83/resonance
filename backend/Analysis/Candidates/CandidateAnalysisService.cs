@@ -280,6 +280,30 @@ namespace resonance.Analysis.Candidates
             return (job, result, identity.Sha256 == job.AudioSha256 && identity.Bytes == job.AudioBytes);
         }
 
+        public async Task<string> StemAudio(string jobId, string stem, CancellationToken ct)
+        {
+            var fileName = StemFileName(stem);
+            var result = await Read(jobId, ct);
+            if (!result.Job.Status.StartsWith("completed", StringComparison.Ordinal)
+                || !result.ContentCurrent || !result.Analysis.HasValue
+                || !result.Analysis.Value.TryGetProperty("featureAvailability", out var availability)
+                || !availability.TryGetProperty("stems", out var status)
+                || status.ValueKind != JsonValueKind.String
+                || status.GetString() != "available")
+            {
+                throw new FileNotFoundException("A current, completed stem preview was not found.");
+            }
+
+            var file = Path.Combine(JobDirectory(jobId), "result", "stems", fileName);
+            if (!File.Exists(file) || new FileInfo(file).LinkTarget != null)
+            {
+                throw new FileNotFoundException("Stem audio was not retained for this result.");
+            }
+
+            Log.Information("Serving stem preview {Stem} for candidate job {JobId}", stem, jobId);
+            return file;
+        }
+
         public async Task<IReadOnlyList<CandidateJob>> ExportCandidates(CancellationToken ct)
         {
             var result = new List<CandidateJob>();
@@ -327,6 +351,12 @@ namespace resonance.Analysis.Candidates
                 && result.Analysis.HasValue && ExportAnalysisContract.Ready(result.Analysis.Value)
                 ? (result.Job, result.Analysis.Value) : null;
         }
+
+        internal static string StemFileName(string stem) => stem switch
+        {
+            "vocals" or "drums" or "bass" or "other" => stem + ".wav",
+            _ => throw new ArgumentException("Choose a valid stem.", nameof(stem)),
+        };
 
         internal static bool HasEnhanced(JsonElement document)
         {

@@ -160,5 +160,33 @@ namespace resonance.Analysis.API
                 return Conflict("Candidate source audio is unavailable.");
             }
         }
+
+        [HttpGet("{jobId}/stems/{stem}")]
+        [Produces("audio/wav")]
+        public async Task<IActionResult> StemAudio(string jobId, string stem, CancellationToken ct)
+        {
+            try
+            {
+                var file = await Candidates.StemAudio(jobId, stem, ct);
+                Response.Headers.CacheControl = "private, no-store";
+                return PhysicalFile(file, "audio/wav", enableRangeProcessing: true);
+            }
+            catch (FileNotFoundException)
+            {
+                return NotFound();
+            }
+            catch (ArgumentException exception)
+            {
+                return BadRequest(exception.Message);
+            }
+            catch (InvalidOperationException exception)
+            {
+                return StatusCode(503, exception.Message);
+            }
+            catch (IOException)
+            {
+                return Conflict("Candidate source audio is unavailable.");
+            }
+        }
     }
 }

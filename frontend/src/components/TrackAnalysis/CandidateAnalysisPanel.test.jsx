@@ -258,9 +258,12 @@ describe('CandidateAnalysisPanel', () => {
       );
     await render();
     act(() => {
-      Simulate.change(container.querySelectorAll('select')[2], {
-        target: { value: job.jobId },
-      });
+      Simulate.change(
+        container.querySelector('select[aria-label="Candidate"]'),
+        {
+          target: { value: job.jobId },
+        },
+      );
     });
     api.get.mockResolvedValueOnce({ data: { enabled: true, jobs: [] } });
     await render('different.flac');
@@ -360,9 +363,12 @@ describe('CandidateAnalysisPanel', () => {
       .mockResolvedValueOnce({ data: extra });
     await render();
     await act(async () =>
-      Simulate.change(container.querySelectorAll('select')[2], {
-        target: { value: job.jobId },
-      }),
+      Simulate.change(
+        container.querySelector('select[aria-label="Candidate"]'),
+        {
+          target: { value: job.jobId },
+        },
+      ),
     );
     expect(container.textContent).toContain('Experimental loop suggestions');
     expect(container.textContent).toContain('4 beats');
@@ -401,7 +407,11 @@ describe('CandidateAnalysisPanel', () => {
       container.querySelector('[aria-label="Analysis preset"]'),
     ).toBeNull();
     expect(button('Generate candidate')).toBeUndefined();
-    expect(container.querySelectorAll('select option')).toHaveLength(2);
+    expect(
+      container.querySelectorAll(
+        'select[aria-label="Saved full-track result"] option',
+      ),
+    ).toHaveLength(2);
     expect(api.get).toHaveBeenCalledWith('/analysis/candidates/full');
     expect(api.post).not.toHaveBeenCalled();
   });
