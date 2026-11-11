@@ -78,6 +78,8 @@ namespace resonance.MusicLibrary.API
 
     public record SignedUrl(long Exp, string Sig);
 
+    public record DeleteLibraryIndexRequest(string Confirmation);
+
     [ApiController]
     [ApiVersion("0")]
     [Produces("application/json")]
@@ -109,7 +111,9 @@ namespace resonance.MusicLibrary.API
             IMemoryCache cache,
             ArtworkStore artwork,
             StreamUrlSigner urlSigner,
-            resonance.Common.Ffmpeg.IFfmpegService ffmpeg)
+            resonance.Common.Ffmpeg.IFfmpegService ffmpeg,
+            LibraryIndexSnapshotService snapshots = null,
+            MusicRepository repository = null)
         {
             Service = service;
             Analysis = analysis;
@@ -120,6 +124,8 @@ namespace resonance.MusicLibrary.API
             Artwork = artwork;
             UrlSigner = urlSigner;
             Ffmpeg = ffmpeg;
+            Snapshots = snapshots;
+            Repository = repository;
         }
 
         private IMusicLibraryService Service { get; }
@@ -132,6 +138,8 @@ namespace resonance.MusicLibrary.API
         private ArtworkStore Artwork { get; }
         private StreamUrlSigner UrlSigner { get; }
         private resonance.Common.Ffmpeg.IFfmpegService Ffmpeg { get; }
+        private LibraryIndexSnapshotService Snapshots { get; }
+        private MusicRepository Repository { get; }
 
         // Resolved by the app-wide ffmpeg service (auto-downloaded/updated); null until provisioned.
         private string? FfmpegPath => Ffmpeg.FfmpegPath;
@@ -178,7 +186,7 @@ namespace resonance.MusicLibrary.API
         [ProducesResponseType(typeof(MusicLibrarySyncState), 200)]
         public IActionResult GetSyncState() => Ok(Service.SyncState);
 
-        /// <summary>Triggers an immediate sync (fire-and-forget). Pass force=true to clear all indexed tracks and re-read every file from disk.</summary>
+        /// <summary>Triggers an immediate sync (fire-and-forget). Clearing the index requires the verified administrator endpoint.</summary>
         /// <returns></returns>
         [HttpPost("sync")]
         [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
@@ -188,12 +196,10 @@ namespace resonance.MusicLibrary.API
         {
             if (force)
             {
-                Service.ForceResync();
+                return BadRequest(new { error = "Use index/delete-and-rebuild with typed confirmation." });
             }
-            else
-            {
-                Service.TriggerSync();
-            }
+
+            Service.TriggerSync();
 
             InvalidateListCaches();
             return Accepted();
@@ -209,6 +215,87 @@ namespace resonance.MusicLibrary.API
         {
             Service.CancelSync();
             return Accepted();
+        }
+
+        /// <summary>Lists private, index-only restore points.</summary>
+        /// <returns>The available snapshots.</returns>
+        [HttpGet("index/snapshots")]
+        [Authorize(Policy = AuthPolicy.JwtOnly, Roles = AuthRole.AdministratorOnly)]
+        public IActionResult ListIndexSnapshots() => Ok(Snapshots.List());
+
+        /// <summary>Creates a private snapshot of track metadata, including original added dates.</summary>
+        /// <returns>The created snapshot.</returns>
+        [HttpPost("index/snapshots")]
+        [Authorize(Policy = AuthPolicy.JwtOnly, Roles = AuthRole.AdministratorOnly)]
+        public IActionResult CreateIndexSnapshot()
+        {
+            try
+            {
+                return Ok(Snapshots.Create());
+            }
+            catch (InvalidOperationException exception)
+            {
+                return Conflict(new { error = exception.Message });
+            }
+        }
+
+        /// <summary>Validates and atomically restores a private index snapshot.</summary>
+        /// <returns>The restored index status.</returns>
+        [HttpPost("index/snapshots/{id:guid}/restore")]
+        [Authorize(Policy = AuthPolicy.JwtOnly, Roles = AuthRole.AdministratorOnly)]
+        public IActionResult RestoreIndexSnapshot(Guid id)
+        {
+            if (Service.SyncState.Running)
+            {
+                return Conflict(new { error = "Wait for the current library scan to finish." });
+            }
+
+            try
+            {
+                var snapshot = Snapshots.Restore(id);
+                InvalidateListCaches();
+                Service.TriggerImmediateSync();
+                return Ok(new { snapshot.Id, snapshot.TrackCount, verified = true });
+            }
+            catch (FileNotFoundException)
+            {
+                return NotFound();
+            }
+            catch (DirectoryNotFoundException)
+            {
+                return NotFound();
+            }
+            catch (InvalidDataException exception)
+            {
+                return Conflict(new { error = exception.Message });
+            }
+        }
+
+        /// <summary>Clears only track index rows, verifies zero rows, then immediately requests a rebuild.</summary>
+        /// <returns>The cleared index and rebuild status.</returns>
+        [HttpPost("index/delete-and-rebuild")]
+        [Authorize(Policy = AuthPolicy.JwtOnly, Roles = AuthRole.AdministratorOnly)]
+        public IActionResult DeleteAndRebuildIndex([FromBody] DeleteLibraryIndexRequest request)
+        {
+            if (request?.Confirmation != "DELETE LIBRARY INDEX")
+            {
+                return BadRequest(new { error = "Type DELETE LIBRARY INDEX to confirm." });
+            }
+
+            if (Service.SyncState.Running)
+            {
+                return Conflict(new { error = "Wait for the current library scan to finish." });
+            }
+
+            if (!Service.CanRebuildFromFiles(out var reason))
+            {
+                return Conflict(new { error = reason });
+            }
+
+            var removed = Repository.ClearIndexVerified();
+            InvalidateListCaches();
+            Service.TriggerImmediateSync();
+            return Accepted(new { removed, verifiedEmpty = true, rebuildRequested = true });
         }
 
         /// <summary>Queries tracks from the music library.</summary>

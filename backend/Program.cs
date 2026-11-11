@@ -1129,6 +1129,9 @@ namespace resonance
                     usePostgres);
                 return repo;
             });
+            services.AddSingleton(sp => new resonance.MusicLibrary.LibraryIndexSnapshotService(
+                sp.GetRequiredService<resonance.MusicLibrary.MusicRepository>(),
+                Path.Combine(DataDirectory, "library-index-snapshots")));
             services.AddSingleton<resonance.MusicLibrary.IMusicLibraryService, resonance.MusicLibrary.MusicLibraryService>();
             services.AddHostedService(p => p.GetRequiredService<resonance.MusicLibrary.IMusicLibraryService>());
             services.AddSingleton<resonance.MusicLibrary.Workspace.WorkspaceStore>();

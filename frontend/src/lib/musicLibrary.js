@@ -49,6 +49,24 @@ export const triggerSync = async () => api.post('/musiclibrary/sync');
 
 export const cancelSync = async () => api.post('/musiclibrary/sync/cancel');
 
+export const getIndexSnapshots = async () =>
+  (await api.get('/musiclibrary/index/snapshots')).data;
+
+export const createIndexSnapshot = async () =>
+  (await api.post('/musiclibrary/index/snapshots', {})).data;
+
+export const restoreIndexSnapshot = async (id) =>
+  (
+    await api.post(
+      `/musiclibrary/index/snapshots/${encodeURIComponent(id)}/restore`,
+      {},
+    )
+  ).data;
+
+export const deleteAndRebuildIndex = async (confirmation) =>
+  (await api.post('/musiclibrary/index/delete-and-rebuild', { confirmation }))
+    .data;
+
 export const getTracks = async (queryParameters, { signal } = {}) => {
   const data = (
     await api.get('/musiclibrary/tracks', {

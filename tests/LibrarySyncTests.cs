@@ -2,6 +2,8 @@ namespace Resonance.Tests;
 
 using System.Reflection;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Memory;
 using global::resonance;
 using global::resonance.Common;
 using global::resonance.MusicLibrary;
@@ -50,6 +52,40 @@ public sealed class LibrarySyncTests : IDisposable
     private object? Call(string name, params object[] args) => typeof(MusicLibraryService).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(service, args);
     private Task Sync() => (Task)Call("RunSyncAsync", CancellationToken.None)!;
     private void Changed(string path) => Call("NoteFsChange", path);
+
+    [Fact]
+    public void RebuildPrecheckRejectsUnavailableOrEmptyMusicRoots()
+    {
+        Assert.False(service.CanRebuildFromFiles(out var emptyReason));
+        Assert.Contains("No audio files", emptyReason);
+        Wave("track.wav");
+        Assert.True(service.CanRebuildFromFiles(out var readyReason));
+        Assert.Null(readyReason);
+        shareRoots[0] = Path.Combine(root, "missing");
+        Assert.False(service.CanRebuildFromFiles(out var missingReason));
+        Assert.Contains("unavailable", missingReason);
+    }
+
+    [Fact]
+    public async Task DeleteEndpointRequiresPhraseAndReadableMusicBeforeClearing()
+    {
+        Wave("track.wav");
+        await Sync();
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var controller = new MusicLibraryController(service, null!, null!, null!, null!, cache, null!, null!, null!, null!, repository);
+
+        Assert.IsType<BadRequestObjectResult>(controller.DeleteAndRebuildIndex(new("DELETE LIBRARY")));
+        Assert.IsType<BadRequestObjectResult>(controller.TriggerSync(force: true));
+        Assert.Equal(1, repository.GetStats().Total);
+
+        shareRoots[0] = Path.Combine(root, "missing");
+        Assert.IsType<ConflictObjectResult>(controller.DeleteAndRebuildIndex(new("DELETE LIBRARY INDEX")));
+        Assert.Equal(1, repository.GetStats().Total);
+
+        shareRoots[0] = root;
+        Assert.IsType<AcceptedResult>(controller.DeleteAndRebuildIndex(new("DELETE LIBRARY INDEX")));
+        Assert.Equal(0, repository.GetStats().Total);
+    }
 
     [Fact]
     public async Task AnalysisCompletionAndLateWatcherEventsDoNotBroadcastAFullScan()

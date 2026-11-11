@@ -50,6 +50,7 @@ import DistributedNetworkConfirmModal, {
   getDistributedNetworkChanges,
 } from './DistributedNetworkConfirmModal';
 import FfmpegSection from './FfmpegSection';
+import LibraryIndexSection from './LibraryIndexSection';
 import QoSSection from './QoSSection';
 import SharesSection from './SharesSection';
 import TransferErrorNotificationSection from './TransferErrorNotificationSection';
@@ -704,6 +705,11 @@ const SCHEMA = [
     group: 'Sharing',
     title: 'Shares',
     type: 'shares',
+  },
+  {
+    group: 'Sharing',
+    title: 'Library Index',
+    type: 'library-index',
   },
   {
     fields: [
@@ -2105,6 +2111,8 @@ const Options = ({ options, state = {}, theme }) => {
               scanState={state.shares}
               value={parsed?.shares?.directories ?? []}
             />
+          ) : SCHEMA[activeSection].type === 'library-index' ? (
+            <LibraryIndexSection />
           ) : (
             <div className="info-section">
               <div className="info-section-body">

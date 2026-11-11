@@ -338,6 +338,111 @@ namespace resonance.MusicLibrary
             cmd.ExecuteNonQuery();
         }
 
+        /// <summary>Reads only persisted index columns, without analysis or activity data.</summary>
+        /// <returns>All indexed tracks.</returns>
+        public IReadOnlyList<MusicTrack> GetIndexTracks()
+        {
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = $"SELECT path, filename, directory, extension, file_size, file_modified, indexed_at, duration, title, artist, album_artist, album, year, track_number, disc_number, genre, bpm, key_sig, comment, has_artwork, tag_types, bit_rate, sample_rate, bit_depth FROM {T} ORDER BY path";
+            using var reader = cmd.ExecuteReader();
+            var tracks = new List<MusicTrack>();
+            while (reader.Read())
+            {
+                tracks.Add(ReadRow(reader));
+            }
+
+            return tracks;
+        }
+
+        /// <summary>Replaces the index atomically after a snapshot has been fully validated.</summary>
+        public void RestoreIndex(IReadOnlyList<MusicTrack> tracks)
+        {
+            using var conn = OpenConnection();
+            using var tx = conn.BeginTransaction();
+            using (var clear = conn.CreateCommand())
+            {
+                clear.Transaction = tx;
+                clear.CommandText = $"DELETE FROM {T}";
+                clear.ExecuteNonQuery();
+            }
+
+            using var cmd = conn.CreateCommand();
+            cmd.Transaction = tx;
+            cmd.CommandText = UpsertSql;
+            foreach (var name in new[]
+            {
+                "@path", "@filename", "@dir", "@ext", "@size", "@mod", "@idx", "@dur",
+                "@title", "@artist", "@aartist", "@album", "@year", "@track", "@disc",
+                "@genre", "@bpm", "@key", "@comment", "@art", "@tagtypes",
+                "@bitrate", "@samplerate", "@bitdepth",
+            })
+            {
+                var parameter = cmd.CreateParameter();
+                parameter.ParameterName = name;
+                cmd.Parameters.Add(parameter);
+            }
+
+            foreach (var track in tracks)
+            {
+                cmd.Parameters["@path"].Value = MusicPath.ToRelative(track.Path);
+                cmd.Parameters["@filename"].Value = track.Filename;
+                cmd.Parameters["@dir"].Value = MusicPath.ToRelative(track.Directory);
+                cmd.Parameters["@ext"].Value = track.Extension;
+                cmd.Parameters["@size"].Value = track.FileSize;
+                cmd.Parameters["@mod"].Value = track.FileModified;
+                cmd.Parameters["@idx"].Value = track.IndexedAt;
+                cmd.Parameters["@dur"].Value = (object)track.Duration ?? DBNull.Value;
+                cmd.Parameters["@title"].Value = (object)track.Title ?? DBNull.Value;
+                cmd.Parameters["@artist"].Value = (object)track.Artist ?? DBNull.Value;
+                cmd.Parameters["@aartist"].Value = (object)track.AlbumArtist ?? DBNull.Value;
+                cmd.Parameters["@album"].Value = (object)track.Album ?? DBNull.Value;
+                cmd.Parameters["@year"].Value = (object)track.Year ?? DBNull.Value;
+                cmd.Parameters["@track"].Value = (object)track.TrackNumber ?? DBNull.Value;
+                cmd.Parameters["@disc"].Value = (object)track.DiscNumber ?? DBNull.Value;
+                cmd.Parameters["@genre"].Value = (object)track.Genre ?? DBNull.Value;
+                cmd.Parameters["@bpm"].Value = (object)track.Bpm ?? DBNull.Value;
+                cmd.Parameters["@key"].Value = (object)track.Key ?? DBNull.Value;
+                cmd.Parameters["@comment"].Value = (object)track.Comment ?? DBNull.Value;
+                cmd.Parameters["@art"].Value = track.HasArtwork ? 1 : 0;
+                cmd.Parameters["@tagtypes"].Value = (object)track.TagTypes ?? DBNull.Value;
+                cmd.Parameters["@bitrate"].Value = (object)track.BitRate ?? DBNull.Value;
+                cmd.Parameters["@samplerate"].Value = (object)track.SampleRate ?? DBNull.Value;
+                cmd.Parameters["@bitdepth"].Value = (object)track.BitDepth ?? DBNull.Value;
+                cmd.ExecuteNonQuery();
+            }
+
+            using var verify = conn.CreateCommand();
+            verify.Transaction = tx;
+            verify.CommandText = $"SELECT COUNT(*) FROM {T}";
+            if (Convert.ToInt32(verify.ExecuteScalar()) != tracks.Count)
+            {
+                throw new InvalidOperationException("Restored index count did not match the snapshot.");
+            }
+
+            tx.Commit();
+        }
+
+        /// <summary>Clears the index and verifies the empty state before committing.</summary>
+        /// <returns>The number of deleted rows.</returns>
+        public int ClearIndexVerified()
+        {
+            using var conn = OpenConnection();
+            using var tx = conn.BeginTransaction();
+            using var cmd = conn.CreateCommand();
+            cmd.Transaction = tx;
+            cmd.CommandText = $"DELETE FROM {T}";
+            var removed = cmd.ExecuteNonQuery();
+            cmd.CommandText = $"SELECT COUNT(*) FROM {T}";
+            if (Convert.ToInt64(cmd.ExecuteScalar()) != 0)
+            {
+                throw new InvalidOperationException("The library index could not be verified empty.");
+            }
+
+            tx.Commit();
+            return removed;
+        }
+
         public void DeletePaths(IEnumerable<string> paths)
         {
             using var conn = OpenConnection();

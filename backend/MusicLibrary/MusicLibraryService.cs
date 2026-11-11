@@ -277,11 +277,46 @@ namespace resonance.MusicLibrary
         public System.Collections.Generic.IReadOnlyList<MusicTrack> GetKeyedTracks()
             => Repository.GetKeyedTracks();
 
-        public void ForceResync()
+        public bool CanRebuildFromFiles(out string reason)
         {
-            Repository.ClearAll();
-            Log.Information("Music library cleared for forced re-index");
-            TriggerImmediateSync();
+            lock (queueLock)
+            {
+                if (activeQueues.Count > 0)
+                {
+                    reason = "Wait for analysis or metadata work to finish before rebuilding the index.";
+                    return false;
+                }
+            }
+
+            var directories = GetConfiguredDirectories().ToArray();
+            if (directories.Length == 0)
+            {
+                reason = "No music directories are configured.";
+                return false;
+            }
+
+            var audioFound = false;
+            foreach (var directory in directories)
+            {
+                if (!Directory.Exists(directory))
+                {
+                    reason = $"Music directory is unavailable: {directory}";
+                    return false;
+                }
+
+                try
+                {
+                    audioFound |= EnumerateAudio(directory).Any();
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                    reason = $"Music directory cannot be read: {directory}";
+                    return false;
+                }
+            }
+
+            reason = audioFound ? null : "No audio files were found in the configured music directories.";
+            return audioFound;
         }
 
         public void CancelSync()

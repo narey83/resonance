@@ -86,8 +86,9 @@ namespace resonance.MusicLibrary
 
         void TriggerSync();
 
-        /// <summary>Clears all indexed tracks and triggers an immediate full re-index from disk.</summary>
-        void ForceResync();
+        /// <summary>Checks that configured roots are accessible and contain music before clearing the index.</summary>
+        /// <returns>Whether a rebuild can begin safely.</returns>
+        bool CanRebuildFromFiles(out string reason);
 
         /// <summary>Cancels the in-flight scan (if any) without stopping the background sync loop.</summary>
         void CancelSync();
