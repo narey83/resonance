@@ -423,6 +423,7 @@ const UsbExportPanel = ({
         (step === 3 && ['failed', 'cancelled'].includes(job?.status))) && (
         <p>
           <button
+            className="usb-export-primary"
             disabled={
               !enabled ||
               locked ||
@@ -492,6 +493,7 @@ const UsbExportPanel = ({
           )}
           {step < 2 && (
             <button
+              className="usb-export-primary"
               disabled={
                 locked ||
                 !enabled ||

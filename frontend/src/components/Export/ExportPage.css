@@ -13,7 +13,7 @@
 .export-source-context h2 { font-size: 19px; margin: 0 0 8px; overflow-wrap: anywhere; }
 .export-source-intro { color: var(--text-secondary); margin: 0; }
 .export-page :is(button, input, select) { font: inherit; color: var(--text-primary); }
-.export-page :is(button, select, input:not([type="radio"]):not([type="checkbox"])) { padding: 10px 12px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg-primary); }
+.export-page :where(button, select, input:not([type="radio"]):not([type="checkbox"])) { padding: 10px 12px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg-primary); }
 .export-page :is(input, select) { min-width: 0; max-width: 100%; }
 .export-page input:is([type="radio"], [type="checkbox"]) { accent-color: var(--accent); }
 .export-page button { cursor: pointer; }
