@@ -59,11 +59,16 @@ def build(args):
     verify_models(args.models, lock)
     original = json.loads(args.config.read_text())
     ffmpeg = args.ffmpeg or Path(original['ffmpeg'])
+    configured_enhanced = Path(original['python']).parent.parent
+    adapter = original.get('semanticPhrases', {}).get('adapter')
+    configured_worker = Path(adapter).parents[1] if adapter else args.worker
     sources = [(args.enhanced, Path('envs/enhanced')),
+               (configured_enhanced, Path('envs/enhanced')),
                (args.dbn, Path('envs/dbn')),
                (args.key, Path('envs/key')),
                (args.models, Path('models')),
                (args.worker, Path('worker')),
+               (configured_worker, Path('worker')),
                (ffmpeg, Path('bin/ffmpeg'))]
     config = rewrite_config(original, sources)
     with tempfile.TemporaryDirectory(prefix='resonance-enhanced-', dir=destination.parent) as temporary:

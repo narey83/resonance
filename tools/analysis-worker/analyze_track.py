@@ -193,6 +193,7 @@ def main():
     if manifest['audioSha256']!=identity['sha256']:raise ValueError('HTDemucs source identity mismatch')
     doc['provenance']['helperScriptSha256']['demucs_adapter.py']=sha(adapter)
     doc["provenance"]["helperScriptSha256"]["demucs_checkpoint.py"]=sha(HERE/"demucs_checkpoint.py")
+    doc["provenance"]["helperScriptSha256"]["gpu_runtime.py"]=sha(HERE/"gpu_runtime.py")
     record('stems','available',manifest)
    elif settings.get('engine','spleeter')=='spleeter':
     root=pathlib.Path(settings.get('modelRoot',''))

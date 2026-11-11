@@ -26,6 +26,11 @@ that PyTorch, Madmom and Essentia import from the installed copy. Bundle
 production currently targets Linux x86_64; other platforms need their own
 verified Python wheels and model runtime.
 
+Use a CUDA-capable PyTorch build in `ENHANCED_VENV` to enable GPU stem analysis on
+compatible NVIDIA hardware. The worker detects CUDA at run time, serializes
+GPU inference between tracks and retries on CPU if CUDA is unavailable or fails.
+A CPU-only PyTorch build remains valid and takes the CPU path automatically.
+
 Install the release with:
 
 ```sh

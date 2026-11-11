@@ -50,6 +50,8 @@ namespace resonance.Analysis.Candidates
 
     public record CandidateJob(string JobId, string Status, string LibraryPath, string AudioSha256, long AudioBytes, DateTimeOffset CreatedAt, double? RequestedSeconds, string SourceKind = "independent-candidate");
 
+    internal record CandidateInferenceDevice(string Device, bool GpuAttempted, string? Fallback, long PeakBytes);
+
     public class CandidateAnalysisService
     {
         public CandidateAnalysisService(CandidateAnalysisOptions options, IAnalysisService analysis, AnalysisStore store, IHubContext<LibraryActivityHub> hub = null)
@@ -377,6 +379,35 @@ namespace resonance.Analysis.Candidates
             }
         }
 
+        internal static CandidateInferenceDevice ReadInferenceDevice(JsonElement result)
+        {
+            if (!result.TryGetProperty("features", out var features)
+                || features.ValueKind != JsonValueKind.Object
+                || !features.TryGetProperty("stems", out var stems)
+                || stems.ValueKind != JsonValueKind.Object
+                || !stems.TryGetProperty("result", out var details)
+                || details.ValueKind != JsonValueKind.Object
+                || !details.TryGetProperty("device", out var deviceValue)
+                || deviceValue.ValueKind != JsonValueKind.String)
+            {
+                return null;
+            }
+
+            var device = deviceValue.GetString();
+            if (device is not ("cpu" or "cuda"))
+            {
+                return null;
+            }
+
+            var attempted = details.TryGetProperty("gpuAttempted", out var attemptedValue)
+                && attemptedValue.ValueKind == JsonValueKind.True;
+            var fallback = details.TryGetProperty("gpuFallback", out var fallbackValue)
+                && fallbackValue.ValueKind == JsonValueKind.String ? fallbackValue.GetString() : null;
+            var peak = details.TryGetProperty("gpuPeakAllocatedBytes", out var peakValue)
+                && peakValue.ValueKind == JsonValueKind.Number && peakValue.TryGetInt64(out var value) ? value : 0;
+            return new CandidateInferenceDevice(device, attempted, fallback, peak);
+        }
+
         internal void CacheDjSummary(string path, JsonElement analysis, string analysisId)
         {
             var summary = CrateAnalysisSummary.Create(analysis, analysisId);
@@ -688,6 +719,15 @@ namespace resonance.Analysis.Candidates
                     var status = failures.Length > 0 ? "measurement-failed"
                         : result.GetProperty("featureAvailability").EnumerateObject().Any(feature => feature.Value.GetString() == "available") ? "completed" : "no-features";
                     LogMeasurementFailures(result, source, job.JobId, Log);
+                    var inference = ReadInferenceDevice(result);
+                    if (inference != null)
+                    {
+                        Log.Information(
+                            "Enhanced analysis stem device {Device} for {Path}; GPU attempted {GpuAttempted}, fallback {GpuFallback}, peak allocated {GpuPeakMiB} MiB; job {JobId}",
+                            inference.Device, source, inference.GpuAttempted, inference.Fallback,
+                            inference.PeakBytes / (1024 * 1024), job.JobId);
+                    }
+
                     var after = await Hash(input, ct);
                     job = job with { Status = after == identity ? status : "input-changed" };
                 }

@@ -77,6 +77,11 @@ application data, where the backend discovers them on every start. See
 `ops/native/README.md`. Model weights, music, runtime caches and local credentials
 are not part of the source repository. Inference does not download models.
 
+The bundled Demucs stem stage uses CUDA when its PyTorch build and GPU support it.
+Parallel tracks share one GPU slot; CUDA failures retry the stage on CPU. Other
+analysis stages continue on CPU. Each completed track logs the chosen stem device,
+GPU attempt, fallback and peak GPU allocation in the Resonance system log.
+
 For legacy or custom deployments without the native bundle, copy
 `tools/analysis-worker/config.example.json` to private runtime configuration and
 replace its example absolute paths with installed executables, model assets and the
