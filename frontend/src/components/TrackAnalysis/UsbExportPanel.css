@@ -218,6 +218,19 @@
   font-size: 12px;
   overflow-wrap: anywhere;
 }
+.usb-export-analysis-recovery {
+  margin: 12px 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-primary);
+}
+.usb-export-analysis-recovery h4 {
+  margin: 0 0 8px;
+}
+.usb-export-analysis-recovery p {
+  margin: 8px 0;
+}
 
 .usb-export-inspector {
   margin: 1.5rem 0;

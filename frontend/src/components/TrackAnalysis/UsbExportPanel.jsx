@@ -1,5 +1,6 @@
 import './UsbExportPanel.css';
 import { urlBase } from '../../config';
+import * as analysisApi from '../../lib/analysis';
 import api from '../../lib/api';
 import ExportTrackPicker from './ExportTrackPicker';
 import UsbExportInspector from './UsbExportInspector';
@@ -43,6 +44,9 @@ const UsbExportPanel = ({
   }, [job, onJobChange]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [analysisStatus, setAnalysisStatus] = useState('idle');
+  const [analysisState, setAnalysisState] = useState(null);
+  const [analysisError, setAnalysisError] = useState('');
   const playlistNames = useMemo(() => {
     if (!selected.length) return { folder: '', album: '' };
     const paths = new Set(selected);
@@ -168,9 +172,86 @@ const UsbExportPanel = ({
       clearInterval(timer);
     };
   }, [job]);
+  useEffect(() => {
+    if (analysisStatus !== 'running') return undefined;
+    let cancelled = false;
+    const timer = { current: null };
+    const poll = async () => {
+      let repeat = true;
+      try {
+        const state = await analysisApi.getScanState();
+        if (cancelled) return;
+        setAnalysisState(state);
+        setAnalysisError('');
+        if (!state.scanning) {
+          repeat = false;
+          if (
+            state.completed &&
+            !state.cancelled &&
+            !state.error &&
+            !state.failed &&
+            !state.enhancedFailed &&
+            state.enhancedTotal > 0
+          ) {
+            setAnalysisStatus('finished');
+          } else {
+            setAnalysisStatus('idle');
+            setAnalysisError(
+              state.error ||
+                (state.cancelled
+                  ? 'Analysis was stopped before it finished.'
+                  : 'Full analysis did not finish for every track. Review Track Analysis before retrying.'),
+            );
+          }
+        }
+      } catch {
+        if (!cancelled)
+          setAnalysisError('Could not check analysis progress. Retrying…');
+      } finally {
+        if (!cancelled && repeat) timer.current = setTimeout(poll, 2_000);
+      }
+    };
+
+    void poll();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer.current);
+    };
+  }, [analysisStatus]);
+  const startMissingAnalysis = async () => {
+    if (!selected.length) return;
+    setAnalysisStatus('starting');
+    setAnalysisError('');
+    setAnalysisState(null);
+    try {
+      const { data } = await api.get('/analysis/candidates', {
+        params: { path: selected[0] },
+      });
+      if (!data.enabled)
+        throw new Error('Full analysis is not available on this instance.');
+      await analysisApi.startScan({
+        metrics: 'All',
+        onlyPaths: selected,
+        enhanced: true,
+        skipAnalysed: true,
+        resetAll: false,
+      });
+      setAnalysisStatus('running');
+    } catch (caughtError) {
+      setAnalysisStatus('idle');
+      setAnalysisError(
+        typeof caughtError?.response?.data === 'string'
+          ? caughtError.response.data
+          : caughtError?.message || 'Could not start full analysis.',
+      );
+    }
+  };
+
   const start = async () => {
     setBusy(true);
     setError('');
+    setAnalysisStatus('idle');
+    setAnalysisError('');
     try {
       const { data } = await api.post('/analysis/usb-export', {
         ...(selectionId ? { selectionId } : {}),
@@ -252,6 +333,14 @@ const UsbExportPanel = ({
     }
   };
 
+  const analysisRunning =
+    analysisStatus === 'starting' || analysisStatus === 'running';
+  const needsFullAnalysis =
+    job?.status === 'failed' &&
+    selected.length > 0 &&
+    /full enhanced analysis is required|source changed since enhanced analysis/i.test(
+      job.error || '',
+    );
   const locked = busy || libraryLoading || active(job);
   return (
     <section
@@ -443,13 +532,16 @@ const UsbExportPanel = ({
             disabled={
               !enabled ||
               locked ||
+              analysisRunning ||
               !selected.length ||
               !exportPlaylistName.trim()
             }
             onClick={start}
             type="button"
           >
-            Prepare USB export
+            {job?.status === 'failed'
+              ? 'Retry USB export'
+              : 'Prepare USB export'}
           </button>
         </p>
       )}
@@ -467,6 +559,43 @@ const UsbExportPanel = ({
             </button>
           )}
           {job.error && <p role="alert">{job.error}</p>}
+          {needsFullAnalysis && (
+            <div className="usb-export-analysis-recovery">
+              <h4>Full analysis needed for this export</h4>
+              <p>
+                Check the {selected.length} selected tracks and run full
+                analysis where current results are missing. Existing results are
+                reused.
+              </p>
+              <button
+                disabled={analysisRunning}
+                onClick={startMissingAnalysis}
+                type="button"
+              >
+                {analysisStatus === 'starting'
+                  ? 'Starting full analysis…'
+                  : analysisStatus === 'running'
+                    ? 'Full analysis running…'
+                    : 'Analyse tracks needed for export'}
+              </button>
+              {analysisStatus === 'running' && (
+                <p role="status">
+                  Full analysis is running
+                  {analysisState?.enhancedTotal > 0
+                    ? ` · ${analysisState.enhancedCompleted || 0} of ${analysisState.enhancedTotal} enhanced tracks complete`
+                    : ' · checking basic results first'}
+                  .
+                </p>
+              )}
+              {analysisStatus === 'finished' && (
+                <p role="status">
+                  Analysis scan finished. Retry the USB export to verify every
+                  track is ready.
+                </p>
+              )}
+              {analysisError && <p role="alert">{analysisError}</p>}
+            </div>
+          )}
           {job.downloadAvailable && (
             <p>
               <button

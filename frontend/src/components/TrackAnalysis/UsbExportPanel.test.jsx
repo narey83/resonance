@@ -1,3 +1,4 @@
+import * as analysisApi from '../../lib/analysis';
 import api from '../../lib/api';
 import UsbExportPanel from './UsbExportPanel';
 import React from 'react';
@@ -8,6 +9,10 @@ jest.mock('../../lib/api', () => ({
   get: jest.fn(),
   post: jest.fn(),
   delete: jest.fn(),
+}));
+jest.mock('../../lib/analysis', () => ({
+  getScanState: jest.fn(),
+  startScan: jest.fn(),
 }));
 describe('USB export selection and failures', () => {
   let container;
@@ -402,6 +407,97 @@ describe('USB export selection and failures', () => {
       'Full enhanced analysis is required.',
     );
     expect(button('Download USB ZIP')).toBeUndefined();
+    expect(button('Analyse tracks needed for export')).toBeUndefined();
+  });
+  it('offers scoped full analysis after an export fails for missing enhanced results', async () => {
+    expect.hasAssertions();
+    const paths = ['/library/one.mp3', '/library/two.flac'];
+    api.post
+      .mockResolvedValueOnce({
+        data: {
+          enabled: true,
+          tracks: [
+            { path: paths[0], title: 'One' },
+            { path: paths[1], title: 'Two' },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          jobId: 'failed-job',
+          status: 'failed',
+          total: 2,
+          prepared: 0,
+          error:
+            'Full enhanced analysis is required for One. Run Track Analysis first.',
+        },
+      });
+    api.get.mockResolvedValue({ data: { enabled: true, jobs: [] } });
+    analysisApi.startScan.mockResolvedValue({});
+    analysisApi.getScanState.mockResolvedValue({
+      scanning: false,
+      completed: true,
+      failed: 0,
+      enhancedTotal: 2,
+      enhancedCompleted: 2,
+      enhancedFailed: 0,
+    });
+    await act(async () => {
+      ReactDOM.render(<UsbExportPanel initialPaths={paths} />, container);
+    });
+    await act(async () => Simulate.click(button('Prepare USB export')));
+    expect(button('Analyse tracks needed for export')).toBeDefined();
+    expect(button('Retry USB export')).toBeDefined();
+    await act(async () =>
+      Simulate.click(button('Analyse tracks needed for export')),
+    );
+    expect(api.get).toHaveBeenCalledWith('/analysis/candidates', {
+      params: { path: paths[0] },
+    });
+    expect(analysisApi.startScan).toHaveBeenCalledWith({
+      metrics: 'All',
+      onlyPaths: paths,
+      enhanced: true,
+      skipAnalysed: true,
+      resetAll: false,
+    });
+    expect(container.textContent).toContain('Retry the USB export');
+    expect(api.post).toHaveBeenCalledTimes(2);
+  });
+  it('explains when the full analysis worker is unavailable', async () => {
+    expect.hasAssertions();
+    api.post.mockResolvedValue({
+      data: {
+        jobId: 'failed-job',
+        status: 'failed',
+        total: 2,
+        prepared: 0,
+        error: 'Full enhanced analysis is required for One.',
+      },
+    });
+    api.get
+      .mockResolvedValueOnce({
+        data: {
+          enabled: true,
+          tracks: [
+            { path: '/library/one.mp3', title: 'One' },
+            { path: '/library/two.flac', title: 'Two' },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({ data: { enabled: false, jobs: [] } });
+    await act(async () => {
+      ReactDOM.render(<UsbExportPanel />, container);
+    });
+    act(() => Simulate.click(button('Select all')));
+    await act(async () => Simulate.click(button('Prepare USB export')));
+    await act(async () =>
+      Simulate.click(button('Analyse tracks needed for export')),
+    );
+    expect(container.textContent).toContain(
+      'Full analysis is not available on this instance.',
+    );
+    expect(analysisApi.startScan).not.toHaveBeenCalled();
   });
   it('disables export when the worker is not configured', async () => {
     expect.hasAssertions();
