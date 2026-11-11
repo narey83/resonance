@@ -264,9 +264,9 @@ const UsbExportPanel = ({
           className="export-steps"
         >
           {[
-            'Select tracks',
+            selectionId ? 'Review tracks' : 'Select tracks',
             'Player and playlist',
-            'Review',
+            'Review export',
             'Export and transfer',
           ].map((label, index) => (
             <li
@@ -281,7 +281,7 @@ const UsbExportPanel = ({
       <h3>
         {wizard
           ? [
-              'Select your music',
+              selectionId ? 'Review your tracks' : 'Select your music',
               'Choose player and playlist',
               'Ready to export',
               'Your USB export',
@@ -373,22 +373,38 @@ const UsbExportPanel = ({
       )}
       {(!wizard || step === 0) && (
         <>
-          <p>
-            <button
-              disabled={locked || Boolean(selectionId) || !tracks.length}
-              onClick={() => setSelected(tracks.map((track) => track.path))}
-              type="button"
-            >
-              Select all
-            </button>{' '}
-            <button
-              disabled={locked || Boolean(selectionId)}
-              onClick={() => setSelected([])}
-              type="button"
-            >
-              Clear selection
-            </button>{' '}
-            {selected.length} of {tracks.length} tracks selected
+          <p className="usb-export-selection-summary">
+            {!selectionId && (
+              <>
+                <button
+                  disabled={locked || !tracks.length}
+                  onClick={() => setSelected(tracks.map((track) => track.path))}
+                  type="button"
+                >
+                  Select all
+                </button>{' '}
+                <button
+                  disabled={locked}
+                  onClick={() => setSelected([])}
+                  type="button"
+                >
+                  Clear selection
+                </button>{' '}
+              </>
+            )}
+            <span className="usb-export-selection-count">
+              {selected.length} of {tracks.length} tracks selected
+            </span>
+            {wizard && (
+              <button
+                className="usb-export-primary"
+                disabled={locked || !enabled || !selected.length}
+                onClick={() => setStep(1)}
+                type="button"
+              >
+                Continue to player and playlist
+              </button>
+            )}
           </p>
           <ExportTrackPicker
             disabled={locked || Boolean(selectionId)}

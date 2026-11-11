@@ -523,7 +523,7 @@ describe('USB export selection and failures', () => {
       '/analysis/usb-export/library',
       paths,
     );
-    expect(button('Clear selection').disabled).toBe(true);
+    expect(button('Clear selection')).toBeUndefined();
     await act(async () => {
       Simulate.click(button('Prepare USB export'));
     });
@@ -550,6 +550,7 @@ describe('USB export selection and failures', () => {
       ReactDOM.render(
         <UsbExportPanel
           initialPaths={paths}
+          selectionId="reviewed"
           wizard
         />,
         container,
@@ -557,10 +558,18 @@ describe('USB export selection and failures', () => {
     });
     expect(
       container.querySelector('[aria-current="step"]').textContent,
-    ).toContain('Step 1 Select tracks');
+    ).toContain('Step 1 Review tracks');
+    expect(container.textContent).toContain('Review your tracks');
     expect(container.textContent).toContain('15 of 15 tracks selected');
+    expect(button('Select all')).toBeUndefined();
+    expect(button('Clear selection')).toBeUndefined();
     expect(
       container.querySelector('.usb-picker-folder-row > span').textContent,
     ).toBe('1 of 1 selected in this folder');
+    expect(button('Continue to player and playlist').disabled).toBe(false);
+    act(() => Simulate.click(button('Continue to player and playlist')));
+    expect(
+      container.querySelector('[aria-current="step"]').textContent,
+    ).toContain('Step 2 Player and playlist');
   });
 });
