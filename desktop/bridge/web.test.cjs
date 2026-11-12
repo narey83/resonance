@@ -341,6 +341,14 @@ test("USB Export shows streamed download percentage and verified files", async (
   assert.match(d.querySelector("#transfer-progress").textContent, /50% downloaded to USB/);
 });
 
+test("USB Export shows the existing-library preflight phase", async (t) => {
+  const { document: d } = launch(t, "/usb", {
+    transfer: { name: "Test set", tracks: 3, status: "writing", phase: "checking" },
+  });
+  await until(() => d.querySelector("#export-status").textContent.includes("Checking existing playlists"));
+  assert.match(d.querySelector("#transfer-progress").textContent, /USB tracks are present/);
+});
+
 test("USB Export shows the database backup phase before streaming", async (t) => {
   const { document: d } = launch(t, "/usb", {
     transfer: { name: "Test set", tracks: 2, status: "writing", phase: "backing-up", profile: "dual" },

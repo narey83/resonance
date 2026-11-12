@@ -383,7 +383,9 @@ function renderUSB() {
     const labels = {
       downloading: "Loading export details from Resonance…",
       ready: "Export ready. Choose a USB drive to stream your set directly from Resonance.",
-      writing: transfer.phase === "backing-up"
+      writing: transfer.phase === "checking"
+        ? "Checking existing playlists and USB tracks before writing…"
+        : transfer.phase === "backing-up"
         ? "Backing up and verifying the player databases before writing to USB…"
         : `Streaming to USB: ${downloadPercent}% downloaded · ${transfer.prepared || 0} / ${transfer.total || 0} files verified`,
       completed: transfer.databaseBackup
@@ -395,7 +397,7 @@ function renderUSB() {
     $("#export-status").textContent =
       labels[transfer.status] || transfer.status;
     $("#export-progress").hidden = !["downloading", "writing"].includes(transfer.status);
-    if (transfer.status === "downloading" || transfer.phase === "backing-up") {
+    if (transfer.status === "downloading" || ["checking", "backing-up"].includes(transfer.phase)) {
       $("#export-progress").removeAttribute("value");
     } else {
       $("#export-progress").max = Math.max(1, transfer.totalBytes || 0);
@@ -450,7 +452,9 @@ function renderUSB() {
     : "I have checked the destination and want to copy this export.";
   $("#transfer-progress").textContent =
     transfer?.status === "writing"
-      ? transfer.phase === "backing-up"
+      ? transfer.phase === "checking"
+        ? "Resonance is checking existing playlists while Bridge checks that USB tracks are present."
+        : transfer.phase === "backing-up"
         ? "The player databases are being copied off the USB and verified before any new files are written."
         : `${downloadPercent}% downloaded to USB · ${transfer.prepared || 0} / ${transfer.total || 0} files verified`
       : transfer?.status === "ejected"

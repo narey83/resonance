@@ -16,6 +16,78 @@ using System.Threading.Tasks;
 public sealed partial class UsbExportService
 {
     private const long MaxPlayerDatabaseBytes = 128L << 20;
+    private const long MaxUSBRecordsBytes = 16L << 20;
+
+    /// <summary>Checks the USB databases and recorded exports before Bridge writes to the drive.</summary>
+    /// <returns>The audio paths Bridge must verify on the mounted USB.</returns>
+    public async Task<JsonElement> PreflightExistingLibrary(string id, Stream classic, long classicBytes, Stream oneLibrary, long oneBytes, Stream records, long recordsBytes, CancellationToken cancellationToken)
+    {
+        var manifest = TransferManifest(id);
+        using var document = JsonDocument.Parse(await File.ReadAllTextAsync(manifest, cancellationToken));
+        var metadata = document.RootElement;
+        if (metadata.GetProperty("profile").GetString() != "dual" || !metadata.TryGetProperty("jobId", out var jobId) || jobId.GetString() != id)
+        {
+            throw new InvalidOperationException("Prepare a dual-library export before adding to an existing USB library.");
+        }
+
+        if (classicBytes is < 1024 or > MaxPlayerDatabaseBytes || oneBytes is < 1024 or > MaxPlayerDatabaseBytes || recordsBytes is < 2 or > MaxUSBRecordsBytes)
+        {
+            throw new ArgumentException("Player databases or USB export records are outside the supported size range.");
+        }
+
+        var script = Path.Combine(Path.GetDirectoryName(worker), "preflight_existing.py");
+        if (!File.Exists(script))
+        {
+            throw new InvalidOperationException("USB library preflight worker is unavailable.");
+        }
+
+        var work = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(manifest)), "preflight-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(work);
+        try
+        {
+            await CopyDatabase(classic, classicBytes, Path.Combine(work, "export.pdb"), cancellationToken);
+            await CopyDatabase(oneLibrary, oneBytes, Path.Combine(work, "exportLibrary.db"), cancellationToken);
+            await CopyRecords(records, recordsBytes, Path.Combine(work, "records.json"), cancellationToken);
+            var start = new ProcessStartInfo(python) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
+            foreach (var argument in new[] { script, "--existing", work, "--prepared", manifest, "--records", Path.Combine(work, "records.json") })
+            {
+                start.ArgumentList.Add(argument);
+            }
+
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromMinutes(5));
+            using var process = Process.Start(start) ?? throw new IOException("Could not start USB library preflight worker.");
+            using var registration = timeout.Token.Register(() =>
+            {
+                try
+                {
+                    if (!process.HasExited)
+                    {
+                        process.Kill(true);
+                    }
+                }
+                catch (InvalidOperationException)
+                {
+                }
+            });
+            var stdout = process.StandardOutput.ReadToEndAsync(timeout.Token);
+            var stderr = process.StandardError.ReadToEndAsync(timeout.Token);
+            await process.WaitForExitAsync(timeout.Token);
+            var result = await stdout;
+            var diagnostics = await stderr;
+            if (process.ExitCode != 0)
+            {
+                throw new InvalidOperationException("USB library preflight failed: " + diagnostics[..Math.Min(diagnostics.Length, 500)]);
+            }
+
+            using var response = JsonDocument.Parse(result);
+            return response.RootElement.Clone();
+        }
+        finally
+        {
+            Directory.Delete(work, true);
+        }
+    }
 
     // Receives only the two small player databases. Audio never travels back to
     // Resonance or into Bridge's Mac cache during a USB add operation.
@@ -108,6 +180,17 @@ public sealed partial class UsbExportService
         if (output.Length != expectedBytes || output.Length > MaxPlayerDatabaseBytes)
         {
             throw new ArgumentException("Player database upload was incomplete or oversized.");
+        }
+    }
+
+    private static async Task CopyRecords(Stream source, long expectedBytes, string destination, CancellationToken cancellationToken)
+    {
+        await using var output = new FileStream(destination, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        await source.CopyToAsync(output, cancellationToken);
+        await output.FlushAsync(cancellationToken);
+        if (output.Length != expectedBytes || output.Length > MaxUSBRecordsBytes)
+        {
+            throw new ArgumentException("USB export records upload was incomplete or oversized.");
         }
     }
 }

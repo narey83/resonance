@@ -9,6 +9,7 @@ from collections import Counter
 from pathlib import Path
 import argparse
 import shutil
+import unicodedata
 from urllib.parse import quote
 
 from rekordbox_pdb import Database
@@ -26,6 +27,10 @@ def _read_one(dbapi, path, key):
 
 def _names(rows):
     return {row.id: row.name for row in rows}
+
+
+def _playlist_name(value):
+    return unicodedata.normalize('NFKC', str(value or '')).strip().casefold()
 
 
 def _snapshot_classic(db):
@@ -46,6 +51,8 @@ def _merge_classic(existing, prepared, destination, playlist_name):
     if any(p.is_folder for p in source.playlist_tree):
         raise ValueError('Prepared set contains unexpected playlist folders')
     old = _snapshot_classic(before)
+    if any(_playlist_name(p.name) == _playlist_name(playlist_name) for p in before.playlist_tree if not p.is_folder):
+        raise ValueError('A playlist with this name already exists on the USB')
     old_paths = {t.file_path.casefold() for t in before.tracks}
     old_analysis = {t.analyze_path.casefold() for t in before.tracks}
     if any(t.file_path.casefold() in old_paths or t.analyze_path.casefold() in old_analysis for t in source.tracks):
@@ -115,6 +122,9 @@ def _merge_one(existing, prepared, destination, playlist_name):
         if any([name.casefold() for name in _columns(source, table)] != [name.casefold() for name in _columns(target, table)] for table in required):
             raise ValueError('Existing OneLibrary schema differs from the prepared set')
         old = {table: _rows(target, table)[1] for table in required if table != 'property'}
+        playlist_columns = _columns(target, 'playlist')
+        if any(_playlist_name(row[playlist_columns.index('name')]) == _playlist_name(playlist_name) for row in old['playlist']):
+            raise ValueError('A playlist with this name already exists on the USB')
         source_contents = _rows(source, 'content')[1]
         if not source_contents:
             raise ValueError('Prepared OneLibrary has no tracks')

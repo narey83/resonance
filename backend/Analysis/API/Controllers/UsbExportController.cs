@@ -314,6 +314,48 @@ namespace resonance.Analysis.API
         }
 
         [AllowAnonymous]
+        [HttpPost("transfer/{id}/preflight")]
+        [RequestSizeLimit(290000000)]
+        [RequestFormLimits(MultipartBodyLengthLimit = 290000000)]
+        public async Task<IActionResult> TransferPreflight(string id, [FromForm] IFormFile classic, [FromForm] IFormFile oneLibrary, [FromForm] IFormFile records)
+        {
+            try
+            {
+                if (!AuthorizedTransfer(id))
+                {
+                    return Unauthorized();
+                }
+
+                if (classic == null || oneLibrary == null || records == null)
+                {
+                    return BadRequest("Both player databases and USB export records are required.");
+                }
+
+                await using var classicStream = classic.OpenReadStream();
+                await using var modernStream = oneLibrary.OpenReadStream();
+                await using var recordStream = records.OpenReadStream();
+                var result = await exports.PreflightExistingLibrary(id, classicStream, classic.Length, modernStream, oneLibrary.Length, recordStream, records.Length, HttpContext.RequestAborted);
+                return Ok(result);
+            }
+            catch (FileNotFoundException)
+            {
+                return NotFound();
+            }
+            catch (ArgumentException exception)
+            {
+                return BadRequest(exception.Message);
+            }
+            catch (InvalidOperationException exception)
+            {
+                return Conflict(exception.Message);
+            }
+            catch (JsonException)
+            {
+                return Conflict("USB export records are invalid.");
+            }
+        }
+
+        [AllowAnonymous]
         [HttpPost("transfer/{id}/merge")]
         [RequestSizeLimit(270000000)]
         [RequestFormLimits(MultipartBodyLengthLimit = 270000000)]

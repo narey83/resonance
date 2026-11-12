@@ -37,6 +37,64 @@ func copyTestTree(t *testing.T, source, target string) {
 	}
 }
 
+func TestUSBPreflightChecksExistingAudioBeforeStaging(t *testing.T) {
+	for _, scenario := range []string{"present", "missing", "duplicate-playlist"} {
+		t.Run(scenario, func(t *testing.T) {
+			target := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(target, "PIONEER", "rekordbox"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Join(target, "Contents"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			for _, name := range []string{"export.pdb", "exportLibrary.db"} {
+				if err := os.WriteFile(filepath.Join(target, "PIONEER", "rekordbox", name), []byte(strings.Repeat("x", 2048)), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if scenario != "missing" {
+				if err := os.WriteFile(filepath.Join(target, "Contents", "track.wav"), []byte("audio"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if err := r.ParseMultipartForm(290000000); err != nil {
+					w.WriteHeader(400)
+					return
+				}
+				for _, field := range []string{"classic", "oneLibrary", "records"} {
+					file, _, err := r.FormFile(field)
+					if err != nil {
+						w.WriteHeader(400)
+						return
+					}
+					file.Close()
+				}
+				if scenario == "duplicate-playlist" {
+					w.WriteHeader(409)
+					w.Write([]byte("playlist already exists"))
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.Write([]byte(`{"audioPaths":["/Contents/track.wav"]}`))
+			}))
+			defer server.Close()
+			connection := connection{ServerURL: server.URL, Token: strings.Repeat("b", 64)}
+			digests, err := preflightExistingUSB(context.Background(), server.Client(), connection, target, nil)
+			if scenario == "present" {
+				if err != nil || len(digests) != 2 {
+					t.Fatal("valid USB was rejected", err)
+				}
+			} else if err == nil {
+				t.Fatal("unsafe USB was accepted", scenario)
+			}
+			if staged, _ := filepath.Glob(filepath.Join(target, ".resonance-usb-*")); len(staged) != 0 {
+				t.Fatal("preflight wrote a staging directory to USB")
+			}
+		})
+	}
+}
+
 func TestUSBMergeStreamsIntoExistingRekordboxFixture(t *testing.T) {
 	fixture := os.Getenv("RESONANCE_TEST_MERGE_FIXTURE")
 	if fixture == "" {
@@ -44,6 +102,7 @@ func TestUSBMergeStreamsIntoExistingRekordboxFixture(t *testing.T) {
 	}
 	manifest := filepath.Join(fixture, "prepared", "export-manifest.json")
 	mergeArchive := filepath.Join(fixture, "merged.zip")
+	rejectPreflight := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-Resonance-Link-Token") != strings.Repeat("b", 64) {
 			w.WriteHeader(401)
@@ -54,6 +113,26 @@ func TestUSBMergeStreamsIntoExistingRekordboxFixture(t *testing.T) {
 			http.ServeFile(w, r, manifest)
 		case strings.HasSuffix(r.URL.Path, "/file"):
 			http.ServeFile(w, r, filepath.Join(fixture, "prepared", filepath.FromSlash(r.URL.Query().Get("path"))))
+		case strings.HasSuffix(r.URL.Path, "/preflight"):
+			if rejectPreflight {
+				w.WriteHeader(409)
+				w.Write([]byte("playlist already exists"))
+				return
+			}
+			if err := r.ParseMultipartForm(290000000); err != nil {
+				w.WriteHeader(400)
+				return
+			}
+			for _, field := range []string{"classic", "oneLibrary", "records"} {
+				if file, _, err := r.FormFile(field); err != nil {
+					w.WriteHeader(400)
+					return
+				} else {
+					file.Close()
+				}
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"audioPaths":["/Contents/UnknownArtist/UnknownAlbum/NOISE.wav"]}`))
 		case strings.HasSuffix(r.URL.Path, "/merge"):
 			if err := r.ParseMultipartForm(270000000); err != nil {
 				w.WriteHeader(400)
@@ -83,13 +162,20 @@ func TestUSBMergeStreamsIntoExistingRekordboxFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, scenario := range []string{"success", "rollback", "backup-failure", "symlink-backup"} {
+	for _, scenario := range []string{"success", "rollback", "backup-failure", "symlink-backup", "missing-audio", "duplicate-playlist"} {
 		t.Run(scenario, func(t *testing.T) {
 			target, err := filepath.EvalSymlinks(t.TempDir())
 			if err != nil {
 				t.Fatal(err)
 			}
 			copyTestTree(t, filepath.Join(fixture, "existing"), target)
+			if scenario == "missing-audio" {
+				if err := os.Remove(filepath.Join(target, "Contents/UnknownArtist/UnknownAlbum/NOISE.wav")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			rejectPreflight = scenario == "duplicate-playlist"
+			defer func() { rejectPreflight = false }()
 			oldClassic, _ := fileDigest(filepath.Join(target, "PIONEER/rekordbox/export.pdb"))
 			oldModern, _ := fileDigest(filepath.Join(target, "PIONEER/rekordbox/exportLibrary.db"))
 			oldExtended, _ := fileDigest(filepath.Join(target, "PIONEER/rekordbox/exportExt.pdb"))
@@ -118,7 +204,7 @@ func TestUSBMergeStreamsIntoExistingRekordboxFixture(t *testing.T) {
 					t.Fatal("USB staging began before the database backup completed")
 				}
 			})
-			if scenario == "backup-failure" || scenario == "symlink-backup" {
+			if scenario == "backup-failure" || scenario == "symlink-backup" || scenario == "missing-audio" || scenario == "duplicate-playlist" {
 				if err == nil || databaseBackup != "" {
 					t.Fatal("unsafe backup location was accepted")
 				}

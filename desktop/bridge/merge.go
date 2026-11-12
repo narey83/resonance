@@ -21,6 +21,7 @@ import (
 )
 
 const maxPlayerDatabaseBytes int64 = 128 << 20
+const maxUSBExportRecordsBytes int64 = 16 << 20
 
 type playerDatabaseBackup struct {
 	Path    string
@@ -218,6 +219,203 @@ func existingLibraryReady(root string) error {
 	return nil
 }
 
+// Relay only existing player metadata to Resonance. Audio is checked in place on
+// the mounted USB and is never copied into Bridge storage or uploaded.
+func preflightExistingUSB(ctx context.Context, client *http.Client, c connection, target string, verifyMount func() error) (map[string]string, error) {
+	if err := existingLibraryReady(target); err != nil {
+		return nil, err
+	}
+	if verifyMount != nil {
+		if err := verifyMount(); err != nil {
+			return nil, err
+		}
+	}
+	records, err := usbExportRecords(target)
+	if err != nil {
+		return nil, err
+	}
+	digests := make(map[string]string, 2)
+	for _, name := range []string{"export.pdb", "exportLibrary.db"} {
+		digests[name], err = fileDigest(filepath.Join(target, "PIONEER", "rekordbox", name))
+		if err != nil {
+			return nil, err
+		}
+	}
+	reader, writer := io.Pipe()
+	defer reader.Close()
+	form := multipart.NewWriter(writer)
+	go func() {
+		var writeErr error
+		defer func() { _ = writer.CloseWithError(writeErr) }()
+		for _, name := range []string{"export.pdb", "exportLibrary.db"} {
+			var part io.Writer
+			part, writeErr = form.CreateFormFile(map[string]string{"export.pdb": "classic", "exportLibrary.db": "oneLibrary"}[name], name)
+			if writeErr != nil {
+				return
+			}
+			writeErr = relayUSBDatabase(part, filepath.Join(target, "PIONEER", "rekordbox", name))
+			if writeErr != nil {
+				return
+			}
+		}
+		var part io.Writer
+		part, writeErr = form.CreateFormFile("records", "records.json")
+		if writeErr != nil {
+			return
+		}
+		writeErr = json.NewEncoder(part).Encode(records)
+		if writeErr == nil {
+			writeErr = form.Close()
+		}
+	}()
+	request, err := http.NewRequestWithContext(ctx, "POST", c.ServerURL+"/preflight", reader)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("X-Resonance-Link-Token", c.Token)
+	request.Header.Set("Content-Type", form.FormDataContentType())
+	response, err := client.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		message, _ := io.ReadAll(io.LimitReader(response.Body, 512))
+		return nil, fmt.Errorf("Resonance rejected this USB export (HTTP %d): %s", response.StatusCode, strings.TrimSpace(string(message)))
+	}
+	var result struct {
+		AudioPaths []string `json:"audioPaths"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, 32<<20)).Decode(&result); err != nil || len(result.AudioPaths) > 100000 {
+		return nil, errors.New("Resonance returned an invalid USB library check")
+	}
+	if err := unchangedPlayerDatabases(target, digests); err != nil {
+		return nil, err
+	}
+	missing := []string{}
+	for _, usbPath := range result.AudioPaths {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if !strings.HasPrefix(usbPath, "/Contents/") || len(usbPath) > 4096 {
+			return nil, errors.New("existing player database references an unsafe audio path")
+		}
+		relative, err := safeName(strings.TrimPrefix(usbPath, "/"))
+		if err != nil {
+			return nil, errors.New("existing player database references an unsafe audio path")
+		}
+		path := filepath.Join(target, filepath.FromSlash(relative))
+		info, statErr := os.Lstat(path)
+		if errors.Is(statErr, os.ErrNotExist) || (statErr == nil && (!info.Mode().IsRegular() || info.Size() == 0)) {
+			missing = append(missing, usbPath)
+			continue
+		}
+		if statErr != nil {
+			return nil, statErr
+		}
+		if err := requireUnder(target, path); err != nil {
+			return nil, errors.New("existing player database references audio outside the USB drive")
+		}
+	}
+	if len(missing) != 0 {
+		return nil, fmt.Errorf("existing USB library references %d missing track(s), including %s; restore them before adding a set", len(missing), strings.Join(missing[:min(3, len(missing))], ", "))
+	}
+	if verifyMount != nil {
+		if err := verifyMount(); err != nil {
+			return nil, err
+		}
+	}
+	return digests, nil
+}
+
+func usbExportRecords(target string) ([]json.RawMessage, error) {
+	paths := []string{filepath.Join(target, "export-manifest.json")}
+	directory := filepath.Join(target, "ResonanceExports")
+	if info, err := os.Lstat(directory); err == nil {
+		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return nil, errors.New("USB export records directory is unsafe")
+		}
+		entries, err := os.ReadDir(directory)
+		if err != nil {
+			return nil, err
+		}
+		for _, entry := range entries {
+			if strings.HasSuffix(strings.ToLower(entry.Name()), ".json") {
+				paths = append(paths, filepath.Join(directory, entry.Name()))
+			}
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	if len(paths) > 501 {
+		return nil, errors.New("USB has too many Resonance export records to check safely")
+	}
+	records := []json.RawMessage{}
+	var total int64
+	for _, path := range paths {
+		info, err := os.Lstat(path)
+		if errors.Is(err, os.ErrNotExist) && path == paths[0] {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if !info.Mode().IsRegular() || info.Size() > maxUSBExportRecordsBytes-total {
+			return nil, errors.New("USB export record is linked or too large")
+		}
+		if err := requireUnder(target, path); err != nil {
+			return nil, errors.New("USB export record is outside the selected drive")
+		}
+		input, err := os.Open(path)
+		if err != nil {
+			return nil, err
+		}
+		opened, statErr := input.Stat()
+		if statErr != nil || !os.SameFile(info, opened) {
+			input.Close()
+			return nil, errors.New("USB export record changed while it was being read")
+		}
+		data, err := io.ReadAll(io.LimitReader(input, maxUSBExportRecordsBytes-total+1))
+		input.Close()
+		if err != nil {
+			return nil, err
+		}
+		if int64(len(data)) != info.Size() || !json.Valid(data) {
+			return nil, errors.New("USB export record is invalid")
+		}
+		total += int64(len(data))
+		records = append(records, json.RawMessage(data))
+	}
+	return records, nil
+}
+
+func relayUSBDatabase(destination io.Writer, path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() || info.Size() < 1024 || info.Size() > maxPlayerDatabaseBytes {
+		return errors.New("player database is linked or outside the supported size range")
+	}
+	input, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer input.Close()
+	opened, err := input.Stat()
+	if err != nil || !os.SameFile(info, opened) {
+		return errors.New("player database changed while it was being read")
+	}
+	n, err := io.Copy(destination, io.LimitReader(input, maxPlayerDatabaseBytes+1))
+	if err != nil {
+		return err
+	}
+	if n != info.Size() {
+		return errors.New("player database changed while it was being read")
+	}
+	return nil
+}
+
 func requestMergedDatabases(ctx context.Context, client *http.Client, c connection, target, stage string) (string, error) {
 	reader, writer := io.Pipe()
 	defer reader.Close()
@@ -231,13 +429,7 @@ func requestMergedDatabases(ctx context.Context, client *http.Client, c connecti
 			if err != nil {
 				return
 			}
-			var input *os.File
-			input, err = os.Open(filepath.Join(target, "PIONEER", "rekordbox", name))
-			if err != nil {
-				return
-			}
-			_, err = io.Copy(part, input)
-			input.Close()
+			err = relayUSBDatabase(part, filepath.Join(target, "PIONEER", "rekordbox", name))
 			if err != nil {
 				return
 			}

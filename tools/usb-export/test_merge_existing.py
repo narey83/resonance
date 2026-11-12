@@ -1,12 +1,14 @@
 import tempfile
 import unittest
 import wave
+import json
 from pathlib import Path
 
 from rekordbox_pdb import Database
 from rekordbox_pdb.edit import PdbEditor
 
 from merge_existing import merge
+from preflight_existing import inspect
 from onelibrary_writer import _connect, _dependencies, write_onelibrary
 from usb_export import prepare, sha
 
@@ -47,6 +49,16 @@ class MergeExistingTests(unittest.TestCase):
             result = prepare(manifest, prepared, 'dual', 'unused', 'ffprobe')
             self.assertEqual(result['jobId'], job)
             self.assertTrue((prepared / f'Contents/Resonance/{job}/00001-track.wav').is_file())
+            checked = inspect(old_db, prepared / 'export-manifest.json', [])
+            self.assertEqual(checked['audioPaths'], ['/Contents/Old/old.wav'])
+            duplicate_name = root / 'duplicate-name.json'
+            duplicate_name.write_text(json.dumps({**result, 'playlistName': ' OLD PLAYLIST '}))
+            with self.assertRaisesRegex(ValueError, 'playlist with this name'):
+                inspect(old_db, duplicate_name, [])
+            new_audio = next(item for item in result['files'] if item['path'].startswith('Contents/'))
+            record = {'schemaVersion': 1, 'files': [{'path': 'Contents/Old/old.wav', 'sha256': new_audio['sha256']}]}
+            with self.assertRaisesRegex(ValueError, 'already recorded on the USB'):
+                inspect(old_db, prepared / 'export-manifest.json', [record])
             merged = root / 'merged'
             self.assertEqual(merge(old_db, prepared / 'PIONEER/rekordbox', merged, 'New playlist')['addedTracks'], 1)
             classic = Database.from_file(merged / 'export.pdb')
@@ -62,9 +74,12 @@ class MergeExistingTests(unittest.TestCase):
                 self.assertEqual(one.execute('SELECT count(*) FROM playlist_content').fetchone()[0], 2)
             finally:
                 one.close()
-            with self.assertRaisesRegex(ValueError, 'collides'):
+            with self.assertRaisesRegex(ValueError, 'already exists|collides'):
                 merge(prepared / 'PIONEER/rekordbox', prepared / 'PIONEER/rekordbox', root / 'collision', 'Duplicate')
             self.assertFalse((root / 'collision').exists())
+            with self.assertRaisesRegex(ValueError, 'playlist with this name already exists'):
+                merge(old_db, prepared / 'PIONEER/rekordbox', root / 'same-name', 'OLD PLAYLIST')
+            self.assertFalse((root / 'same-name').exists())
 
 
 if __name__ == '__main__':

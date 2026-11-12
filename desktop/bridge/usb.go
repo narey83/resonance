@@ -339,9 +339,18 @@ func writeUSBStreamMode(ctx context.Context, prepared *usbPrepared, c connection
 	var backup *playerDatabaseBackup
 	if mergeExisting {
 		var err error
+		checked, checkErr := preflightExistingUSB(ctx, client, c, target, verifyMount)
+		if checkErr != nil {
+			return checkErr
+		}
 		backup, err = backupPlayerDatabases(target, backupRoot, prepared.Manifest.JobID, verifyMount)
 		if err != nil {
 			return err
+		}
+		for name, digest := range checked {
+			if backup.Digests[name] != digest {
+				return errors.New("player databases changed after the USB library check; close rekordbox and retry")
+			}
 		}
 		if onBackup != nil {
 			onBackup(backup.Path)
@@ -712,7 +721,7 @@ func (h *helper) usbRoutes(mux *http.ServeMux) {
 		u.Status = "writing"
 		u.Phase = "streaming"
 		if mergeExisting {
-			u.Phase = "backing-up"
+			u.Phase = "checking"
 		}
 		u.DatabaseBackup = ""
 		h.Diagnostics.event("info", "usb.writing", nil)

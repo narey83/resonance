@@ -37,6 +37,15 @@ in its private local backup directory. It keeps those metadata-only backups
 after the export. Bridge also
 keeps rollback copies of both databases on the USB during publication and offers
 recovery if publication is interrupted.
+Before adding to an existing dual-library USB, Bridge relays its player databases
+and any Resonance export records to the paired server. Resonance rejects a playlist
+name already present in either database and detects repeated track audio when a
+prior Resonance export record includes its checksum. Bridge checks that every
+track referenced by those databases still exists on the USB before staging files.
+This preflight reads only metadata on the Mac; existing track audio stays on the
+USB. A differently named playlist containing tracks originally added by rekordbox
+cannot be recognised as a duplicate without a matching Resonance export record;
+such playlists need manual review.
 Single-database drives and non-Mac platforms remain read-only for adding sets.
 Mac users can also format a selected single-partition external USB disk as FAT32 after typing its
 drive name. Bridge backs up any player `.db` and `.pdb` files before formatting;
