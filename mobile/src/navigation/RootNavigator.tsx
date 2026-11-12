@@ -96,7 +96,7 @@ function MusicApp({ remote, activeTab, onOpenChat }: { remote: boolean; activeTa
       <PerfProfiler id="tabs"><MainTabs /></PerfProfiler>
       {playerMode === 'bubble' && !overlayActive && <PerfProfiler id="bubble"><PlayerBubble /></PerfProfiler>}
       {remote && activeTab !== 'ChatTab' && activeTab !== 'RoomsTab' && (
-        <View style={{ position: 'absolute', right: 16, bottom: Math.max(insets.bottom, 8) + 68 + miniBarHeight }}>
+        <View style={{ position: 'absolute', right: 16, bottom: Math.max(insets.bottom, 8) + 68 + miniBarHeight, zIndex: 50, elevation: 50 }}>
           <ChatBubble onPress={onOpenChat} />
         </View>
       )}
