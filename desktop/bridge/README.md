@@ -103,7 +103,9 @@ those do not update automatically. Stop sharing before changing an offline copy.
 
 The helper stores only a private, hash-verified device catalog and analysis.
 Audio remains in Resonance and is streamed on demand through authenticated range
-requests; Bridge does not persist track audio. It does not reanalyse music or
+requests. Bridge groups small player reads into 512 KiB server ranges and keeps
+up to 32 MiB of recent audio in RAM during a sharing session; it does not persist
+track audio. It does not reanalyse music or
 write source tags.
 Only devices on the selected adapter's subnet can query music. Discovery receives
 broadcasts on wildcard sockets with source/subnet checks; file serving binds to
