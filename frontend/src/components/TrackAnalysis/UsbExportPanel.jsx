@@ -59,6 +59,7 @@ const UsbExportPanel = ({
     onJobChange?.(job);
   }, [job, onJobChange]);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [startingExport, setStartingExport] = useState(false);
   const [analysisStatus, setAnalysisStatus] = useState('idle');
@@ -175,21 +176,30 @@ const UsbExportPanel = ({
     };
   }, [initialPaths, wizard]);
   useEffect(() => {
-    if (!active(job)) return undefined;
+    if (!job || job.status === 'failed' || job.status === 'cancelled')
+      return undefined;
     let cancelled = false;
-    const timer = setInterval(() => {
-      api
-        .get(`/analysis/usb-export/${job.jobId}`)
-        .then(({ data }) => {
-          if (!cancelled) {
-            setJob(data);
-            setError('');
-          }
-        })
-        .catch((error_) => {
-          if (!cancelled) setError(message(error_));
-        });
-    }, 1_500);
+    const timer = setInterval(
+      () => {
+        api
+          .get(`/analysis/usb-export/${job.jobId}`)
+          .then(({ data }) => {
+            if (!cancelled) {
+              setJob(data);
+              setError('');
+            }
+          })
+          .catch((error_) => {
+            if (cancelled) return;
+            if (error_?.response?.status === 404) {
+              setJob(null);
+              sessionStorage.removeItem('resonance-usb-export-job');
+              setNotice('This export was cancelled.');
+            } else setError(message(error_));
+          });
+      },
+      active(job) ? 1_500 : 5_000,
+    );
     return () => {
       cancelled = true;
       clearInterval(timer);
@@ -377,10 +387,36 @@ const UsbExportPanel = ({
     );
 
   const cancel = async () => {
+    setBusy(true);
     try {
       await api.delete(`/analysis/usb-export/${job.jobId}`);
+      if (job.status === 'completed') {
+        setJob(null);
+        sessionStorage.removeItem('resonance-usb-export-job');
+        setNotice('This export was cancelled. Bridge will release its copy.');
+      }
     } catch (error_) {
       setError(message(error_));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deferExport = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const { data } = await api.post(
+        `/analysis/usb-export/${job.jobId}/defer`,
+      );
+      setJob(data);
+      setNotice(
+        'Export saved for later. Bridge will release its prepared copy.',
+      );
+    } catch (error_) {
+      setError(message(error_));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -626,7 +662,9 @@ const UsbExportPanel = ({
           className="usb-export-ready"
           role="status"
         >
-          <strong>USB export ready</strong>
+          <strong>
+            {job.deferred ? 'USB export saved for later' : 'USB export ready'}
+          </strong>
           <p>
             {job.total} tracks · {exportPlaylistName} ·{' '}
             {players[playerChoice].name}
@@ -647,8 +685,28 @@ const UsbExportPanel = ({
             >
               Download USB ZIP
             </button>
+            {!job.deferred && (
+              <button
+                disabled={busy}
+                onClick={deferExport}
+                type="button"
+              >
+                Defer export
+              </button>
+            )}
+            <button
+              disabled={busy}
+              onClick={cancel}
+              type="button"
+            >
+              Cancel export
+            </button>
           </div>
-          <p>Choose your USB drive in Bridge to transfer the prepared files.</p>
+          <p>
+            {job.deferred
+              ? 'Reopen this saved export in Bridge when you are ready.'
+              : 'Choose your USB drive in Bridge to transfer the prepared files.'}
+          </p>
         </div>
       )}
       {job && !completedExport && (
@@ -878,6 +936,7 @@ const UsbExportPanel = ({
         </details>
       )}
       {showInspector && <UsbExportInspector latestJob={job} />}
+      {notice && <p role="status">{notice}</p>}
       {error && <p role="alert">{error}</p>}
     </section>
   );

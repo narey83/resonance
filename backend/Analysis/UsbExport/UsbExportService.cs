@@ -47,7 +47,7 @@ namespace resonance.Analysis.UsbExport
     using Serilog;
 
     public record UsbExportRequest(string[] Paths, string PlaylistName = "Resonance", string Profile = "dual", string SelectionId = null, string PlayerModel = null);
-    public record UsbExportJob(string JobId, string Status, int Total, int Prepared, string Profile, string PlaylistName, string Error = null, bool DownloadAvailable = false, string PlayerModel = null);
+    public record UsbExportJob(string JobId, string Status, int Total, int Prepared, string Profile, string PlaylistName, string Error = null, bool DownloadAvailable = false, string PlayerModel = null, bool Deferred = false);
 
     // Stages an export for download. This service deliberately has no device or destination API.
 
@@ -205,7 +205,7 @@ namespace resonance.Analysis.UsbExport
         {
             if (jobs.TryGetValue(id, out var job))
             {
-                return job;
+                return job.Status == "completed" ? job with { Deferred = File.Exists(Path.Combine(root, id, "export-deferred")) } : job;
             }
 
             if (id.Length != 32 || !id.All(Uri.IsHexDigit) || string.IsNullOrWhiteSpace(root))
@@ -222,12 +222,14 @@ namespace resonance.Analysis.UsbExport
             using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(directory, "export", "export-manifest.json")));
             var manifest = doc.RootElement;
             var total = manifest.GetProperty("trackCount").GetInt32();
-            return new UsbExportJob(id, "completed", total, total, manifest.GetProperty("profile").GetString(), manifest.GetProperty("playlistName").GetString(), DownloadAvailable: true, PlayerModel: manifest.TryGetProperty("playerModel", out var model) ? model.GetString() : null);
+            return new UsbExportJob(id, "completed", total, total, manifest.GetProperty("profile").GetString(), manifest.GetProperty("playlistName").GetString(), DownloadAvailable: true, PlayerModel: manifest.TryGetProperty("playerModel", out var model) ? model.GetString() : null, Deferred: File.Exists(Path.Combine(directory, "export-deferred")));
         }
 
         public UsbExportJob[] History()
         {
-            var saved = jobs.Values.ToDictionary(job => job.JobId, StringComparer.Ordinal);
+            var saved = jobs.Values.ToDictionary(job => job.JobId, job => job.Status == "completed"
+                ? job with { Deferred = File.Exists(Path.Combine(root, job.JobId, "export-deferred")) }
+                : job, StringComparer.Ordinal);
             if (Directory.Exists(root))
             {
                 foreach (var directory in new DirectoryInfo(root).EnumerateDirectories()
@@ -283,7 +285,12 @@ namespace resonance.Analysis.UsbExport
         public bool Cancel(string id)
         {
             var job = Read(id);
-            if (job.Status is "completed" or "failed" or "cancelled")
+            if (job.Status == "completed")
+            {
+                return RemoveStagedJob(id);
+            }
+
+            if (job.Status is "failed" or "cancelled")
             {
                 return false;
             }
@@ -295,6 +302,31 @@ namespace resonance.Analysis.UsbExport
 
             cancellation.Cancel();
             return true;
+        }
+
+        public UsbExportJob Defer(string id)
+        {
+            var job = Read(id);
+            if (!job.DownloadAvailable)
+            {
+                throw new InvalidOperationException("Wait for the export to finish before deferring it.");
+            }
+
+            File.WriteAllText(Path.Combine(root, id, "export-deferred"), string.Empty);
+            Log.Information("USB export {JobId} deferred for later transfer", id);
+            return Read(id);
+        }
+
+        public UsbExportJob Resume(string id)
+        {
+            var job = Read(id);
+            if (!job.DownloadAvailable)
+            {
+                throw new InvalidOperationException("Export is not ready.");
+            }
+
+            File.Delete(Path.Combine(root, id, "export-deferred"));
+            return Read(id);
         }
 
         public string Download(string id)

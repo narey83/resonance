@@ -12,6 +12,7 @@ const UsbExportInspector = ({ latestJob }) => {
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState('');
   const [page, setPage] = useState(0);
+  const selectedJob = history.find((job) => job.jobId === selected);
   const filteredTracks = useMemo(() => {
     const query = filter.trim().toLocaleLowerCase();
     return (report?.tracks || []).filter((track) =>
@@ -42,7 +43,7 @@ const UsbExportInspector = ({ latestJob }) => {
     return () => {
       cancelled = true;
     };
-  }, [open, latestJob?.status]);
+  }, [open, latestJob?.jobId, latestJob?.status, latestJob?.deferred]);
   useEffect(() => {
     if (!open || !selected) return undefined;
     let cancelled = false;
@@ -69,6 +70,59 @@ const UsbExportInspector = ({ latestJob }) => {
       cancelled = true;
     };
   }, [open, selected]);
+  const openSaved = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const { data } = await api.post(
+        `/analysis/usb-export/${selected}/transfer`,
+        null,
+        { responseType: 'json' },
+      );
+      if (data?.schemaVersion !== 1 || !data.serverUrl || !data.token)
+        throw new Error('Resonance Bridge handoff is incomplete.');
+      const target = new URL('http://127.0.0.1:55460/usb');
+      target.hash = new URLSearchParams({
+        handoff: JSON.stringify(data),
+      }).toString();
+      window.location.assign(target.toString());
+    } catch (error_) {
+      setError(error_?.message || 'Could not open this export in Bridge.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deferSaved = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const { data } = await api.post(`/analysis/usb-export/${selected}/defer`);
+      setHistory((current) =>
+        current.map((job) => (job.jobId === selected ? data : job)),
+      );
+    } catch (error_) {
+      setError(error_?.message || 'Could not defer this export.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const cancelSaved = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      await api.delete(`/analysis/usb-export/${selected}`);
+      setHistory((current) => current.filter((job) => job.jobId !== selected));
+      setSelected('');
+      setReport(null);
+    } catch (error_) {
+      setError(error_?.message || 'Could not cancel this export.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <details
       className="usb-export-inspector"
@@ -96,12 +150,39 @@ const UsbExportInspector = ({ latestJob }) => {
                   key={job.jobId}
                   value={job.jobId}
                 >
-                  {job.playlistName} · {job.total} tracks · {job.status} ·{' '}
-                  {job.jobId}
+                  {job.playlistName} · {job.total} tracks ·{' '}
+                  {job.deferred ? 'saved for later' : job.status} · {job.jobId}
                 </option>
               ))}
             </select>
           </label>
+          {selectedJob?.downloadAvailable && (
+            <div className="usb-export-ready-actions">
+              <button
+                disabled={loading}
+                onClick={openSaved}
+                type="button"
+              >
+                Open in Resonance Bridge
+              </button>
+              {!selectedJob.deferred && (
+                <button
+                  disabled={loading}
+                  onClick={deferSaved}
+                  type="button"
+                >
+                  Defer export
+                </button>
+              )}
+              <button
+                disabled={loading}
+                onClick={cancelSaved}
+                type="button"
+              >
+                Cancel export
+              </button>
+            </div>
+          )}
           {!loading && !history.length && !error && <p>No saved exports.</p>}
           {loading && <p role="status">Loading export records…</p>}
           {error && <p role="alert">{error}</p>}

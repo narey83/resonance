@@ -159,7 +159,8 @@ The menu opens the dashboard or USB export, shows software update status, checks
 for updates, toggles **Start at sign-in**, and quits the helper. Closing the browser
 leaves the helper running. Startup restores the saved Bridge pairing and never
 automatically starts Network Link sharing. A prepared USB export waiting for writing
-also defers a software update so it is not lost during restart.
+defers a software update. Use **Defer export** to keep the saved server export for
+later and release Bridge's temporary copy, allowing the update to install.
 
 Linux requires a desktop session with D-Bus and a StatusNotifier/AppIndicator host;
 GNOME may require its AppIndicator extension. On a headless host the loopback

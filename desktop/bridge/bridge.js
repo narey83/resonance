@@ -401,6 +401,11 @@ function renderUSB() {
   $("#eject").disabled = busy || !paired() || !!active || !$("#drive").value;
   $("#cancel-transfer").hidden = !active;
   $("#cancel-transfer").disabled = busy;
+  const saved = !!transfer && !active;
+  $("#defer-export").hidden = !saved;
+  $("#defer-export").disabled = busy;
+  $("#cancel-export").hidden = !saved;
+  $("#cancel-export").disabled = busy;
   for (const id of ["drive", "refresh-drives", "confirm", "handoff"])
     $("#" + id).disabled = busy || !!active;
   $("#receive").disabled = busy || !!active || !$("#handoff").files.length;
@@ -530,6 +535,10 @@ $("#eject").onclick = () =>
     await refreshDrives();
   }, "USB safely ejected. You can unplug the drive.");
 $("#cancel-transfer").onclick = () => action(() => request("usb/cancel", {}));
+$("#defer-export").onclick = () =>
+  action(() => request("usb/defer", {}), "Export saved in Resonance for later. Bridge released its copy.");
+$("#cancel-export").onclick = () =>
+  action(() => request("usb/cancel-job", {}), "Export cancelled in Resonance.");
 $("#quit").onclick = () => action(() => request("quit", {}));
 $("#diagnostics").onclick = () =>
   action(async () => {

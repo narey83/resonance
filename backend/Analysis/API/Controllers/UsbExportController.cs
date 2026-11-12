@@ -158,6 +158,7 @@ namespace resonance.Analysis.API
             try
             {
                 var manifest = exports.TransferManifest(id);
+                exports.Resume(id);
                 var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
                 var expires = DateTimeOffset.UtcNow.AddHours(24);
                 var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
@@ -260,6 +261,57 @@ namespace resonance.Analysis.API
             }
         }
 
+        [AllowAnonymous]
+        [HttpGet("transfer/{id}/state")]
+        public IActionResult TransferState(string id)
+        {
+            try
+            {
+                return AuthorizedTransfer(id) ? Ok(new { deferred = exports.Read(id).Deferred }) : Unauthorized();
+            }
+            catch (FileNotFoundException)
+            {
+                return NotFound();
+            }
+        }
+
+        [AllowAnonymous]
+        [HttpPost("transfer/{id}/defer")]
+        public IActionResult TransferDefer(string id)
+        {
+            try
+            {
+                return AuthorizedTransfer(id) ? Ok(exports.Defer(id)) : Unauthorized();
+            }
+            catch (FileNotFoundException)
+            {
+                return NotFound();
+            }
+            catch (InvalidOperationException exception)
+            {
+                return Conflict(exception.Message);
+            }
+        }
+
+        [AllowAnonymous]
+        [HttpPost("transfer/{id}/cancel")]
+        public IActionResult TransferCancel(string id)
+        {
+            try
+            {
+                if (!AuthorizedTransfer(id))
+                {
+                    return Unauthorized();
+                }
+
+                return exports.Cancel(id) ? Ok(new { cancelled = true }) : Conflict("Export could not be cancelled.");
+            }
+            catch (FileNotFoundException)
+            {
+                return NotFound();
+            }
+        }
+
         [HttpGet("{id}")]
         public IActionResult Status(string id)
         {
@@ -279,11 +331,29 @@ namespace resonance.Analysis.API
         {
             try
             {
-                return Ok(new { cancelled = exports.Cancel(id) });
+                return exports.Cancel(id) ? Ok(new { cancelled = true }) : Conflict("Export could not be cancelled.");
             }
             catch (FileNotFoundException)
             {
                 return NotFound();
+            }
+        }
+
+        [HttpPost("{id}/defer")]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
+        public IActionResult Defer(string id)
+        {
+            try
+            {
+                return Ok(exports.Defer(id));
+            }
+            catch (FileNotFoundException)
+            {
+                return NotFound();
+            }
+            catch (InvalidOperationException exception)
+            {
+                return Conflict(exception.Message);
             }
         }
 

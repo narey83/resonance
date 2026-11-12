@@ -30,6 +30,35 @@ public class UsbExportInspectionTests : IDisposable
     }
 
     [Fact]
+    public void Deferred_Export_Can_Be_Reopened_And_Cancelled_From_Either_Client()
+    {
+        var id = Guid.NewGuid().ToString("N");
+        Save(id);
+        using var exports = new UsbExportService(null!, null!);
+        var controller = new UsbExportController(exports)
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
+        };
+        controller.Request.Scheme = "https";
+        controller.Request.Host = new HostString("resonance.test");
+        Assert.True(Assert.IsType<OkObjectResult>(controller.Defer(id)).Value is UsbExportJob { Deferred: true });
+        Assert.True(exports.Read(id).Deferred);
+        Assert.True(Assert.Single(exports.History()).Deferred);
+        Assert.IsType<UnauthorizedResult>(controller.TransferState(id));
+        var handoff = Assert.IsType<FileContentResult>(controller.Transfer(id));
+        using var ticket = JsonDocument.Parse(handoff.FileContents);
+        controller.Request.Headers["X-Resonance-Link-Token"] = ticket.RootElement.GetProperty("token").GetString();
+        Assert.False(exports.Read(id).Deferred);
+        Assert.IsType<OkObjectResult>(controller.TransferDefer(id));
+        Assert.True(exports.Read(id).Deferred);
+        Assert.IsType<OkObjectResult>(controller.TransferState(id));
+        Assert.IsType<OkObjectResult>(controller.TransferCancel(id));
+        Assert.IsType<NotFoundResult>(controller.TransferState(id));
+        Assert.Throws<FileNotFoundException>(() => exports.Read(id));
+        Assert.Empty(exports.History());
+    }
+
+    [Fact]
     public void Direct_Transfer_Only_Serves_Manifested_Files_And_Zip_Is_On_Demand()
     {
         var id = Guid.NewGuid().ToString("N");

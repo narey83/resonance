@@ -4,7 +4,11 @@ import React from 'react';
 import ReactDOM from 'react-dom';
 import { act, Simulate } from 'react-dom/test-utils';
 
-jest.mock('../../lib/api', () => ({ get: jest.fn() }));
+jest.mock('../../lib/api', () => ({
+  get: jest.fn(),
+  post: jest.fn(),
+  delete: jest.fn(),
+}));
 const job = {
   jobId: 'a'.repeat(32),
   playlistName: 'Test playlist',
@@ -98,6 +102,30 @@ describe('Saved export database inspection', () => {
     expect(container.textContent).toContain(
       'Hardware playback: not yet verified',
     );
+  });
+  it('can defer a saved export and keep it available to reopen', async () => {
+    expect.hasAssertions();
+    api.post.mockResolvedValue({ data: { ...job, deferred: true } });
+    await act(async () => {
+      ReactDOM.render(<UsbExportInspector />, container);
+    });
+    await open();
+    await act(async () =>
+      Simulate.change(container.querySelector('select'), {
+        target: { value: job.jobId },
+      }),
+    );
+    const defer = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Defer export',
+    );
+    await act(async () => Simulate.click(defer));
+    expect(api.post).toHaveBeenCalledWith(
+      `/analysis/usb-export/${job.jobId}/defer`,
+    );
+    expect(container.querySelector('select').textContent).toContain(
+      'saved for later',
+    );
+    expect(container.textContent).toContain('Open in Resonance Bridge');
   });
   it('clears an old report when selecting another export that fails to load', async () => {
     expect.hasAssertions();

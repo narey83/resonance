@@ -29,6 +29,7 @@ type usbTransfer struct {
 	Total         int                `json:"total"`
 	Bundle        *bundle            `json:"-"`
 	Cancel        context.CancelFunc `json:"-"`
+	Connection    connection         `json:"-"`
 }
 
 func isUSB(c connection) bool {
@@ -67,9 +68,10 @@ func (h *helper) receiveUSB(c connection) error {
 	}
 	old := h.USB
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
-	u := &usbTransfer{Status: "downloading", Cancel: cancel, Done: make(chan struct{})}
+	u := &usbTransfer{Status: "downloading", Cancel: cancel, Done: make(chan struct{}), Connection: c}
 	h.USB = u
 	h.mu.Unlock()
+	go h.watchUSB(u)
 	if old != nil && old.Bundle != nil {
 		os.RemoveAll(old.Bundle.Root)
 	}
@@ -101,6 +103,123 @@ func (h *helper) receiveUSB(c connection) error {
 		u.Tracks = b.Tracks
 		h.mu.Unlock()
 	}()
+	return nil
+}
+
+// The saved server job is authoritative. A browser can defer or cancel it while
+// Bridge is open; release the local cache once the server reports that change.
+func (h *helper) watchUSB(u *usbTransfer) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		h.mu.Lock()
+		current := h.USB == u
+		writing := u.Status == "writing"
+		h.mu.Unlock()
+		if !current {
+			return
+		}
+		if writing {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+			return errors.New("export state redirects are not allowed")
+		}}
+		request, err := http.NewRequestWithContext(ctx, "GET", u.Connection.ServerURL+"/state", nil)
+		if err == nil {
+			request.Header.Set("X-Resonance-Link-Token", u.Connection.Token)
+			var response *http.Response
+			response, err = client.Do(request)
+			if err == nil {
+				var state struct {
+					Deferred bool `json:"deferred"`
+				}
+				if response.StatusCode == http.StatusOK {
+					err = json.NewDecoder(io.LimitReader(response.Body, 4096)).Decode(&state)
+				}
+				response.Body.Close()
+				if response.StatusCode == http.StatusNotFound {
+					// An older Resonance instance has no state route. Check its
+					// manifest once before treating 404 as a cancelled job.
+					manifest, manifestErr := fetchSync(ctx, client, u.Connection, "/manifest")
+					if manifestErr == nil {
+						manifest.Body.Close()
+						cancel()
+						return
+					}
+					if !strings.Contains(manifestErr.Error(), "HTTP 404") {
+						cancel()
+						continue
+					}
+				}
+				if response.StatusCode == http.StatusNotFound || (err == nil && response.StatusCode == http.StatusOK && state.Deferred) {
+					h.mu.Lock()
+					var done chan struct{}
+					if h.USB == u && u.Status == "downloading" {
+						u.Cancel()
+						done = u.Done
+					}
+					h.mu.Unlock()
+					if done != nil {
+						<-done
+					}
+					h.releaseUSB(u, "usb.remote_release")
+					cancel()
+					return
+				}
+			}
+		}
+		cancel()
+	}
+}
+
+func (h *helper) releaseUSB(u *usbTransfer, event string) bool {
+	h.mu.Lock()
+	if h.USB != u || u == nil || u.Status == "downloading" || u.Status == "writing" {
+		h.mu.Unlock()
+		return false
+	}
+	h.USB = nil
+	h.mu.Unlock()
+	if u.Bundle != nil {
+		os.RemoveAll(u.Bundle.Root)
+	}
+	if h.Diagnostics != nil {
+		h.Diagnostics.event("info", event, nil)
+	}
+	return true
+}
+
+func (h *helper) changeUSBJob(u *usbTransfer, action string) error {
+	if action != "defer" && action != "cancel" {
+		return errors.New("unknown export action")
+	}
+	h.mu.Lock()
+	ready := h.USB == u && u != nil && u.Status != "downloading" && u.Status != "writing"
+	h.mu.Unlock()
+	if !ready {
+		return errors.New("wait for the current USB operation to finish")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	request, err := http.NewRequestWithContext(ctx, "POST", u.Connection.ServerURL+"/"+action, nil)
+	if err != nil {
+		return err
+	}
+	request.Header.Set("X-Resonance-Link-Token", u.Connection.Token)
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+		return errors.New("export action redirects are not allowed")
+	}}
+	response, err := client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return errors.New("Resonance could not " + action + " this export")
+	}
+	h.releaseUSB(u, "usb."+action)
 	return nil
 }
 
@@ -536,4 +655,21 @@ func (h *helper) usbRoutes(mux *http.ServeMux) {
 		h.mu.Unlock()
 		jsonReply(w, 200, map[string]bool{"cancelled": true})
 	})
+	for _, action := range []string{"defer", "cancel-job"} {
+		name := action
+		mux.HandleFunc("POST /api/usb/"+name, func(w http.ResponseWriter, r *http.Request) {
+			h.mu.Lock()
+			u := h.USB
+			h.mu.Unlock()
+			remote := name
+			if remote == "cancel-job" {
+				remote = "cancel"
+			}
+			if err := h.changeUSBJob(u, remote); err != nil {
+				jsonReply(w, 409, map[string]string{"error": err.Error()})
+				return
+			}
+			jsonReply(w, 200, map[string]bool{"released": true})
+		})
+	}
 }

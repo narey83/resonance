@@ -64,6 +64,74 @@ func TestUSBRefusesExistingFiles(t *testing.T) {
 		t.Fatal("symlink accepted")
 	}
 }
+
+func TestUSBJobActionsReleaseOnlyAfterServerAccepts(t *testing.T) {
+	accepted := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Resonance-Link-Token") != strings.Repeat("a", 64) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if !accepted {
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		if r.Method != "POST" || (r.URL.Path != "/export/defer" && r.URL.Path != "/export/cancel") {
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	defer server.Close()
+	for _, action := range []string{"defer", "cancel"} {
+		root := filepath.Join(t.TempDir(), "prepared")
+		if err := os.Mkdir(root, 0700); err != nil {
+			t.Fatal(err)
+		}
+		u := &usbTransfer{Status: "ready", Bundle: &bundle{Root: root}, Connection: connection{ServerURL: server.URL + "/export", Token: strings.Repeat("a", 64)}}
+		h := &helper{USB: u}
+		accepted = false
+		if err := h.changeUSBJob(u, action); err == nil || h.USB != u {
+			t.Fatal("rejected action discarded the export", action)
+		}
+		accepted = true
+		if err := h.changeUSBJob(u, action); err != nil || h.USB != nil {
+			t.Fatal("accepted action did not release the export", action, err)
+		}
+		if _, err := os.Stat(root); !os.IsNotExist(err) {
+			t.Fatal("prepared cache remained", action, err)
+		}
+	}
+}
+
+func TestUSBWatcherReleasesDeferredServerJob(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/export/state" || r.Header.Get("X-Resonance-Link-Token") != strings.Repeat("a", 64) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"deferred":true}`))
+	}))
+	defer server.Close()
+	root := filepath.Join(t.TempDir(), "prepared")
+	if err := os.Mkdir(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	u := &usbTransfer{Status: "ready", Bundle: &bundle{Root: root}, Connection: connection{ServerURL: server.URL + "/export", Token: strings.Repeat("a", 64)}}
+	h := &helper{USB: u}
+	done := make(chan struct{})
+	go func() { h.watchUSB(u); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(7 * time.Second):
+		t.Fatal("Bridge did not release the deferred export")
+	}
+	if h.USB != nil {
+		t.Fatal("deferred export remained active in Bridge")
+	}
+	if _, err := os.Stat(root); !os.IsNotExist(err) {
+		t.Fatal("deferred export cache remained", err)
+	}
+}
 func TestUSBFailureAndDestinationRace(t *testing.T) {
 	b := usbFixture(t)
 	p, _ := filepath.EvalSymlinks(t.TempDir())

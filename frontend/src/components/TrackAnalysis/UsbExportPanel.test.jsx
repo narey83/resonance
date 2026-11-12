@@ -348,12 +348,56 @@ describe('USB export selection and failures', () => {
     expect(button('Download USB ZIP')).toBeDefined();
     expect(
       container.querySelectorAll('.usb-export-ready-actions button'),
-    ).toHaveLength(2);
+    ).toHaveLength(4);
+    expect(button('Defer export')).toBeDefined();
+    expect(button('Cancel export')).toBeDefined();
     expect(container.textContent).not.toContain('Export: completed');
     expect(container.querySelector('.usb-export-transfer-help').open).toBe(
       false,
     );
     expect(container.querySelectorAll('.usb-export-notes')).toHaveLength(1);
+  });
+  it('defers a completed job while keeping its Bridge reopen action', async () => {
+    expect.hasAssertions();
+    api.post
+      .mockImplementationOnce(() => api.get('/analysis/usb-export'))
+      .mockResolvedValueOnce({
+        data: {
+          jobId: 'job',
+          status: 'completed',
+          total: 1,
+          prepared: 1,
+          downloadAvailable: true,
+          deferred: false,
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          jobId: 'job',
+          status: 'completed',
+          total: 1,
+          prepared: 1,
+          downloadAvailable: true,
+          deferred: true,
+        },
+      });
+    await act(async () => {
+      ReactDOM.render(
+        <UsbExportPanel
+          initialPaths={['/library/one.mp3']}
+          wizard
+        />,
+        container,
+      );
+    });
+    act(() => Simulate.click(button('Continue')));
+    act(() => Simulate.click(button('Continue')));
+    await act(async () => Simulate.click(button('Prepare USB export')));
+    await act(async () => Simulate.click(button('Defer export')));
+    expect(api.post).toHaveBeenCalledWith('/analysis/usb-export/job/defer');
+    expect(container.textContent).toContain('USB export saved for later');
+    expect(button('Open in Resonance Bridge')).toBeDefined();
+    expect(button('Defer export')).toBeUndefined();
   });
   it('preserves the Set Planner name and running order through the export wizard', async () => {
     expect.hasAssertions();
