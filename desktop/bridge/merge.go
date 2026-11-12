@@ -930,6 +930,9 @@ func (h *helper) recoverInterruptedUSB(id string) error {
 	if h.bridgeUsingUSBVolume(volume) {
 		return errors.New("Bridge is using files on this USB drive")
 	}
+	if handled, recoveryErr := h.recoverInterruptedUSBEdit(volume); handled || recoveryErr != nil {
+		return recoveryErr
+	}
 	backups, err := filepath.Glob(filepath.Join(volume.Path, ".resonance-rollback-*"))
 	if err != nil || len(backups) != 1 {
 		return errors.New("expected one interrupted USB export to recover")

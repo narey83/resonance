@@ -381,7 +381,7 @@ function renderUSB() {
     ? "Export failed: " + failureReason + (/[.!?]$/.test(failureReason) ? " " : ". ") +
       (beforeWrite
         ? "No tracks from this export were written to the USB."
-        : "Check the USB report before retrying; the transfer may be incomplete.")
+        : "Check the USB Library Manager before retrying; the transfer may be incomplete.")
     : "";
   message("#export-warning", failureMessage);
   message("#report-warning", driveReport && failed &&
@@ -469,7 +469,7 @@ function renderUSB() {
       ? "This drive has no classic export database to inspect."
       : reportDrives.length > 1
         ? "Select a USB drive above to inspect its library."
-        : "Connect a USB with a classic export database to view its report.";
+        : "Connect a USB with a classic export database to manage its library.";
   $("#confirmation").textContent = drive
     ? "I have checked " +
       drive.label +
@@ -559,7 +559,7 @@ function renderDriveReport() {
   if (!report) return;
   reportTracksById = new Map(report.tracks.map((track) => [track.id, track]));
   renderUSB();
-  $("#report-title").textContent = report.label + " · USB library report";
+  $("#report-title").textContent = report.label + " · USB Library Manager";
   $("#report-subtitle").textContent =
     report.filesystem + " · Read from attached USB at " +
     new Date(report.generatedAt).toLocaleString();
@@ -609,12 +609,26 @@ function renderDriveReport() {
   }
   selector.value = current;
   if (selector.selectedIndex < 0) selector.value = "";
+  $("#report-edit-note").textContent = reportEditable()
+    ? "Deleting updates both player databases and removes the selected tracks' audio and analysis files from this USB. Bridge saves a verified database backup first."
+    : "Editing requires a paired Bridge on Mac and a USB with both classic and OneLibrary databases.";
   renderReportTracks();
+}
+function reportEditable() {
+  return !!driveReport?.databaseSha256 && driveReport.contents === "dual-library" &&
+    status?.platform === "darwin" && paired();
 }
 function renderReportTracks() {
   if (!driveReport) return;
   const query = $("#report-search").value.trim().toLocaleLowerCase();
   const selected = driveReport.playlists.find((item) => String(item.id) === $("#report-playlist").value);
+  const editable = reportEditable();
+  $("#report-delete-playlist").hidden = !editable || !selected;
+  $("#report-delete-playlist").disabled = busy;
+  $("#report-refresh").disabled = busy;
+  $("#report-download").disabled = busy;
+  $("#report-playlist").disabled = busy;
+  $("#report-search").disabled = busy;
   const entries = selected
     ? selected.trackIds.map((id, index) => ({ id, position: index + 1, track: reportTracksById.get(id) }))
     : driveReport.tracks.map((track) => ({ id: track.id, track }));
@@ -640,6 +654,7 @@ function renderReportTracks() {
       cell("Missing database track #" + id);
       cell(""); cell(""); cell("");
       cell("Not in USB database").className = "report-issue";
+      cell("—");
       body.append(row);
       continue;
     }
@@ -663,16 +678,69 @@ function renderReportTracks() {
     cell(Math.floor(track.durationSeconds / 60) + ":" + String(track.durationSeconds % 60).padStart(2, "0"));
     const files = cell("Audio: " + track.audioStatus + " · Analysis: " + track.analysisStatus);
     if (track.audioStatus !== "present" || track.analysisStatus !== "present") files.className = "report-issue";
+    const actions = document.createElement("td");
+    if (editable) {
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "report-delete";
+      remove.textContent = "Delete track";
+      remove.setAttribute("aria-label", "Delete " + (track.title || "Untitled") + " from USB");
+      remove.disabled = busy;
+      remove.onclick = () => deleteReportItem("track", track.id, track.title || "Untitled");
+      actions.append(remove);
+    }
+    row.append(actions);
     body.append(row);
   }
   if (!matching.length) {
     const row = document.createElement("tr");
     const empty = document.createElement("td");
-    empty.colSpan = 6;
+    empty.colSpan = 7;
     empty.className = "report-empty";
     empty.textContent = query ? "No tracks match this search." : "No tracks in this playlist.";
     row.append(empty);
     body.append(row);
+  }
+}
+async function deleteReportItem(kind, targetId, name) {
+  if (!reportEditable() || busy) return;
+  const report = driveReport;
+  const phrase = "DELETE " + report.label;
+  let description = "Delete “" + name + "” and its audio and analysis files from this USB and every playlist?";
+  if (kind === "playlist") {
+    const selected = report.playlists.find((item) => item.id === targetId && !item.isFolder);
+    if (!selected) return;
+    const other = new Set(report.playlists.filter((item) => item.id !== targetId).flatMap((item) => item.trackIds));
+    const exclusive = new Set(selected.trackIds.filter((id) => !other.has(id)));
+    description = "Delete playlist “" + name + "” and " + exclusive.size.toLocaleString() +
+      " track(s) used only by it, including their audio and analysis files? Tracks in other playlists will stay.";
+  }
+  const confirmation = window.prompt(description + "\n\nType " + phrase + " to continue:");
+  if (confirmation === null) return;
+  if (confirmation !== phrase) {
+    error("The drive confirmation did not match. Nothing was deleted.");
+    return;
+  }
+  busy = true;
+  renderReportTracks();
+  error("");
+  message("#feedback", "");
+  try {
+    const result = await request("usb/edit", {
+      id: report.driveId, kind, targetId, databaseSha256: report.databaseSha256, confirmation,
+    });
+    message("#feedback", "USB library updated. " + result.deletedTracks + " track(s) and " +
+      result.deletedPlaylists + " playlist(s) deleted. Safely eject the USB before unplugging it.");
+    driveReport = await request("usb/report?id=" + encodeURIComponent(report.driveId));
+    reportPage = 0;
+    $("#report-search").value = "";
+    if (kind === "playlist") $("#report-playlist").value = "";
+    renderDriveReport();
+  } catch (failure) {
+    error(failure);
+  } finally {
+    busy = false;
+    renderReportTracks();
   }
 }
 $("#inspect-drive").onclick = async () => {
@@ -699,13 +767,17 @@ $("#inspect-drive").onclick = async () => {
     $("#usb-report").scrollIntoView?.({ block: "start" });
   } catch (failure) { error(failure); }
   finally {
-    $("#inspect-drive").textContent = "View USB library report";
+    $("#inspect-drive").textContent = "Manage USB library";
     renderUSB();
   }
 };
 $("#report-refresh").onclick = () => $("#inspect-drive").click();
 $("#report-search").oninput = () => { reportPage = 0; renderReportTracks(); };
 $("#report-playlist").onchange = () => { reportPage = 0; renderReportTracks(); };
+$("#report-delete-playlist").onclick = () => {
+  const selected = driveReport?.playlists.find((item) => String(item.id) === $("#report-playlist").value);
+  if (selected) deleteReportItem("playlist", selected.id, selected.name);
+};
 $("#report-prev").onclick = () => { reportPage--; renderReportTracks(); };
 $("#report-next").onclick = () => { reportPage++; renderReportTracks(); };
 $("#report-download").onclick = () => {

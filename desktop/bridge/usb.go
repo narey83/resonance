@@ -629,6 +629,26 @@ func (h *helper) usbRoutes(mux *http.ServeMux) {
 		}
 		jsonReply(w, 200, report)
 	})
+	mux.HandleFunc("POST /api/usb/edit", func(w http.ResponseWriter, r *http.Request) {
+		if !h.operation.TryLock() {
+			jsonReply(w, 409, map[string]string{"error": "another Bridge operation is in progress"})
+			return
+		}
+		defer h.operation.Unlock()
+		var request usbEditRequest
+		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+		decoder.DisallowUnknownFields()
+		if decoder.Decode(&request) != nil {
+			jsonReply(w, 400, map[string]string{"error": "invalid USB library edit request"})
+			return
+		}
+		plan, backup, err := h.editUSB(request)
+		if err != nil {
+			jsonReply(w, 409, map[string]string{"error": err.Error()})
+			return
+		}
+		jsonReply(w, 200, map[string]any{"deletedTracks": len(plan.DeletedTrackIDs), "deletedPlaylists": len(plan.DeletedPlaylistIDs), "removedFiles": len(plan.RemovedFiles), "databaseBackup": backup})
+	})
 	mux.HandleFunc("POST /api/usb/receive", func(w http.ResponseWriter, r *http.Request) {
 		var c connection
 		if e := json.NewDecoder(http.MaxBytesReader(w, r.Body, 65536)).Decode(&c); e != nil {

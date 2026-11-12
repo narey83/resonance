@@ -60,6 +60,7 @@ function launch(t, page, options = {}) {
   };
   const transfer = options.transfer || null;
   let ejected = false;
+  let edited = false;
   w.fetch = async (url, request = {}) => {
     const body = request.body ? JSON.parse(request.body) : null;
     calls.push({ url, method: request.method || "GET", body });
@@ -109,8 +110,11 @@ function launch(t, page, options = {}) {
               contents: options.driveContents || "empty",
             },
           ];
-    else if (url.startsWith("/api/usb/report?id="))
-      data = options.report || {
+    else if (url === "/api/usb/edit") {
+      edited = true;
+      data = { deletedTracks: body.kind === "track" ? 1 : 0, deletedPlaylists: body.kind === "playlist" ? 1 : 0 };
+    } else if (url.startsWith("/api/usb/report?id="))
+      data = (edited && options.afterEditReport) || options.report || {
         schemaVersion: 1, generatedAt: "2026-11-12T12:00:00Z",
         driveId: "test-drive", label: "Test USB", filesystem: "exfat",
         databases: [{ name: "export.pdb", bytes: 4096 }],
@@ -367,6 +371,64 @@ test("USB report playlist selection updates the table in stored order", async (t
   selector.value = "";
   selector.dispatchEvent(new w.Event("change"));
   assert.equal(d.querySelector("#report-first-column").textContent, "ID");
+});
+
+test("USB Library Manager confirms and refreshes a whole-track deletion", async (t) => {
+  const report = {
+    driveId: "test-drive", label: "Test USB", filesystem: "exfat", contents: "dual-library",
+    databaseSha256: "a".repeat(64), generatedAt: "2026-11-12T12:00:00Z",
+    databases: [], notes: [], audioIssues: 0, analysisIssues: 0,
+    tracks: [{ id: 7, title: "NOISE", audioStatus: "present", analysisStatus: "present" }],
+    playlists: [{ id: 2, parentId: 0, name: "Set", isFolder: false, trackIds: [] }],
+  };
+  const { w, document: d, calls } = launch(t, "/usb", {
+    driveContents: "dual-library", report,
+    afterEditReport: { ...report, databaseSha256: "b".repeat(64), tracks: [] },
+  });
+  await until(() => d.querySelector("#drive").options.length === 2);
+  d.querySelector("#inspect-drive").click();
+  await until(() => !d.querySelector("#usb-report").hidden);
+  assert.match(d.querySelector("#report-title").textContent, /Library Manager/);
+  const remove = d.querySelector("#report-tracks .report-delete");
+  assert.ok(remove);
+  w.prompt = () => "wrong drive";
+  remove.click();
+  assert.equal(calls.some((call) => call.url === "/api/usb/edit"), false);
+  w.prompt = () => "DELETE Test USB";
+  remove.click();
+  await until(() => calls.some((call) => call.url === "/api/usb/edit"));
+  assert.deepEqual(calls.find((call) => call.url === "/api/usb/edit").body, {
+    id: "test-drive", kind: "track", targetId: 7,
+    databaseSha256: "a".repeat(64), confirmation: "DELETE Test USB",
+  });
+  await until(() => /0 matching tracks/.test(d.querySelector("#report-count").textContent));
+  assert.match(d.querySelector("#feedback").textContent, /USB library updated/);
+});
+
+test("USB Library Manager selects a playlist and previews exclusive track removal", async (t) => {
+  const report = {
+    driveId: "test-drive", label: "Test USB", filesystem: "exfat", contents: "dual-library",
+    databaseSha256: "a".repeat(64), generatedAt: "2026-11-12T12:00:00Z",
+    databases: [], notes: [], audioIssues: 0, analysisIssues: 0,
+    tracks: [{ id: 7, title: "Shared" }, { id: 8, title: "Exclusive" }],
+    playlists: [
+      { id: 2, parentId: 0, name: "First", isFolder: false, trackIds: [7, 8] },
+      { id: 3, parentId: 0, name: "Second", isFolder: false, trackIds: [7] },
+    ],
+  };
+  const { w, document: d, calls } = launch(t, "/usb", { driveContents: "dual-library", report });
+  await until(() => d.querySelector("#drive").options.length === 2);
+  d.querySelector("#inspect-drive").click();
+  await until(() => !d.querySelector("#usb-report").hidden);
+  const selector = d.querySelector("#report-playlist");
+  selector.value = "2";
+  selector.dispatchEvent(new w.Event("change"));
+  assert.equal(d.querySelector("#report-delete-playlist").hidden, false);
+  let promptText = "";
+  w.prompt = (text) => { promptText = text; return null; };
+  d.querySelector("#report-delete-playlist").click();
+  assert.match(promptText, /1 track\(s\) used only by it/);
+  assert.equal(calls.some((call) => call.url === "/api/usb/edit"), false);
 });
 
 test("USB report paginates a playlist with more than a thousand entries", async (t) => {

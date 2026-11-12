@@ -55,6 +55,7 @@ type usbDriveReport struct {
 	SchemaVersion  int                 `json:"schemaVersion"`
 	GeneratedAt    time.Time           `json:"generatedAt"`
 	DriveID        string              `json:"driveId"`
+	DatabaseSHA256 string              `json:"databaseSha256"`
 	Label          string              `json:"label"`
 	Filesystem     string              `json:"filesystem"`
 	Contents       string              `json:"contents"`
@@ -126,10 +127,14 @@ func inspectUSBDrive(volume usbVolume) (*usbDriveReport, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not read classic export database: %w", err)
 	}
+	digest, err := fileDigest(dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("could not verify classic export database: %w", err)
+	}
 	if len(db.Tracks) > 20000 || len(db.PlaylistTree) > 10000 {
 		return nil, errors.New("USB library is too large for a detailed report")
 	}
-	report := &usbDriveReport{SchemaVersion: 1, GeneratedAt: time.Now().UTC(), DriveID: volume.ID,
+	report := &usbDriveReport{SchemaVersion: 1, GeneratedAt: time.Now().UTC(), DriveID: volume.ID, DatabaseSHA256: digest,
 		Label: volume.Label, Filesystem: volume.Filesystem, Contents: volume.Contents,
 		Databases: []usbReportFile{{Name: "export.pdb", Bytes: info.Size()}},
 		Tracks:    make([]usbReportTrack, 0, len(db.Tracks)), Playlists: make([]usbReportPlaylist, 0, len(db.PlaylistTree)),

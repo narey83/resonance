@@ -22,14 +22,19 @@ installer tooling are in this directory; see Platforms and firewall below.
 4. Wait for verification to complete, then choose **Safely eject USB**. Wait for the safe-removal message before unplugging. This ejects the selected physical USB drive; it never forces removal when the operating system reports it is busy.
 
 To inspect an existing USB without preparing another export, select it in Bridge's
-USB Export view and choose **View USB library report**. The report reads the
-attached drive's classic `export.pdb` and shows playlists, track metadata and
+USB Export view and choose **Manage USB library**. The USB Library Manager reads
+the attached drive's classic `export.pdb` and shows playlists, track metadata and
 whether referenced audio and analysis files are present. It flags audio size
-mismatches when the database includes a size. Search or filter the
-tracks by playlist, and download the report as JSON. This is a read-only
-snapshot; use **Read drive again** after the USB changes. On dual-library drives,
-Bridge lists the OneLibrary database file but does not decode its contents in
-this report. File presence does not establish file integrity or player playback.
+mismatches when the database includes a size. Search or filter tracks by playlist
+in pages of 50, and download a JSON inventory. Use **Read drive again** after
+external changes. On dual-library drives connected to a paired Mac Bridge, you can
+delete a whole track from the USB or delete a playlist and tracks used only by that
+playlist. Each deletion requires typing the drive label, edits both player databases
+on copies, and removes the affected audio and analysis files after checking the
+returned plan. Bridge keeps a verified database backup and can recover an
+interrupted edit. The visible metadata comes from the classic database; Bridge
+does not decode OneLibrary for display. File presence does not establish file
+integrity or player playback.
 
 The app’s **Safely eject USB…** tray/menu shortcut and Resonance Export’s **Safely eject in Bridge** link open the same local drive picker. Choose the drive there; the main server never unmounts devices on its own host. Linux safe removal requires the desktop UDisks service and `udisksctl`. If the OS refuses removal, close files/apps using the drive and retry or use its normal system eject control.
 

@@ -66,7 +66,7 @@ func inspectUSBContents(root string) string {
 		return "unreadable"
 	}
 	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), ".resonance-rollback-") {
+		if strings.HasPrefix(entry.Name(), ".resonance-rollback-") || strings.HasPrefix(entry.Name(), ".resonance-edit-") {
 			return "recovery-needed"
 		}
 	}

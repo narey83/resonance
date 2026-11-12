@@ -537,6 +537,36 @@ select:disabled {
   min-width: 0;
   color: var(--muted);
 }
+.report-playlist-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+  min-width: 0;
+}
+.report-playlist-control label {
+  min-width: 0;
+}
+.report-delete {
+  min-height: 42px;
+  border-color: var(--danger);
+  background: transparent;
+  color: var(--danger);
+  white-space: nowrap;
+}
+.report-delete:hover {
+  border-color: var(--danger);
+  background: var(--soft);
+}
+.report-table .report-delete {
+  min-height: 32px;
+  padding: 5px 9px;
+  font-size: 11px;
+}
+.report-edit-note {
+  margin-top: 11px;
+  font-size: 11px;
+}
 .report-filters input,
 .report-filters select {
   display: block;
@@ -629,6 +659,9 @@ select:disabled {
   }
   .report-filters {
     grid-template-columns: 1fr;
+  }
+  .report-playlist-control {
+    grid-template-columns: minmax(0, 1fr);
   }
   .report-scroll-hint {
     display: block;
