@@ -273,26 +273,29 @@
                 <button id="report-download">Download JSON report</button>
               </div>
             </div>
-            <p id="report-summary" role="status"></p>
-            <p class="field-hint">This count is read from the attached USB, not from a prepared export. A failed transfer may be incomplete.</p>
+            <div id="report-summary" class="report-summary" role="status"></div>
+            <p class="report-source-note">This count is read from the attached USB, not from a prepared export. A failed transfer may be incomplete.</p>
             <div class="alert error" id="report-warning" role="status" hidden></div>
-            <div id="report-databases"></div>
-            <div id="report-notes"></div>
-            <h3>Playlists</h3>
-            <div id="report-playlists" class="report-playlists"></div>
-            <h3>Tracks</h3>
-            <div class="report-filters">
-              <label>Search tracks <input id="report-search" type="search" placeholder="Title, artist, album, path or ID" /></label>
-              <label>Playlist <select id="report-playlist"><option value="">All tracks</option></select></label>
+            <div class="report-context">
+              <div id="report-databases" class="report-databases"></div>
+              <div id="report-notes" class="report-notes"></div>
             </div>
-            <p id="report-count"></p>
+            <div class="report-section-heading"><h3>Playlists</h3><p>Open a playlist to see its tracks in order.</p></div>
+            <div id="report-playlists" class="report-playlists"></div>
+            <div class="report-section-heading"><h3>Tracks</h3><p>Browse the tracks stored in the USB database.</p></div>
+            <div class="report-filters">
+              <label for="report-search">Search tracks <input id="report-search" type="search" placeholder="Title, artist, album, path or ID" /></label>
+              <label for="report-playlist">Playlist <select id="report-playlist"><option value="">All tracks</option></select></label>
+            </div>
+            <p id="report-count" class="report-count"></p>
+            <p class="report-scroll-hint">Scroll sideways to view all track columns.</p>
             <div class="report-table-scroll" role="region" aria-label="USB database tracks" tabindex="0">
               <table class="report-table">
                 <thead><tr><th scope="col">ID</th><th scope="col">Track</th><th scope="col">Artist / album</th><th scope="col">BPM / key</th><th scope="col">Duration</th><th scope="col">Files</th></tr></thead>
                 <tbody id="report-tracks"></tbody>
               </table>
             </div>
-            <div class="actions"><button id="report-prev">Previous</button><span id="report-page"></span><button id="report-next">Next</button></div>
+            <div class="actions report-pagination"><button id="report-prev">Previous</button><span id="report-page"></span><button id="report-next">Next</button></div>
           </section>
           <div class="page-note">
             <span class="icon" data-icon="info"></span>

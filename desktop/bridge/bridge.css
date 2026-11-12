@@ -456,41 +456,188 @@ select:disabled {
   margin-top: 22px;
 }
 .usb-report .card-heading {
-  align-items: flex-start;
+  align-items: center;
   gap: 18px;
 }
 .usb-report .card-heading .actions {
   margin-top: 0;
 }
-.usb-report h3 {
-  margin: 24px 0 10px;
+.usb-report .card-heading h2 {
+  font-size: 19px;
+}
+.report-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 22px;
+}
+.report-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--soft);
+  color: var(--muted);
+  font-size: 11px;
+}
+.report-stat strong {
+  color: var(--ink);
+  font-size: 21px;
+  line-height: 1.15;
+}
+.report-stat-issue strong {
+  color: var(--danger);
+}
+.report-source-note {
+  margin-top: 12px;
+  font-size: 11px;
+}
+.report-context {
+  margin-top: 18px;
+  padding: 15px 17px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+.report-databases {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
 }
 .report-chip {
-  display: inline-block;
-  margin: 5px 7px 5px 0;
   padding: 6px 9px;
   border: 1px solid var(--line);
   border-radius: 7px;
+  background: var(--soft);
+  color: var(--ink);
+  font-size: 11px;
+}
+.report-notes p {
+  margin-top: 10px;
+  font-size: 11px;
+  line-height: 1.55;
+}
+.report-section-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 28px 0 12px;
+}
+.report-section-heading p {
   font-size: 11px;
 }
 .report-playlists {
-  max-height: 180px;
-  overflow: auto;
+  display: grid;
+  gap: 8px;
+}
+.report-playlist,
+.report-playlist-folder {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--soft);
+}
+.report-playlist > summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 15px;
+  cursor: pointer;
+  list-style: none;
+}
+.report-playlist > summary::-webkit-details-marker {
+  display: none;
+}
+.report-playlist > summary::before {
+  content: "›";
+  color: var(--accent);
+  font-size: 21px;
+  line-height: 0.8;
+  transition: transform 150ms ease;
+}
+.report-playlist[open] > summary::before {
+  transform: rotate(90deg);
+}
+.report-playlist > summary strong {
+  overflow-wrap: anywhere;
   font-size: 12px;
-  line-height: 1.8;
+}
+.report-playlist > summary span {
+  margin-left: auto;
+  flex: none;
+  color: var(--muted);
+  font-size: 11px;
+}
+.report-playlist-items {
+  max-height: 720px;
+  overflow: auto;
+  margin: 0;
+  padding: 0 16px 0 46px;
+  border-top: 1px solid var(--line);
+}
+.report-playlist-items li {
+  padding: 9px 4px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+.report-playlist-items li:last-child {
+  border-bottom: 0;
+}
+.report-playlist-items li::marker {
+  color: var(--muted);
+}
+.report-playlist-items li span {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.report-playlist-empty {
+  padding: 12px 16px;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+}
+.report-playlist-folder {
+  padding: 12px 16px;
+  color: var(--muted);
+  font-size: 11px;
 }
 .report-filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 14px;
 }
 .report-filters label {
-  flex: 1 1 220px;
+  min-width: 0;
+  color: var(--muted);
 }
 .report-filters input,
 .report-filters select {
   display: block;
   width: 100%;
+  height: 42px;
+  margin-top: 7px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12px;
+}
+.report-filters input::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+.report-count {
+  margin: 14px 0 8px;
+  font-size: 11px;
+}
+.report-scroll-hint {
+  display: none;
+  margin-bottom: 8px;
+  font-size: 11px;
 }
 .report-table-scroll {
   max-height: 560px;
@@ -500,13 +647,13 @@ select:disabled {
 }
 .report-table {
   width: 100%;
-  min-width: 700px;
+  min-width: 860px;
   border-collapse: collapse;
-  font-size: 11px;
+  font-size: 12px;
 }
 .report-table th,
 .report-table td {
-  padding: 9px;
+  padding: 11px;
   border-bottom: 1px solid var(--line);
   text-align: left;
   vertical-align: top;
@@ -514,7 +661,14 @@ select:disabled {
 .report-table th {
   position: sticky;
   top: 0;
-  background: var(--surface);
+  background: var(--soft);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.report-table tbody tr:hover {
+  background: var(--soft);
 }
 .report-table details {
   margin-top: 5px;
@@ -524,11 +678,32 @@ select:disabled {
 .report-table details p {
   line-height: 1.6;
 }
+.report-pagination {
+  justify-content: flex-end;
+  margin-top: 13px;
+  color: var(--muted);
+  font-size: 11px;
+}
 .report-issue {
   color: var(--danger, #b13d3d);
   font-weight: 600;
 }
 @media (max-width: 600px) {
+  .report-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .report-section-heading {
+    display: block;
+  }
+  .report-section-heading p {
+    margin-top: 4px;
+  }
+  .report-filters {
+    grid-template-columns: 1fr;
+  }
+  .report-scroll-hint {
+    display: block;
+  }
   .report-entry {
     align-items: stretch;
     flex-direction: column;
@@ -537,6 +712,9 @@ select:disabled {
     flex-direction: column;
   }
   .usb-report .card-heading .actions {
+    width: 100%;
+  }
+  .usb-report .card-heading .actions button {
     width: 100%;
   }
 }

@@ -321,7 +321,12 @@ test("USB report reads the selected drive, filters tracks and clears on selectio
   await until(() => !d.querySelector("#usb-report").hidden);
   assert.equal(drive.value, "test-drive");
   assert.ok(calls.some((call) => call.url === "/api/usb/report?id=test-drive"));
-  assert.match(d.querySelector("#report-summary").textContent, /1 track · 1 playlist/);
+  assert.match(d.querySelector("#report-summary").textContent, /1 track/);
+  assert.match(d.querySelector("#report-summary").textContent, /1 playlist/);
+  const playlist = d.querySelector(".report-playlist");
+  assert.match(playlist.querySelector("summary").textContent, /Test set.*1 track/);
+  playlist.open = true;
+  assert.deepEqual([...playlist.querySelectorAll("li strong")].map((item) => item.textContent), ["Stored title"]);
   assert.match(d.querySelector("#report-tracks").textContent, /Stored title/);
   d.querySelector("#report-search").value = "missing title";
   d.querySelector("#report-search").dispatchEvent(new w.Event("input"));
@@ -329,6 +334,32 @@ test("USB report reads the selected drive, filters tracks and clears on selectio
   drive.value = "";
   drive.dispatchEvent(new w.Event("change"));
   assert.equal(d.querySelector("#usb-report").hidden, true);
+});
+
+test("USB report playlist dropdown preserves track order and identifies missing entries", async (t) => {
+  const tracks = [
+    { id: 7, title: "First", artist: "Alpha", audioStatus: "present", analysisStatus: "present" },
+    { id: 8, title: "Second", artist: "Beta", audioStatus: "present", analysisStatus: "present" },
+  ];
+  const { document: d } = launch(t, "/usb", {
+    driveContents: "classic-library",
+    report: {
+      label: "Test USB", filesystem: "exfat", generatedAt: "2026-11-12T12:00:00Z",
+      databases: [], notes: [], audioIssues: 0, analysisIssues: 0, tracks,
+      playlists: [{ id: 2, parentId: 0, name: "Set", isFolder: false, trackIds: [8, 7, 8, 99] }],
+    },
+  });
+  await until(() => d.querySelector("#drive").options.length === 2);
+  d.querySelector("#inspect-drive").click();
+  await until(() => !d.querySelector("#usb-report").hidden);
+  const playlist = d.querySelector(".report-playlist");
+  assert.equal(playlist.open, false);
+  assert.match(playlist.querySelector("summary").textContent, /Set.*4 tracks/);
+  playlist.open = true;
+  assert.deepEqual([...playlist.querySelectorAll("li strong")].map((item) => item.textContent),
+    ["Second", "First", "Second", "Missing track #99"]);
+  assert.deepEqual([...playlist.querySelectorAll("li span")].map((item) => item.textContent),
+    ["Beta", "Alpha", "Beta"]);
 });
 
 test("failed USB export warns that the report counts only written tracks", async (t) => {

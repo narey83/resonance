@@ -561,11 +561,23 @@ function renderDriveReport() {
     report.filesystem + " · Read from attached USB at " +
     new Date(report.generatedAt).toLocaleString();
   const playlists = report.playlists.filter((item) => !item.isFolder);
-  $("#report-summary").textContent =
-    report.tracks.length.toLocaleString() + (report.tracks.length === 1 ? " track" : " tracks") + " · " +
-    playlists.length.toLocaleString() + (playlists.length === 1 ? " playlist" : " playlists") + " · " +
-    report.audioIssues + " audio file issues · " +
-    report.analysisIssues + " analysis file issues";
+  const summary = $("#report-summary");
+  summary.replaceChildren();
+  for (const [value, label, issue] of [
+    [report.tracks.length, report.tracks.length === 1 ? "track" : "tracks", false],
+    [playlists.length, playlists.length === 1 ? "playlist" : "playlists", false],
+    [report.audioIssues, "audio file issues", report.audioIssues > 0],
+    [report.analysisIssues, "analysis file issues", report.analysisIssues > 0],
+  ]) {
+    const item = document.createElement("span");
+    item.className = "report-stat" + (issue ? " report-stat-issue" : "");
+    const number = document.createElement("strong");
+    number.textContent = value.toLocaleString();
+    const name = document.createElement("span");
+    name.textContent = " " + label;
+    item.append(number, name);
+    summary.append(item);
+  }
   const databases = $("#report-databases");
   databases.replaceChildren();
   for (const file of report.databases) {
@@ -588,12 +600,47 @@ function renderDriveReport() {
   const current = selector.value;
   selector.replaceChildren(new Option("All tracks", ""));
   const names = new Map(report.playlists.map((item) => [item.id, item.name]));
+  const tracksById = new Map(report.tracks.map((track) => [track.id, track]));
   for (const item of report.playlists) {
     const label = (item.parentId && names.has(item.parentId) ? names.get(item.parentId) + " / " : "") + item.name;
-    const row = document.createElement("div");
-    row.textContent = label + (item.isFolder ? " · folder" : " · " + item.trackIds.length + " tracks");
-    list.append(row);
-    if (!item.isFolder) selector.append(new Option(label, String(item.id)));
+    if (item.isFolder) {
+      const folder = document.createElement("div");
+      folder.className = "report-playlist-folder";
+      folder.textContent = label + " · folder";
+      list.append(folder);
+      continue;
+    }
+    const details = document.createElement("details");
+    details.className = "report-playlist";
+    const heading = document.createElement("summary");
+    const title = document.createElement("strong");
+    title.textContent = label;
+    const count = document.createElement("span");
+    count.textContent = item.trackIds.length.toLocaleString() + (item.trackIds.length === 1 ? " track" : " tracks");
+    heading.append(title, count);
+    const entries = document.createElement("ol");
+    entries.className = "report-playlist-items";
+    for (const id of item.trackIds) {
+      const track = tracksById.get(id);
+      const entry = document.createElement("li");
+      const trackName = document.createElement("strong");
+      trackName.textContent = track?.title || (track ? "Untitled" : "Missing track #" + id);
+      entry.append(trackName);
+      if (track?.artist) {
+        const artist = document.createElement("span");
+        artist.textContent = track.artist;
+        entry.append(artist);
+      }
+      entries.append(entry);
+    }
+    if (!item.trackIds.length) {
+      const empty = document.createElement("p");
+      empty.className = "report-playlist-empty";
+      empty.textContent = "This playlist is empty.";
+      details.append(heading, empty);
+    } else details.append(heading, entries);
+    list.append(details);
+    selector.append(new Option(label, String(item.id)));
   }
   selector.value = current;
   if (selector.selectedIndex < 0) selector.value = "";
