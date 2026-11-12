@@ -243,6 +243,28 @@ test("USB Export uses the paired instance and requires destination confirmation"
   });
   await until(() => !d.querySelector("#write").disabled);
 });
+test("USB drive menu is an in-page picker with keyboard and selection state", async (t) => {
+  const { w, document: d } = launch(t, "/usb", {
+    transfer: { name: "Test set", tracks: 1, status: "ready" },
+  });
+  await until(() => d.querySelector("#drive-options").children.length === 1);
+  const trigger = d.querySelector("#drive-trigger");
+  const menu = d.querySelector("#drive-options");
+  assert.equal(d.querySelector("#drive").hidden, true);
+  trigger.click();
+  assert.equal(menu.hidden, false);
+  assert.equal(trigger.getAttribute("aria-expanded"), "true");
+  menu.firstElementChild.click();
+  assert.equal(d.querySelector("#drive").value, "test-drive");
+  assert.match(d.querySelector("#drive-value").textContent, /Test USB/);
+  assert.equal(menu.hidden, true);
+  trigger.dispatchEvent(new w.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+  assert.equal(menu.hidden, false);
+  assert.equal(d.activeElement, menu.firstElementChild);
+  menu.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  assert.equal(menu.hidden, true);
+  assert.equal(d.activeElement, trigger);
+});
 
 test("USB Export identifies an existing player library and blocks the write", async (t) => {
   const { document: d, calls } = launch(t, "/usb", {

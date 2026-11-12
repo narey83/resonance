@@ -362,6 +362,69 @@ select:disabled {
   opacity: 0.55;
   cursor: default;
 }
+.drive-picker {
+  position: relative;
+  margin-top: 9px;
+}
+.drive-picker select[hidden] {
+  display: none;
+}
+.drive-trigger {
+  width: 100%;
+  min-height: 44px;
+  justify-content: space-between;
+  text-align: left;
+  background: var(--surface);
+  border-color: var(--line);
+  font-weight: 400;
+}
+.drive-trigger[aria-expanded="true"] {
+  border-color: var(--accent);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.drive-chevron {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg) translateY(-2px);
+}
+.drive-options {
+  position: absolute;
+  z-index: 20;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-top: 0;
+  border-radius: 0 0 8px 8px;
+  box-shadow: 0 12px 24px rgb(0 0 0 / 25%);
+}
+.drive-options[hidden] {
+  display: none;
+}
+.drive-option {
+  display: flex;
+  width: 100%;
+  justify-content: flex-start;
+  border: 0;
+  border-radius: 0;
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 400;
+  text-align: left;
+}
+.drive-option:hover,
+.drive-option:focus-visible,
+.drive-option[aria-selected="true"] {
+  background: var(--soft);
+  border-color: transparent;
+}
 .field-hint {
   font-size: 11px;
   margin-top: 10px;

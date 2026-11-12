@@ -202,14 +202,24 @@
                 </div>
               </div>
               <div class="label-row">
-                <label for="drive">Destination drive</label
+                <label id="drive-label">Destination drive</label
                 ><button id="refresh-drives" class="text-button">
                   <span class="icon" data-icon="refresh"></span>Refresh
                 </button>
               </div>
-              <select id="drive">
-                <option value="">Checking drives…</option>
-              </select>
+              <div class="drive-picker">
+                <select id="drive" hidden tabindex="-1" aria-hidden="true">
+                  <option value="">Checking drives…</option>
+                </select>
+                <button id="drive-trigger" class="drive-trigger" type="button"
+                  aria-haspopup="listbox" aria-expanded="false"
+                  aria-controls="drive-options" aria-labelledby="drive-label drive-value">
+                  <span id="drive-value">Checking drives…</span>
+                  <span class="drive-chevron" aria-hidden="true"></span>
+                </button>
+                <div id="drive-options" class="drive-options" role="listbox"
+                  aria-labelledby="drive-label" hidden></div>
+              </div>
               <p id="destination" class="field-hint">
                 Mounted FAT32 and exFAT drives appear here.
               </p>

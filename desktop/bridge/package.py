@@ -5,7 +5,7 @@ import os, subprocess, tempfile, shutil, zipfile, plistlib, hashlib, json, base6
 root=Path(__file__).resolve().parent
 output=Path(os.environ.get('RESONANCE_HELPER_OUTPUT',root/'dist'));output.mkdir(parents=True,exist_ok=True)
 go=os.environ.get('GO','go')
-version='0.3.18'
+version='0.3.19'
 public_key=os.environ.get('RESONANCE_HELPER_UPDATE_PUBLIC_KEY','')
 if public_key and len(base64.b64decode(public_key,validate=True))!=32:
  raise ValueError('RESONANCE_HELPER_UPDATE_PUBLIC_KEY must be a base64 Ed25519 public key')

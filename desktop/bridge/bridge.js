@@ -425,6 +425,8 @@ function renderUSB() {
   $("#cancel-export").disabled = busy;
   for (const id of ["drive", "refresh-drives", "confirm", "handoff"])
     $("#" + id).disabled = busy || !!active;
+  $("#drive-trigger").disabled = busy || !!active || !drives.length;
+  if ($("#drive-trigger").disabled) closeDriveOptions();
   $("#receive").disabled = busy || !!active || !$("#handoff").files.length;
   const contents = {
     empty: "Empty drive, ready for a new export.",
@@ -480,9 +482,70 @@ async function refreshDrives() {
   );
   for (const drive of drives)
     select.append(new Option(drive.label + " · " + drive.filesystem, drive.id));
+  const options = $("#drive-options");
+  options.replaceChildren();
+  for (const drive of drives) {
+    const option = document.createElement("button");
+    option.type = "button";
+    option.className = "drive-option";
+    option.setAttribute("role", "option");
+    option.dataset.driveId = drive.id;
+    option.textContent = drive.label + " · " + drive.filesystem;
+    option.onclick = () => {
+      select.value = drive.id;
+      select.dispatchEvent(new Event("change"));
+      closeDriveOptions();
+      $("#drive-trigger").focus();
+    };
+    options.append(option);
+  }
+  closeDriveOptions();
+  updateDrivePicker();
   $("#confirm").checked = false;
   renderUSB();
 }
+function updateDrivePicker() {
+  const select = $("#drive");
+  $("#drive-value").textContent = select.selectedOptions[0]?.textContent || "Choose a USB drive";
+  for (const option of $("#drive-options").children)
+    option.setAttribute("aria-selected", String(option.dataset.driveId === select.value));
+}
+function closeDriveOptions() {
+  $("#drive-options").hidden = true;
+  $("#drive-trigger").setAttribute("aria-expanded", "false");
+}
+function openDriveOptions() {
+  if ($("#drive-trigger").disabled) return;
+  $("#drive-options").hidden = false;
+  $("#drive-trigger").setAttribute("aria-expanded", "true");
+}
+$("#drive-trigger").onclick = () => {
+  if ($("#drive-options").hidden) openDriveOptions();
+  else closeDriveOptions();
+};
+$("#drive-trigger").onkeydown = (event) => {
+  if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+  event.preventDefault();
+  openDriveOptions();
+  const options = $("#drive-options").children;
+  if (options.length) options[event.key === "ArrowUp" || event.key === "End" ? options.length - 1 : 0].focus();
+};
+$("#drive-options").onkeydown = (event) => {
+  if (event.key === "Escape") {
+    closeDriveOptions();
+    $("#drive-trigger").focus();
+    return;
+  }
+  const options = [...$("#drive-options").children];
+  const current = options.indexOf(document.activeElement);
+  const next = event.key === "ArrowDown" ? current + 1 : event.key === "ArrowUp" ? current - 1 : event.key === "Home" ? 0 : event.key === "End" ? options.length - 1 : -1;
+  if (next < 0 && event.key !== "ArrowUp") return;
+  event.preventDefault();
+  options[Math.max(0, Math.min(options.length - 1, next))]?.focus();
+};
+document.addEventListener("click", (event) => {
+  if (!event.target.closest(".drive-picker")) closeDriveOptions();
+});
 $("#connection").onchange = () => {
   $("#connection-file-name").textContent =
     $("#connection").files[0]?.name || "Choose pairing file";
@@ -520,6 +583,7 @@ $("#start").onclick = () =>
   });
 $("#stop").onclick = () => action(() => request("stop", {}));
 $("#drive").onchange = () => {
+  updateDrivePicker();
   $("#confirm").checked = false;
   renderUSB();
 };
@@ -639,7 +703,7 @@ $("#diagnostics").onclick = () =>
     }
     if (location.hash === "#eject") {
       $("#usb-drive-card").scrollIntoView?.({ block: "start" });
-      $("#drive").focus();
+      $("#drive-trigger").focus();
     }
   }
   if (status.error) error(status.error);
