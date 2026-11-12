@@ -2,11 +2,11 @@ import { ChevronDown } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 
 const optionLabel = (item, kind) =>
-  `${kind === 'folder' ? item.path : item.name}${
+  `${kind === 'folder' ? item.path : kind === 'saved-list' ? item.playlistName : item.name}${
     kind !== 'folder' && typeof item.trackCount === 'number'
       ? ` · ${item.trackCount} tracks`
       : ''
-  }`;
+  }${item.missingCount ? ` · ${item.missingCount} missing` : ''}`;
 
 const ExportSourcePicker = ({
   disabled,
@@ -26,7 +26,9 @@ const ExportSourcePicker = ({
       ? 'Choose a playlist'
       : kind === 'smart-crate'
         ? 'Choose a smart crate'
-        : 'Choose a folder';
+        : kind === 'saved-list'
+          ? 'Choose a saved export list'
+          : 'Choose a folder';
 
   useEffect(() => {
     if (!open) return undefined;

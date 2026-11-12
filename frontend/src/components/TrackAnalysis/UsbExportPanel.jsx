@@ -38,6 +38,7 @@ const shortenPlaylistName = (name) => {
 
 const UsbExportPanel = ({
   initialPaths = null,
+  initialPlayerChoice = 'mixed',
   initialPlaylistName = 'Resonance',
   onJobChange = null,
   selectionId = null,
@@ -53,7 +54,9 @@ const UsbExportPanel = ({
   const [selected, setSelected] = useState([]);
   const [playlistName, setPlaylistName] = useState(initialPlaylistName);
   const [playlistNameSource, setPlaylistNameSource] = useState('custom');
-  const [playerChoice, setPlayerChoice] = useState('mixed');
+  const [playerChoice, setPlayerChoice] = useState(
+    players[initialPlayerChoice] ? initialPlayerChoice : 'mixed',
+  );
   const profile = players[playerChoice].profile;
   const [job, setJob] = useState(null);
   useEffect(() => {

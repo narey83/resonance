@@ -5,7 +5,7 @@ import * as mixtapes from '../../lib/mixtapes';
 import UsbExportInspector from '../TrackAnalysis/UsbExportInspector';
 import UsbExportPanel from '../TrackAnalysis/UsbExportPanel';
 import ExportSourcePicker from './ExportSourcePicker';
-import { FolderOpen, Layers3, ListMusic, Plus } from 'lucide-react';
+import { FolderOpen, Layers3, ListMusic, Plus, Save } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { Link, useHistory } from 'react-router-dom';
 
@@ -30,12 +30,18 @@ const sourceOptions = [
     'Quick folder export',
     'Export a whole music folder, including subfolders, without creating a saved playlist.',
   ],
+  [
+    'saved-list',
+    'Saved export list',
+    'Make a fresh USB export from a previous track list and player choice.',
+  ],
 ];
 const sourceIcons = {
   playlist: ListMusic,
   create: Plus,
   'smart-crate': Layers3,
   folder: FolderOpen,
+  'saved-list': Save,
 };
 const failure = (error) =>
   typeof error?.response?.data === 'string'
@@ -49,6 +55,7 @@ const ExportPage = () => {
     playlists: [],
     crates: [],
     folders: [],
+    savedLists: [],
   });
   const [selection, setSelection] = useState(null);
   const [resume, setResume] = useState(() =>
@@ -62,6 +69,9 @@ const ExportPage = () => {
   const [error, setError] = useState('');
   const [reload, setReload] = useState(0);
   const [latestJob, setLatestJob] = useState(null);
+  useEffect(() => {
+    if (latestJob?.status === 'completed') setReload((value) => value + 1);
+  }, [latestJob?.jobId, latestJob?.status]);
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -82,6 +92,14 @@ const ExportPage = () => {
     };
   }, [reload]);
   const resolve = async () => {
+    const chosen = sources.savedLists?.find((item) => item.id === sourceId);
+    if (kind === 'saved-list' && chosen?.missingCount) {
+      setError(
+        `${chosen.missingCount} track(s) in this list are missing or no longer indexed: ${chosen.missingTracks.slice(0, 5).join(', ')}. Restore them before exporting.`,
+      );
+      return;
+    }
+
     setBusy(true);
     setError('');
     try {
@@ -114,12 +132,31 @@ const ExportPage = () => {
     }
   };
 
+  const deleteSavedList = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      await api.delete(`/analysis/usb-export/saved-lists/${sourceId}`);
+      setSourceId('');
+      setSelection(null);
+      setReload((value) => value + 1);
+    } catch (error_) {
+      setError(failure(error_));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const options =
     kind === 'playlist'
       ? sources.playlists
       : kind === 'smart-crate'
         ? sources.crates
-        : sources.folders;
+        : kind === 'saved-list'
+          ? sources.savedLists || []
+          : sources.folders;
+  const selectedSavedList =
+    kind === 'saved-list' ? options.find((item) => item.id === sourceId) : null;
   const libraryLink = {
     pathname: `${urlBase}/library`,
     state: {
@@ -227,7 +264,9 @@ const ExportPage = () => {
                     ? 'Saved playlist'
                     : kind === 'smart-crate'
                       ? 'Smart crate'
-                      : 'Music folder'
+                      : kind === 'saved-list'
+                        ? 'Saved export list'
+                        : 'Music folder'
                 }
                 onChange={(value) => {
                   setSourceId(value);
@@ -250,10 +289,42 @@ const ExportPage = () => {
                   playlist name.
                 </p>
               )}
+              {kind === 'saved-list' && sourceId && (
+                <>
+                  <p>
+                    {selectedSavedList?.missingCount
+                      ? `${selectedSavedList.missingCount} missing or no longer indexed: ${selectedSavedList.missingTracks.slice(0, 5).join(', ')}. Restore them before exporting.`
+                      : 'Tracks are currently available. Resonance checks again when you review and prepare the export.'}
+                  </p>
+                  <p>
+                    <button
+                      disabled={busy}
+                      onClick={() => setReload((value) => value + 1)}
+                      type="button"
+                    >
+                      Refresh list status
+                    </button>
+                  </p>
+                  <p>
+                    <button
+                      disabled={busy}
+                      onClick={deleteSavedList}
+                      type="button"
+                    >
+                      Delete saved list
+                    </button>
+                  </p>
+                </>
+              )}
               <p>
                 <button
                   className="export-primary-action"
-                  disabled={!sourceId || loading || busy}
+                  disabled={
+                    !sourceId ||
+                    loading ||
+                    busy ||
+                    Boolean(selectedSavedList?.missingCount)
+                  }
                   onClick={resolve}
                   type="button"
                 >
@@ -267,7 +338,9 @@ const ExportPage = () => {
                     ? 'saved playlists'
                     : kind === 'smart-crate'
                       ? 'smart crates'
-                      : 'music folders'}{' '}
+                      : kind === 'saved-list'
+                        ? 'saved export lists'
+                        : 'music folders'}{' '}
                   available.
                 </p>
               )}
@@ -297,15 +370,19 @@ const ExportPage = () => {
             {new Date(selection.source.resolvedAt).toLocaleString()}
           </p>
           <p>
-            This export preserves the reviewed selection and order. Edit the
-            source in your Library to change its membership, then select it
-            again.
+            {selection.source.kind === 'saved-list'
+              ? 'This reusable list preserves the previous track order and player choice. You can adjust the player and playlist name before preparing a fresh export.'
+              : 'This export preserves the reviewed selection and order. Edit the source in your Library to change its membership, then select it again.'}
           </p>
         </section>
       )}
       {(selection || resume) && (
         <UsbExportPanel
           initialPaths={selection?.paths || null}
+          initialPlayerChoice={
+            selection?.playerModel ||
+            (selection?.profile === 'legacy' ? 'legacy' : 'mixed')
+          }
           initialPlaylistName={selection?.playlistName || 'Resonance'}
           key={selection?.selectionId || 'resume'}
           onJobChange={setLatestJob}
@@ -315,7 +392,10 @@ const ExportPage = () => {
         />
       )}
       <section className="export-saved">
-        <UsbExportInspector latestJob={latestJob} />
+        <UsbExportInspector
+          latestJob={latestJob}
+          onSavedListChange={() => setReload((value) => value + 1)}
+        />
       </section>
     </main>
   );

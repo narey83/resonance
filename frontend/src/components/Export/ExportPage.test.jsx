@@ -6,7 +6,11 @@ import ReactDOM from 'react-dom';
 import { act, Simulate } from 'react-dom/test-utils';
 import { MemoryRouter } from 'react-router-dom';
 
-jest.mock('../../lib/api', () => ({ get: jest.fn(), post: jest.fn() }));
+jest.mock('../../lib/api', () => ({
+  get: jest.fn(),
+  post: jest.fn(),
+  delete: jest.fn(),
+}));
 jest.mock('../../lib/mixtapes', () => ({ create: jest.fn() }));
 jest.mock('../TrackAnalysis/UsbExportPanel', () => (props) => (
   <>
@@ -28,6 +32,17 @@ const sources = {
   playlists: [{ id: 'mix', name: 'My playlist', trackCount: 2 }],
   crates: [{ id: 'crate', name: 'My crate' }],
   folders: [{ path: 'Album', name: 'Album', trackCount: 2 }],
+  savedLists: [
+    {
+      id: 'saved',
+      playlistName: 'Previous set',
+      trackCount: 2,
+      missingCount: 0,
+      missingTracks: [],
+      profile: 'legacy',
+      playerModel: 'cdj-3000',
+    },
+  ],
 };
 const selection = {
   selectionId: 'selection',
@@ -67,6 +82,7 @@ describe('Export source choices', () => {
     document.body.append(container);
     api.get.mockResolvedValue({ data: sources });
     api.post.mockResolvedValue({ data: selection });
+    api.delete.mockResolvedValue({});
   });
   afterEach(() => {
     act(() => {
@@ -86,10 +102,10 @@ describe('Export source choices', () => {
     });
   };
 
-  it('offers all four paths without downloading or rendering all library tracks', async () => {
+  it('offers reusable lists without downloading or rendering all library tracks', async () => {
     expect.hasAssertions();
     await mount();
-    expect(container.querySelectorAll('input[type="radio"]')).toHaveLength(4);
+    expect(container.querySelectorAll('input[type="radio"]')).toHaveLength(5);
     expect(api.get).toHaveBeenCalledTimes(1);
     expect(api.get).toHaveBeenCalledWith('/analysis/usb-export/sources');
     expect(container.querySelector('[data-testid="export-panel"]')).toBeNull();
@@ -137,12 +153,68 @@ describe('Export source choices', () => {
     expect(props.selectionId).toBe('selection');
     expect(props.initialPlaylistName).toBe('My playlist');
   });
+  it('reuses a saved list with its original player choice', async () => {
+    expect.hasAssertions();
+    api.post.mockResolvedValue({
+      data: { ...selection, profile: 'legacy', playerModel: 'cdj-3000' },
+    });
+    await mount();
+    act(() =>
+      Simulate.change(container.querySelector('input[value="saved-list"]')),
+    );
+    chooseSource('Previous set · 2 tracks');
+    await act(async () => Simulate.click(button('Review export selection')));
+    expect(api.post).toHaveBeenCalledWith('/analysis/usb-export/resolve', {
+      kind: 'saved-list',
+      id: 'saved',
+    });
+    const props = JSON.parse(
+      container.querySelector('[data-testid="export-panel"]').textContent,
+    );
+    expect(props.initialPaths).toEqual(selection.paths);
+    expect(props.initialPlayerChoice).toBe('cdj-3000');
+  });
+  it('shows missing tracks and prevents a stale list from being reviewed', async () => {
+    expect.hasAssertions();
+    api.get.mockResolvedValue({
+      data: {
+        ...sources,
+        savedLists: [
+          {
+            ...sources.savedLists[0],
+            missingCount: 1,
+            missingTracks: ['album/gone.flac'],
+          },
+        ],
+      },
+    });
+    await mount();
+    act(() =>
+      Simulate.change(container.querySelector('input[value="saved-list"]')),
+    );
+    chooseSource('Previous set · 2 tracks · 1 missing');
+    expect(container.textContent).toContain('album/gone.flac');
+    expect(button('Review export selection').disabled).toBe(true);
+    expect(api.post).not.toHaveBeenCalled();
+  });
+  it('deletes a reusable list without cancelling its original export', async () => {
+    expect.hasAssertions();
+    await mount();
+    act(() =>
+      Simulate.change(container.querySelector('input[value="saved-list"]')),
+    );
+    chooseSource('Previous set · 2 tracks');
+    await act(async () => Simulate.click(button('Delete saved list')));
+    expect(api.delete).toHaveBeenCalledWith(
+      '/analysis/usb-export/saved-lists/saved',
+    );
+  });
   it('moves the finished export ahead of the source chooser', async () => {
     expect.hasAssertions();
     await mount();
     chooseSource('My playlist · 2 tracks');
     await act(async () => Simulate.click(button('Review export selection')));
-    act(() => Simulate.click(button('Simulate completed export')));
+    await act(async () => Simulate.click(button('Simulate completed export')));
     expect(container.querySelector('.export-source').hidden).toBe(true);
     expect(container.querySelector('.export-source-context').hidden).toBe(true);
     expect(

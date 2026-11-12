@@ -609,6 +609,18 @@ namespace resonance.Analysis.UsbExport
 
                 ct.ThrowIfCancellationRequested();
                 File.WriteAllText(Path.Combine(directory, "export-complete"), string.Empty);
+                try
+                {
+                    if (job.Profile != "network")
+                    {
+                        SaveList(job.JobId);
+                    }
+                }
+                catch (Exception exception) when (exception is IOException or JsonException or ArgumentException or UnauthorizedAccessException)
+                {
+                    Log.Warning(exception, "USB export completed, but its reusable list could not be saved. Job: {JobId}", job.JobId);
+                }
+
                 jobs[job.JobId] = job with { Status = "completed", DownloadAvailable = true };
             }
             catch (OperationCanceledException)

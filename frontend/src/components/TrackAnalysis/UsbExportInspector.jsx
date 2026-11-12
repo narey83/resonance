@@ -4,12 +4,13 @@ import React, { useEffect, useMemo, useState } from 'react';
 
 const size = (bytes) => `${(bytes / 1_024 / 1_024).toFixed(1)} MiB`;
 
-const UsbExportInspector = ({ latestJob }) => {
+const UsbExportInspector = ({ latestJob, onSavedListChange }) => {
   const [open, setOpen] = useState(false);
   const [history, setHistory] = useState([]);
   const [selected, setSelected] = useState('');
   const [report, setReport] = useState(null);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState('');
   const [page, setPage] = useState(0);
@@ -110,6 +111,23 @@ const UsbExportInspector = ({ latestJob }) => {
     }
   };
 
+  const saveList = async () => {
+    setLoading(true);
+    setError('');
+    setNotice('');
+    try {
+      await api.post(`/analysis/usb-export/${selected}/saved-list`);
+      setNotice(
+        'Track list saved. Choose Saved export list above to make another export.',
+      );
+      onSavedListChange?.();
+    } catch (error_) {
+      setError(error_?.message || 'Could not save this track list.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const cancelSaved = async () => {
     setLoading(true);
     setError('');
@@ -167,6 +185,13 @@ const UsbExportInspector = ({ latestJob }) => {
               >
                 Open in Resonance Bridge
               </button>
+              <button
+                disabled={loading}
+                onClick={saveList}
+                type="button"
+              >
+                Save track list for another export
+              </button>
               {!selectedJob.deferred && (
                 <button
                   disabled={loading}
@@ -188,6 +213,7 @@ const UsbExportInspector = ({ latestJob }) => {
           {!loading && !history.length && !error && <p>No saved exports.</p>}
           {loading && <p role="status">Loading export records…</p>}
           {error && <p role="alert">{error}</p>}
+          {notice && <p role="status">{notice}</p>}
           {report && (
             <>
               <h4>{report.playlistName}</h4>

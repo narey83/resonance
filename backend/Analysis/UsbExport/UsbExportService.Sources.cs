@@ -43,7 +43,7 @@ using resonance.MusicLibrary.Workspace;
 
 public record UsbExportSourceRequest(string Kind, string Id = null, string Folder = null);
 public record UsbExportSource(string Kind, string Id, string Name, long? Revision, DateTimeOffset ResolvedAt, string PathsHash);
-public record UsbExportSelection(string SelectionId, UsbExportSource Source, string PlaylistName, string[] Paths, int TrackCount);
+public record UsbExportSelection(string SelectionId, UsbExportSource Source, string PlaylistName, string[] Paths, int TrackCount, string Profile = null, string PlayerModel = null);
 
 /// <summary>Resolves and retains reviewed export source selections.</summary>
 public sealed partial class UsbExportService
@@ -60,6 +60,7 @@ public sealed partial class UsbExportService
         crates = workspace.ListCrates(username).Select(crate => new { crate.Id, crate.Name, crate.Revision }).ToArray(),
         folders = library.GetFolders().Where(folder => !string.IsNullOrWhiteSpace(MusicPath.ToRelative(folder.Path)) && MusicPath.ToRelative(folder.Path) != ".")
             .Select(folder => new { path = MusicPath.ToRelative(folder.Path), folder.Name, folder.TrackCount }).ToArray(),
+        savedLists = SavedLists(),
     };
 
     public UsbExportSelection ResolveSource(UsbExportSourceRequest request, string username)
@@ -73,6 +74,8 @@ public sealed partial class UsbExportService
         string id;
         long? revision = null;
         string[] paths;
+        string profile = null;
+        string playerModel = null;
         var now = DateTimeOffset.UtcNow;
         if (request.Kind == "playlist")
         {
@@ -121,9 +124,23 @@ public sealed partial class UsbExportService
 
             paths = page.Tracks.Select(track => LibraryPath(track.Path)).ToArray();
         }
+        else if (request.Kind == "saved-list")
+        {
+            var saved = GetSavedList(request.Id);
+            name = saved.PlaylistName;
+            id = saved.Id;
+            profile = saved.Profile;
+            playerModel = saved.PlayerModel;
+            paths = saved.Paths.Select(path => ImportedAnalysisContract.RequireLibraryPath(MusicPath.Root, LibraryPath(path))).ToArray();
+            var missing = MissingSavedTracks(paths);
+            if (missing.Length > 0)
+            {
+                throw new ArgumentException($"{missing.Length} saved track(s) are missing or no longer indexed: {string.Join(", ", missing.Take(5).Select(MusicPath.ToRelative))}{(missing.Length > 5 ? ", …" : string.Empty)}. Restore them before exporting this list.");
+            }
+        }
         else
         {
-            throw new ArgumentException("Source kind must be playlist, smart-crate or folder.");
+            throw new ArgumentException("Source kind must be playlist, smart-crate, folder or saved-list.");
         }
 
         if (paths.Length == 0 || paths.Length > 10000 || paths.Distinct(StringComparer.Ordinal).Count() != paths.Length)
@@ -144,7 +161,7 @@ public sealed partial class UsbExportService
             playlistName = playlistName[..^1];
         }
 
-        var selection = new UsbExportSelection(Guid.NewGuid().ToString("N"), source, playlistName, paths, paths.Length);
+        var selection = new UsbExportSelection(Guid.NewGuid().ToString("N"), source, playlistName, paths, paths.Length, profile, playerModel);
         lock (selectionGate)
         {
             foreach (var pair in selections.Where(pair => pair.Value.Expires <= now))

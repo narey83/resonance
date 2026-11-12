@@ -91,6 +91,42 @@ namespace resonance.Analysis.API
         [HttpGet("history")]
         public IActionResult History() => Ok(exports.History());
 
+        [HttpGet("saved-lists")]
+        public IActionResult SavedLists() => Ok(exports.SavedLists());
+
+        [HttpPost("{id}/saved-list")]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
+        public IActionResult SaveList(string id)
+        {
+            try
+            {
+                return Ok(exports.SaveList(id));
+            }
+            catch (FileNotFoundException)
+            {
+                return NotFound();
+            }
+            catch (Exception exception) when (exception is IOException or JsonException or ArgumentException)
+            {
+                return Conflict(exception.Message);
+            }
+        }
+
+        [HttpDelete("saved-lists/{id}")]
+        [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
+        public IActionResult DeleteSavedList(string id)
+        {
+            try
+            {
+                exports.DeleteSavedList(id);
+                return NoContent();
+            }
+            catch (FileNotFoundException)
+            {
+                return NotFound();
+            }
+        }
+
         [HttpGet("{id}/inspection")]
         public IActionResult Inspect(string id)
         {

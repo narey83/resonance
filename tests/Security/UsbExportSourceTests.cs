@@ -19,6 +19,7 @@ public sealed class UsbExportSourceTests : IDisposable
     private readonly string root = Path.Combine(Path.GetTempPath(), "export-source-" + Guid.NewGuid().ToString("N"));
     private readonly MusicRepository repository;
     private readonly WorkspaceStore workspace;
+    private readonly IMusicLibraryService libraryService;
     private readonly UsbExportService exports;
     private readonly ITestOutputHelper output;
 
@@ -31,6 +32,7 @@ public sealed class UsbExportSourceTests : IDisposable
         repository = new(connection); repository.Initialize(); _ = new AnalysisStore(connection, false);
         workspace = new(new(new Dictionary<Database,ConnectionString> { [Database.Music] = connection }, false));
         var library = DispatchProxy.Create<IMusicLibraryService, Proxy>();
+        libraryService = library;
         ((Proxy)(object)library).Call = (method, args) => method.Name switch
         {
             "GetExportTracks" => repository.GetExportTracks((IReadOnlyList<string>)args![0]!),
@@ -120,6 +122,52 @@ public sealed class UsbExportSourceTests : IDisposable
         Assert.Empty(repository.GetExportTracks(["missing' OR 1=1 --"]));
         Assert.Equal(2, repository.GetExportTracks().Count);
         Assert.Throws<ArgumentException>(() => exports.Library(["../outside"]));
+    }
+
+    [Fact]
+    public void Completed_Export_List_Survives_Job_Removal_And_Checks_Tracks_Before_Reuse()
+    {
+        var previous = Environment.GetEnvironmentVariable("RESONANCE_USB_EXPORT_ROOT");
+        var exportRoot = Path.Combine(root, "exports");
+        var id = Guid.NewGuid().ToString("N");
+        var first = Path.Combine(root, "album", "one.flac");
+        var second = Path.Combine(root, "album", "two.flac");
+        Directory.CreateDirectory(Path.GetDirectoryName(first)!);
+        File.WriteAllText(first, "one"); File.WriteAllText(second, "two");
+        repository.Upsert(Track("album/one.flac")); repository.Upsert(Track("album/two.flac"));
+        var job = Path.Combine(exportRoot, id);
+        Directory.CreateDirectory(Path.Combine(job, "export"));
+        File.WriteAllText(Path.Combine(job, "export-complete"), "");
+        File.WriteAllText(Path.Combine(job, "export", "export-manifest.json"),
+            JsonSerializer.Serialize(new { trackCount = 2, profile = "legacy", playlistName = "For a friend" }));
+        File.WriteAllText(Path.Combine(job, "manifest.json"), JsonSerializer.Serialize(new
+        {
+            profile = "legacy", playerModel = "cdj-3000", playlistName = "For a friend",
+            tracks = new[] { new { sourcePath = second }, new { sourcePath = first } },
+        }));
+        try
+        {
+            Environment.SetEnvironmentVariable("RESONANCE_USB_EXPORT_ROOT", exportRoot);
+            using var service = new UsbExportService(null!, null!, libraryService);
+            Assert.Equal(id, service.SaveList(id).Id);
+            Assert.Equal(id, service.SaveList(id).Id);
+            Directory.Delete(job, true);
+            var available = Assert.Single(service.SavedLists());
+            Assert.Equal(0, available.MissingCount);
+            Assert.Equal("cdj-3000", available.PlayerModel);
+            var selection = service.ResolveSource(new("saved-list", id), "alice");
+            Assert.Equal(new[] { second, first }, selection.Paths);
+            Assert.Equal("legacy", selection.Profile);
+            File.Delete(second);
+            Assert.Equal("album/two.flac", Assert.Single(Assert.Single(service.SavedLists()).MissingTracks));
+            Assert.Throws<ArgumentException>(() => service.ResolveSource(new("saved-list", id), "alice"));
+            service.DeleteSavedList(id);
+            Assert.Empty(service.SavedLists());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("RESONANCE_USB_EXPORT_ROOT", previous);
+        }
     }
 
     [Fact]
