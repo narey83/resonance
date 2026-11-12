@@ -77,9 +77,6 @@ func (h *helper) ejectUSB(ctx context.Context, id string) (usbVolume, error) {
 	if h.Library != nil {
 		inUse = inUse || onUSBVolume(volume.Path, h.Library.Root)
 	}
-	if h.USB != nil && h.USB.Bundle != nil {
-		inUse = inUse || onUSBVolume(volume.Path, h.USB.Bundle.Root)
-	}
 	h.mu.Unlock()
 	if inUse {
 		return usbVolume{}, errors.New("Bridge is using files on this drive; use the operating system to eject it after closing Bridge")

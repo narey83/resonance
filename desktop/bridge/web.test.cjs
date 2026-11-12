@@ -237,6 +237,26 @@ test("USB Export uses the paired instance and requires destination confirmation"
   await until(() => !d.querySelector("#write").disabled);
 });
 
+test("USB Export shows streamed download percentage and verified files", async (t) => {
+  const { document: d } = launch(t, "/usb", {
+    transfer: {
+      name: "Test set",
+      tracks: 3,
+      status: "writing",
+      downloadedBytes: 500,
+      totalBytes: 1000,
+      prepared: 1,
+      total: 3,
+    },
+  });
+  await until(() => d.querySelector("#export-status").textContent.includes("50%"));
+  assert.match(d.querySelector("#export-status").textContent, /1 \/ 3 files verified/);
+  assert.equal(d.querySelector("#export-progress").value, 500);
+  assert.equal(d.querySelector("#export-progress").max, 1000);
+  assert.equal(d.querySelector("#export-progress").hidden, false);
+  assert.match(d.querySelector("#transfer-progress").textContent, /50% downloaded to USB/);
+});
+
 test("Appearance follows Resonance live and allows a persistent local override", async (t) => {
   const {
     w,

@@ -367,6 +367,9 @@ function renderNetwork() {
 function renderUSB() {
   const active =
     transfer && ["downloading", "writing"].includes(transfer.status);
+  const downloadPercent = transfer?.totalBytes
+    ? Math.min(100, Math.floor((100 * (transfer.downloadedBytes || 0)) / transfer.totalBytes))
+    : 0;
   $("#export-empty").hidden = !!transfer;
   $("#export-summary").hidden = !transfer;
   const url = instanceURL();
@@ -377,9 +380,9 @@ function renderUSB() {
       ? transfer.tracks.toLocaleString() + " fully analysed tracks"
       : "";
     const labels = {
-      downloading: "Downloading and verifying your export…",
-      ready: "Export verified. Choose a destination to copy your set.",
-      writing: "Writing and verifying files on your USB drive…",
+      downloading: "Loading export details from Resonance…",
+      ready: "Export ready. Choose a USB drive to stream your set directly from Resonance.",
+      writing: `Streaming to USB: ${downloadPercent}% downloaded · ${transfer.prepared || 0} / ${transfer.total || 0} files verified`,
       completed:
         "Transfer complete. Choose Safely eject USB before unplugging.",
       ejected: "USB safely ejected. You can unplug the drive.",
@@ -387,9 +390,13 @@ function renderUSB() {
     };
     $("#export-status").textContent =
       labels[transfer.status] || transfer.status;
-    $("#export-progress").hidden = transfer.status !== "writing";
-    $("#export-progress").max = Math.max(1, transfer.total || 0);
-    $("#export-progress").value = transfer.prepared || 0;
+    $("#export-progress").hidden = !["downloading", "writing"].includes(transfer.status);
+    if (transfer.status === "downloading") {
+      $("#export-progress").removeAttribute("value");
+    } else {
+      $("#export-progress").max = Math.max(1, transfer.totalBytes || 0);
+      $("#export-progress").value = transfer.downloadedBytes || 0;
+    }
   }
   $("#write").disabled =
     busy ||
@@ -422,7 +429,7 @@ function renderUSB() {
     : "I have checked the destination and want to copy this export.";
   $("#transfer-progress").textContent =
     transfer?.status === "writing"
-      ? transfer.prepared + " / " + transfer.total + " files verified"
+      ? `${downloadPercent}% downloaded to USB · ${transfer.prepared || 0} / ${transfer.total || 0} files verified`
       : transfer?.status === "ejected"
         ? "USB safely ejected. You can unplug the drive."
         : "After verification, safely eject the selected USB drive before unplugging it.";

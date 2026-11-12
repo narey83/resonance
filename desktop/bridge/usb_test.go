@@ -82,11 +82,7 @@ func TestUSBJobActionsReleaseOnlyAfterServerAccepts(t *testing.T) {
 	}))
 	defer server.Close()
 	for _, action := range []string{"defer", "cancel"} {
-		root := filepath.Join(t.TempDir(), "prepared")
-		if err := os.Mkdir(root, 0700); err != nil {
-			t.Fatal(err)
-		}
-		u := &usbTransfer{Status: "ready", Bundle: &bundle{Root: root}, Connection: connection{ServerURL: server.URL + "/export", Token: strings.Repeat("a", 64)}}
+		u := &usbTransfer{Status: "ready", Export: &usbPrepared{}, Connection: connection{ServerURL: server.URL + "/export", Token: strings.Repeat("a", 64)}}
 		h := &helper{USB: u}
 		accepted = false
 		if err := h.changeUSBJob(u, action); err == nil || h.USB != u {
@@ -95,9 +91,6 @@ func TestUSBJobActionsReleaseOnlyAfterServerAccepts(t *testing.T) {
 		accepted = true
 		if err := h.changeUSBJob(u, action); err != nil || h.USB != nil {
 			t.Fatal("accepted action did not release the export", action, err)
-		}
-		if _, err := os.Stat(root); !os.IsNotExist(err) {
-			t.Fatal("prepared cache remained", action, err)
 		}
 	}
 }
@@ -112,11 +105,7 @@ func TestUSBWatcherReleasesDeferredServerJob(t *testing.T) {
 		_, _ = w.Write([]byte(`{"deferred":true}`))
 	}))
 	defer server.Close()
-	root := filepath.Join(t.TempDir(), "prepared")
-	if err := os.Mkdir(root, 0700); err != nil {
-		t.Fatal(err)
-	}
-	u := &usbTransfer{Status: "ready", Bundle: &bundle{Root: root}, Connection: connection{ServerURL: server.URL + "/export", Token: strings.Repeat("a", 64)}}
+	u := &usbTransfer{Status: "ready", Export: &usbPrepared{}, Connection: connection{ServerURL: server.URL + "/export", Token: strings.Repeat("a", 64)}}
 	h := &helper{USB: u}
 	done := make(chan struct{})
 	go func() { h.watchUSB(u); close(done) }()
@@ -127,9 +116,6 @@ func TestUSBWatcherReleasesDeferredServerJob(t *testing.T) {
 	}
 	if h.USB != nil {
 		t.Fatal("deferred export remained active in Bridge")
-	}
-	if _, err := os.Stat(root); !os.IsNotExist(err) {
-		t.Fatal("deferred export cache remained", err)
 	}
 }
 func TestUSBFailureAndDestinationRace(t *testing.T) {
@@ -185,7 +171,7 @@ func TestUSBDirectDownloadRejectsUnsafeManifest(t *testing.T) {
 	defer server.Close()
 	cache := t.TempDir()
 	c := connection{ServerURL: server.URL + "/transfer/" + strings.Repeat("a", 32), Token: strings.Repeat("b", 64)}
-	if _, err := downloadUSBFiles(context.Background(), server.Client(), c, cache); err == nil {
+	if _, err := downloadUSBManifest(context.Background(), server.Client(), c); err == nil {
 		t.Fatal("unsafe manifest accepted")
 	}
 	if filesRequested {
@@ -212,17 +198,59 @@ func TestUSBDirectDownloadAndWrite(t *testing.T) {
 	}))
 	defer server.Close()
 	c := connection{ServerURL: server.URL + "/transfer/" + strings.Repeat("a", 32), Token: strings.Repeat("b", 64)}
-	downloaded, err := downloadUSBFiles(context.Background(), server.Client(), c, t.TempDir())
+	downloaded, err := downloadUSBManifest(context.Background(), server.Client(), c)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(downloaded.Root)
-	if filesRequested == 0 || downloaded.Tracks != fixture.Tracks {
-		t.Fatal("direct file transfer omitted files or tracks")
+	if filesRequested != 0 || downloaded.Manifest.TrackCount != fixture.Tracks {
+		t.Fatal("manifest fetch downloaded tracks before USB selection")
 	}
 	target, _ := filepath.EvalSymlinks(t.TempDir())
-	if err = writeUSB(context.Background(), downloaded, target, nil, nil); err != nil {
+	var bytesReceived int64
+	if err = writeUSBStream(context.Background(), downloaded, c, target, nil, func(n int64, _, _ int) { bytesReceived += n }); err != nil {
 		t.Fatal(err)
+	}
+	if filesRequested != len(downloaded.Manifest.Files) || bytesReceived != downloaded.Bytes {
+		t.Fatal("stream transfer omitted files or bytes")
+	}
+	for _, spec := range downloaded.Manifest.Files {
+		data, err := os.ReadFile(filepath.Join(target, filepath.FromSlash(spec.Path)))
+		if err != nil || int64(len(data)) != spec.Bytes {
+			t.Fatal("USB stream file missing or wrong size", spec.Path, err)
+		}
+	}
+}
+func TestUSBStreamRejectsChangedFileWithoutPublishing(t *testing.T) {
+	fixture := usbFixture(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/manifest"):
+			http.ServeFile(w, r, filepath.Join(fixture.Root, "export-manifest.json"))
+		case strings.HasSuffix(r.URL.Path, "/file"):
+			data, err := os.ReadFile(filepath.Join(fixture.Root, filepath.FromSlash(r.URL.Query().Get("path"))))
+			if err != nil || len(data) == 0 {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			data[0] ^= 1
+			_, _ = w.Write(data)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	c := connection{ServerURL: server.URL + "/transfer/" + strings.Repeat("a", 32), Token: strings.Repeat("b", 64)}
+	prepared, err := downloadUSBManifest(context.Background(), server.Client(), c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, _ := filepath.EvalSymlinks(t.TempDir())
+	if err = writeUSBStream(context.Background(), prepared, c, target, nil, nil); err == nil {
+		t.Fatal("changed server file was accepted")
+	}
+	entries, err := os.ReadDir(target)
+	if err != nil || len(entries) != 0 {
+		t.Fatal("failed stream published files", err)
 	}
 }
 func TestSharedHandoffRouting(t *testing.T) {

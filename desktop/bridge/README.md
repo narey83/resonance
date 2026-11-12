@@ -23,12 +23,13 @@ installer tooling are in this directory; see Platforms and firewall below.
 
 The app’s **Safely eject USB…** tray/menu shortcut and Resonance Export’s **Safely eject in Bridge** link open the same local drive picker. Choose the drive there; the main server never unmounts devices on its own host. Linux safe removal requires the desktop UDisks service and `udisksctl`. If the OS refuses removal, close files/apps using the drive and retry or use its normal system eject control.
 
-The helper fetches that export's manifested files directly using a scoped 24-hour
-token. It verifies each file before offering the USB write, refuses existing-file/export
-overwrites and never formats drives. Cancellation
-and failures roll back only files created by that transfer. New files are read back
-and checked against their SHA-256 inventory before publishing. Keep action files
-private while valid.
+The helper fetches only the export manifest before you choose a drive. After
+confirmation, it streams each file from Resonance directly into a temporary folder
+on the selected USB drive, showing downloaded bytes and verified-file progress.
+Track files are not stored in the Mac cache. The helper checks each file against
+the manifest, reads it back from the USB drive, refuses existing-file/export
+overwrites and never formats drives. Cancellation and failures remove the temporary
+USB files without publishing a partial export. Keep action files private while valid.
 
 Folder selection chooses source tracks; it does not reproduce the source folder
 hierarchy on the USB. The prepared bundle supplies the player database layout.

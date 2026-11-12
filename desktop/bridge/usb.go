@@ -2,6 +2,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -27,9 +28,17 @@ type usbTransfer struct {
 	DestinationID string             `json:"destinationId,omitempty"`
 	Prepared      int                `json:"prepared"`
 	Total         int                `json:"total"`
-	Bundle        *bundle            `json:"-"`
+	Downloaded    int64              `json:"downloadedBytes"`
+	TotalBytes    int64              `json:"totalBytes"`
+	Export        *usbPrepared       `json:"-"`
 	Cancel        context.CancelFunc `json:"-"`
 	Connection    connection         `json:"-"`
+}
+
+type usbPrepared struct {
+	Manifest exportManifest
+	Data     []byte
+	Bytes    int64
 }
 
 func isUSB(c connection) bool {
@@ -66,22 +75,18 @@ func (h *helper) receiveUSB(c connection) error {
 		h.mu.Unlock()
 		return errors.New("finish or cancel the current USB transfer first")
 	}
-	old := h.USB
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
 	u := &usbTransfer{Status: "downloading", Cancel: cancel, Done: make(chan struct{}), Connection: c}
 	h.USB = u
 	h.mu.Unlock()
 	go h.watchUSB(u)
-	if old != nil && old.Bundle != nil {
-		os.RemoveAll(old.Bundle.Root)
-	}
 	go func() {
 		defer close(u.Done)
 		defer cancel()
 		client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
 			return errors.New("export download redirects are not allowed")
 		}}
-		b, e := downloadUSBFiles(ctx, client, c, h.Cache)
+		prepared, e := downloadUSBManifest(ctx, client, c)
 		if e != nil {
 			h.usbError(u, e)
 			return
@@ -93,21 +98,22 @@ func (h *helper) receiveUSB(c connection) error {
 				u.Error = "Export download cancelled"
 			}
 			h.mu.Unlock()
-			os.RemoveAll(b.Root)
 			return
 		}
-		u.Bundle = b
+		u.Export = prepared
 		u.Status = "ready"
-		h.Diagnostics.event("info", "usb.ready", map[string]any{"tracks": b.Tracks})
-		u.Name = b.Name
-		u.Tracks = b.Tracks
+		h.Diagnostics.event("info", "usb.ready", map[string]any{"tracks": prepared.Manifest.TrackCount, "bytes": prepared.Bytes})
+		u.Name = prepared.Manifest.PlaylistName
+		u.Tracks = prepared.Manifest.TrackCount
+		u.Total = len(prepared.Manifest.Files)
+		u.TotalBytes = prepared.Bytes
 		h.mu.Unlock()
 	}()
 	return nil
 }
 
 // The saved server job is authoritative. A browser can defer or cancel it while
-// Bridge is open; release the local cache once the server reports that change.
+// Bridge is open; release the prepared manifest once the server reports that change.
 func (h *helper) watchUSB(u *usbTransfer) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
@@ -182,9 +188,6 @@ func (h *helper) releaseUSB(u *usbTransfer, event string) bool {
 	}
 	h.USB = nil
 	h.mu.Unlock()
-	if u.Bundle != nil {
-		os.RemoveAll(u.Bundle.Root)
-	}
 	if h.Diagnostics != nil {
 		h.Diagnostics.event("info", event, nil)
 	}
@@ -223,9 +226,9 @@ func (h *helper) changeUSBJob(u *usbTransfer, action string) error {
 	return nil
 }
 
-// downloadUSBFiles stages only inventoried files; the server never creates a ZIP
-// for the Bridge path. Every file is checked before the bundle becomes writable.
-func downloadUSBFiles(ctx context.Context, client *http.Client, c connection, cache string) (*bundle, error) {
+// Fetch only the inventory. Track bytes stay on Resonance until a USB drive is
+// selected, then pass through Bridge directly into a staging folder on that drive.
+func downloadUSBManifest(ctx context.Context, client *http.Client, c connection) (*usbPrepared, error) {
 	response, err := fetchSync(ctx, client, c, "/manifest")
 	if err != nil {
 		return nil, err
@@ -255,49 +258,7 @@ func downloadUSBFiles(ctx context.Context, client *http.Client, c connection, ca
 	if !seen["pioneer/rekordbox/export.pdb"] {
 		return nil, errors.New("USB export has no player database")
 	}
-	root, err := os.MkdirTemp(cache, "library-")
-	if err != nil {
-		return nil, err
-	}
-	complete := false
-	defer func() {
-		if !complete {
-			os.RemoveAll(root)
-		}
-	}()
-	for _, spec := range manifest.Files {
-		response, err := fetchSync(ctx, client, c, "/file?path="+url.QueryEscape(spec.Path))
-		if err != nil {
-			return nil, err
-		}
-		path := filepath.Join(root, filepath.FromSlash(spec.Path))
-		if err = os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-			response.Body.Close()
-			return nil, err
-		}
-		out, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
-		if err != nil {
-			response.Body.Close()
-			return nil, err
-		}
-		hash := sha256.New()
-		count, copyErr := io.Copy(io.MultiWriter(out, hash), io.LimitReader(response.Body, spec.Bytes+1))
-		response.Body.Close()
-		syncErr := out.Sync()
-		closeErr := out.Close()
-		if copyErr != nil || syncErr != nil || closeErr != nil || count != spec.Bytes || hex.EncodeToString(hash.Sum(nil)) != spec.SHA256 {
-			return nil, errors.New("USB export file checksum or size differs from inventory")
-		}
-	}
-	if err = os.WriteFile(filepath.Join(root, "export-manifest.json"), manifestBytes, 0600); err != nil {
-		return nil, err
-	}
-	b, err := loadBundle(root, manifest)
-	if err != nil {
-		return nil, err
-	}
-	complete = true
-	return b, nil
+	return &usbPrepared{Manifest: manifest, Data: manifestBytes, Bytes: total}, nil
 }
 func (h *helper) usbError(u *usbTransfer, e error) {
 	h.mu.Lock()
@@ -337,7 +298,43 @@ func destinationReady(target string) error {
 	}
 	return nil
 }
-func writeUSB(ctx context.Context, b *bundle, target string, verifyMount func() error, progress func(int, int)) (err error) {
+func writeUSB(ctx context.Context, b *bundle, target string, verifyMount func() error, progress func(int, int)) error {
+	data, err := os.ReadFile(filepath.Join(b.Root, "export-manifest.json"))
+	if err != nil {
+		return err
+	}
+	var manifest exportManifest
+	if err = json.Unmarshal(data, &manifest); err != nil {
+		return err
+	}
+	return writeUSBFiles(ctx, &usbPrepared{Manifest: manifest, Data: data}, target, verifyMount,
+		func(_ int64, done, total int) {
+			if progress != nil && done > 0 {
+				progress(done, total)
+			}
+		}, func(relative string) (io.ReadCloser, error) {
+			source := filepath.Join(b.Root, filepath.FromSlash(relative))
+			if e := requireUnder(b.Root, source); e != nil {
+				return nil, e
+			}
+			return os.Open(source)
+		})
+}
+
+func writeUSBStream(ctx context.Context, prepared *usbPrepared, c connection, target string, verifyMount func() error, progress func(int64, int, int)) error {
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+		return errors.New("export stream redirects are not allowed")
+	}}
+	return writeUSBFiles(ctx, prepared, target, verifyMount, progress, func(relative string) (io.ReadCloser, error) {
+		response, err := fetchSync(ctx, client, c, "/file?path="+url.QueryEscape(relative))
+		if err != nil {
+			return nil, err
+		}
+		return response.Body, nil
+	})
+}
+
+func writeUSBFiles(ctx context.Context, prepared *usbPrepared, target string, verifyMount func() error, progress func(int64, int, int), openFile func(string) (io.ReadCloser, error)) (err error) {
 	if e := destinationReady(target); e != nil {
 		return e
 	}
@@ -346,26 +343,20 @@ func writeUSB(ctx context.Context, b *bundle, target string, verifyMount func() 
 			return e
 		}
 	}
-	data, e := os.ReadFile(filepath.Join(b.Root, "export-manifest.json"))
-	if e != nil {
-		return e
-	}
-	var manifest exportManifest
-	if e = json.Unmarshal(data, &manifest); e != nil {
-		return e
-	}
-	var bytes uint64
+	manifest := prepared.Manifest
+	var e error
+	var requiredBytes uint64
 	for _, spec := range manifest.Files {
 		if spec.Bytes < 0 {
 			return errors.New("invalid export size")
 		}
-		bytes += uint64(spec.Bytes)
+		requiredBytes += uint64(spec.Bytes)
 	}
 	free, e := freeBytes(target)
 	if e != nil {
 		return e
 	}
-	if free < bytes+16*1024*1024 {
+	if free < requiredBytes+16*1024*1024 {
 		return errors.New("not enough free space on this drive")
 	}
 	stage, e := os.MkdirTemp(target, ".resonance-usb-")
@@ -388,17 +379,18 @@ func writeUSB(ctx context.Context, b *bundle, target string, verifyMount func() 
 		if _, e := safeName(relative); e != nil {
 			return e
 		}
-		source := filepath.Join(b.Root, filepath.FromSlash(relative))
-		if e := requireUnder(b.Root, source); e != nil {
-			return e
-		}
 		dest := filepath.Join(stage, filepath.FromSlash(relative))
 		if e := os.MkdirAll(filepath.Dir(dest), 0700); e != nil {
 			return e
 		}
-		in, e := os.Open(source)
-		if e != nil {
-			return e
+		var in io.ReadCloser
+		if spec == nil {
+			in = io.NopCloser(bytes.NewReader(prepared.Data))
+		} else {
+			in, e = openFile(relative)
+			if e != nil {
+				return e
+			}
 		}
 		defer in.Close()
 		out, e := os.OpenFile(dest, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
@@ -408,15 +400,22 @@ func writeUSB(ctx context.Context, b *bundle, target string, verifyMount func() 
 		digest := sha256.New()
 		var written int64
 		buf := make([]byte, 1<<20)
+		var source io.Reader = in
+		if spec != nil {
+			source = io.LimitReader(in, spec.Bytes+1)
+		}
 		for {
 			if e = ctx.Err(); e != nil {
 				break
 			}
-			n, readErr := in.Read(buf)
+			n, readErr := source.Read(buf)
 			if n > 0 {
 				count, writeErr := out.Write(buf[:n])
 				digest.Write(buf[:count])
 				written += int64(count)
+				if spec != nil && progress != nil && count > 0 {
+					progress(int64(count), 0, len(manifest.Files))
+				}
 				if writeErr != nil {
 					e = writeErr
 					break
@@ -469,10 +468,13 @@ func writeUSB(ctx context.Context, b *bundle, target string, verifyMount func() 
 			return e
 		}
 		if progress != nil {
-			progress(i+1, len(manifest.Files))
+			progress(0, i+1, len(manifest.Files))
 		}
 	}
 	if e = copyFile("export-manifest.json", nil); e != nil {
+		return e
+	}
+	if _, e = loadBundle(stage, manifest); e != nil {
 		return e
 	}
 	if e = ctx.Err(); e != nil {
@@ -608,9 +610,9 @@ func (h *helper) usbRoutes(mux *http.ServeMux) {
 		}
 		h.mu.Lock()
 		u := h.USB
-		if h.Updating || u == nil || u.Bundle == nil || (u.Status != "ready" && u.Status != "completed" && u.Status != "failed" && u.Status != "ejected") {
+		if h.Updating || u == nil || u.Export == nil || (u.Status != "ready" && u.Status != "completed" && u.Status != "failed" && u.Status != "ejected") {
 			h.mu.Unlock()
-			jsonReply(w, 409, map[string]string{"error": "wait for the export download to complete"})
+			jsonReply(w, 409, map[string]string{"error": "wait for the export manifest to load"})
 			return
 		}
 		ctx, cancel := context.WithCancel(context.Background())
@@ -622,11 +624,14 @@ func (h *helper) usbRoutes(mux *http.ServeMux) {
 		u.Destination = vol.Path
 		u.DestinationID = vol.ID
 		u.Prepared = 0
+		u.Downloaded = 0
+		u.Total = len(u.Export.Manifest.Files)
+		u.TotalBytes = u.Export.Bytes
 		h.mu.Unlock()
 		go func() {
 			defer close(u.Done)
 			defer cancel()
-			e := writeUSB(ctx, u.Bundle, vol.Path, func() error {
+			e := writeUSBStream(ctx, u.Export, u.Connection, vol.Path, func() error {
 				current, e := h.findUSBVolume(v.ID)
 				if e != nil {
 					return e
@@ -635,7 +640,15 @@ func (h *helper) usbRoutes(mux *http.ServeMux) {
 					return errors.New("USB drive changed")
 				}
 				return nil
-			}, func(done, total int) { h.mu.Lock(); u.Prepared = done; u.Total = total; h.mu.Unlock() })
+			}, func(downloaded int64, done, total int) {
+				h.mu.Lock()
+				u.Downloaded += downloaded
+				if done > 0 {
+					u.Prepared = done
+				}
+				u.Total = total
+				h.mu.Unlock()
+			})
 			if e != nil {
 				h.usbError(u, e)
 				return

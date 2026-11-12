@@ -668,12 +668,8 @@ func main() {
 	h.stop()
 	h.mu.Lock()
 	var usbDone <-chan struct{}
-	var usbRoot string
 	if h.USB != nil {
 		usbDone = h.USB.Done
-		if h.USB.Bundle != nil {
-			usbRoot = h.USB.Bundle.Root
-		}
 	}
 	if h.USB != nil && h.USB.Cancel != nil {
 		h.USB.Cancel()
@@ -689,9 +685,6 @@ func main() {
 	if usbDone != nil {
 		select {
 		case <-usbDone:
-			if usbRoot != "" {
-				os.RemoveAll(usbRoot)
-			}
 		case <-time.After(5 * time.Second):
 		}
 	}
