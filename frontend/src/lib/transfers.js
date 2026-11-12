@@ -101,7 +101,9 @@ export const getUploadsQueue = async ({
     !isQueueCount(data.totalPending) ||
     !isQueueCount(data.userTotalPending) ||
     !isQueueCount(data.page) ||
-    (data.username !== null && typeof data.username !== 'string') ||
+    (data.username == null
+      ? data.totalPending !== 0
+      : typeof data.username !== 'string') ||
     data.users.some(
       (user) =>
         typeof user.username !== 'string' ||
@@ -116,7 +118,7 @@ export const getUploadsQueue = async ({
     throw new Error('Invalid upload recipient queue response');
   }
 
-  return data;
+  return data.username === undefined ? { ...data, username: null } : data;
 };
 
 export const getUploadFolder = async ({ directory, signal, username }) => {

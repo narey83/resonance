@@ -36,6 +36,31 @@ describe('Recipient upload queue API', () => {
       timeout: 10_000,
     });
   });
+  it('accepts an empty queue when the API omits its null username', async () => {
+    expect.hasAssertions();
+    const data = {
+      users: [],
+      page: 0,
+      totalPending: 0,
+      userTotalPending: 0,
+      transfers: [],
+      folders: [],
+    };
+    api.get.mockResolvedValue({ data });
+    await expect(getUploadsQueue({ folders: true })).resolves.toEqual({
+      ...data,
+      username: null,
+    });
+  });
+  it('rejects a missing username when uploads are pending', async () => {
+    expect.hasAssertions();
+    const data = response();
+    delete data.username;
+    api.get.mockResolvedValue({ data });
+    await expect(getUploadsQueue()).rejects.toThrow(
+      'Invalid upload recipient queue response',
+    );
+  });
   it.each(['totalPending', 'userTotalPending', 'page'])(
     'rejects invalid %s',
     async (field) => {

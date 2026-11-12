@@ -31,6 +31,7 @@ describe('Transfer loading state', () => {
   let finish;
   let fail;
   beforeEach(() => {
+    jest.useFakeTimers();
     jest.clearAllMocks();
     UploadsTable.mockImplementation(() => 'Upload queue');
     DownloadsTable.mockImplementation(() => 'Download queue');
@@ -48,6 +49,7 @@ describe('Transfer loading state', () => {
       ReactDOM.unmountComponentAtNode(container);
     });
     container.remove();
+    jest.useRealTimers();
     jest.restoreAllMocks();
   });
   it.each([
@@ -87,13 +89,37 @@ describe('Transfer loading state', () => {
       expect(container.textContent).toBe(queue);
     },
   );
-  it('replaces the loading graphic with the retry message when loading fails', async () => {
+  it('keeps loading through one failed upload poll and recovers on retry', async () => {
     expect.hasAssertions();
     jest.spyOn(console, 'error').mockImplementation(() => {});
     await act(async () => {
       ReactDOM.render(<Transfers direction="upload" />, container);
     });
     await act(async () => fail(new Error('offline')));
+    expect(container.textContent).toContain('Loading uploads…');
+    expect(container.textContent).not.toContain('Unable to load');
+
+    getUploadsQueue.mockResolvedValue({
+      users: [],
+      transfers: [],
+      username: null,
+      folders: [],
+    });
+    await act(async () => jest.advanceTimersByTime(2_000));
+    expect(container.textContent).toBe('Upload queue');
+    expect(getUploadsQueue).toHaveBeenCalledTimes(2);
+  });
+  it('shows the retry message after three consecutive failed upload polls', async () => {
+    expect.hasAssertions();
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    await act(async () => {
+      ReactDOM.render(<Transfers direction="upload" />, container);
+    });
+    await act(async () => fail(new Error('offline')));
+    getUploadsQueue.mockRejectedValue(new Error('offline'));
+    await act(async () => jest.advanceTimersByTime(2_000));
+    expect(container.textContent).toContain('Loading uploads…');
+    await act(async () => jest.advanceTimersByTime(2_000));
     expect(container.querySelector('.transfers-loading')).toBeNull();
     expect(container.querySelector('[role="status"]').textContent).toContain(
       'Unable to load',

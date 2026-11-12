@@ -226,6 +226,7 @@ const Transfers = ({ direction }) => {
   useEffect(() => {
     let mounted = true;
     let hasCompleteUpload = false;
+    let consecutiveUploadFailures = 0;
     const scheduled = new Set();
     const inFlight = new Set();
     let controller;
@@ -295,6 +296,7 @@ const Transfers = ({ direction }) => {
         }
 
         if (mounted) {
+          consecutiveUploadFailures = 0;
           setLoadError(false);
           setTransfers(response);
 
@@ -338,7 +340,13 @@ const Transfers = ({ direction }) => {
         }
       } catch (error) {
         if (mounted && !controller.signal.aborted) {
-          setLoadError(true);
+          if (direction === 'upload') {
+            consecutiveUploadFailures += 1;
+            setLoadError(consecutiveUploadFailures >= 3);
+          } else {
+            setLoadError(true);
+          }
+
           console.error(error);
         }
       } finally {
