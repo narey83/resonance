@@ -622,6 +622,9 @@ func publishMergedUSB(ctx context.Context, client *http.Client, c connection, pr
 	if err = extractMergedDatabases(archive, stage); err != nil {
 		return err
 	}
+	if err = removeStagedAppleDouble(stage); err != nil {
+		return err
+	}
 	if verifyMount != nil {
 		if err = verifyMount(); err != nil {
 			return err
@@ -642,6 +645,24 @@ func safeDirectory(path string) error {
 		return errors.New("USB library contains an unsafe directory")
 	}
 	return nil
+}
+
+// macOS writes AppleDouble sidecars when Bridge stages files on FAT volumes.
+// They are not export files and must not be moved into the player library.
+func removeStagedAppleDouble(root string) error {
+	return filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil || entry.IsDir() || !strings.HasPrefix(entry.Name(), "._") {
+			return err
+		}
+		if !entry.Type().IsRegular() {
+			return errors.New("unexpected USB staging file")
+		}
+		paired := filepath.Join(filepath.Dir(path), strings.TrimPrefix(entry.Name(), "._"))
+		if _, err := os.Lstat(paired); err != nil {
+			return errors.New("unpaired USB staging metadata file")
+		}
+		return os.Remove(path)
+	})
 }
 
 func newDirectory(path string, created *[]string) error {

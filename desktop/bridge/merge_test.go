@@ -37,6 +37,42 @@ func copyTestTree(t *testing.T, source, target string) {
 	}
 }
 
+func TestRemoveStagedAppleDouble(t *testing.T) {
+	root := t.TempDir()
+	bucket := filepath.Join(root, "PIONEER", "USBANLZ", "P000")
+	track := filepath.Join(bucket, "00000001")
+	if err := os.MkdirAll(track, 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{
+		filepath.Join(root, "PIONEER", "USBANLZ", "._P000"),
+		filepath.Join(bucket, "._00000001"),
+		filepath.Join(track, "ANLZ0000.DAT"),
+		filepath.Join(track, "._ANLZ0000.DAT"),
+	} {
+		if err := os.WriteFile(path, []byte("metadata"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := removeStagedAppleDouble(root); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{filepath.Join(root, "PIONEER", "USBANLZ", "._P000"), filepath.Join(bucket, "._00000001"), filepath.Join(track, "._ANLZ0000.DAT")} {
+		if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+			t.Fatal("AppleDouble sidecar remains", path, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(track, "ANLZ0000.DAT")); err != nil {
+		t.Fatal("analysis file was removed", err)
+	}
+	if err := os.WriteFile(filepath.Join(bucket, "._orphan"), []byte("unexpected"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := removeStagedAppleDouble(root); err == nil {
+		t.Fatal("unpaired metadata sidecar was accepted")
+	}
+}
+
 func TestUSBPreflightChecksExistingAudioBeforeStaging(t *testing.T) {
 	for _, scenario := range []string{"present", "present-with-extended", "extended-changed", "missing", "duplicate-playlist"} {
 		t.Run(scenario, func(t *testing.T) {
