@@ -100,7 +100,7 @@ function launch(t, page, options = {}) {
     } else if (url === "/api/usb/drives")
       data = ejected
         ? []
-        : [
+        : options.drives || [
             {
               id: "test-drive",
               path: "/media/Test USB",
@@ -313,12 +313,13 @@ test("USB report reads the selected drive, filters tracks and clears on selectio
   const { w, document: d, calls } = launch(t, "/usb", { driveContents: "dual-library" });
   await until(() => d.querySelector("#drive").options.length === 2);
   const drive = d.querySelector("#drive");
-  drive.value = "test-drive";
-  drive.dispatchEvent(new w.Event("change"));
   assert.equal(d.querySelector("#inspect-drive").hidden, false);
+  assert.equal(d.querySelector("#inspect-drive").disabled, false);
+  assert.match(d.querySelector("#inspect-hint").textContent, /Test USB/);
   assert.equal(d.querySelector("#usb-report").hidden, true);
   d.querySelector("#inspect-drive").click();
   await until(() => !d.querySelector("#usb-report").hidden);
+  assert.equal(drive.value, "test-drive");
   assert.ok(calls.some((call) => call.url === "/api/usb/report?id=test-drive"));
   assert.match(d.querySelector("#report-summary").textContent, /1 track · 1 playlist/);
   assert.match(d.querySelector("#report-tracks").textContent, /Stored title/);
@@ -328,6 +329,26 @@ test("USB report reads the selected drive, filters tracks and clears on selectio
   drive.value = "";
   drive.dispatchEvent(new w.Event("change"));
   assert.equal(d.querySelector("#usb-report").hidden, true);
+});
+
+test("USB report action stays visible when drive choice is required or unavailable", async (t) => {
+  const first = launch(t, "/usb", {
+    drives: [
+      { id: "one", label: "One", filesystem: "exfat", contents: "classic-library" },
+      { id: "two", label: "Two", filesystem: "exfat", contents: "dual-library" },
+    ],
+  });
+  await until(() => first.document.querySelector("#drive").options.length === 3);
+  assert.equal(first.document.querySelector("#inspect-drive").hidden, false);
+  assert.equal(first.document.querySelector("#inspect-drive").disabled, true);
+  assert.match(first.document.querySelector("#inspect-hint").textContent, /Select a USB drive/);
+  first.document.querySelector("#drive").value = "two";
+  first.document.querySelector("#drive").dispatchEvent(new first.w.Event("change"));
+  assert.equal(first.document.querySelector("#inspect-drive").disabled, false);
+  const second = launch(t, "/usb", { driveContents: "empty" });
+  await until(() => second.document.querySelector("#drive").options.length === 2);
+  assert.equal(second.document.querySelector("#inspect-drive").hidden, false);
+  assert.equal(second.document.querySelector("#inspect-drive").disabled, true);
 });
 
 test("USB formatting names the entire disk and requires a typed drive label", async (t) => {

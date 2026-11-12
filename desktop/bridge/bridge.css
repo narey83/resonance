@@ -430,6 +430,28 @@ select:disabled {
   margin-top: 10px;
   line-height: 1.7;
 }
+.report-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 16px;
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--soft);
+}
+.report-entry h3 {
+  margin: 0 0 5px;
+  font-size: 13px;
+}
+.report-entry p {
+  font-size: 11px;
+  line-height: 1.5;
+}
+.report-entry button {
+  flex: none;
+}
 .usb-report {
   margin-top: 22px;
 }
@@ -507,6 +529,10 @@ select:disabled {
   font-weight: 600;
 }
 @media (max-width: 600px) {
+  .report-entry {
+    align-items: stretch;
+    flex-direction: column;
+  }
   .usb-report .card-heading {
     flex-direction: column;
   }

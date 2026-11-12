@@ -445,8 +445,18 @@ function renderUSB() {
   $("#destination").textContent = drive
     ? drive.path + " · " + drive.filesystem + " · " + (contents[drive.contents] || contents.unreadable)
     : "Mounted FAT32 and exFAT drives appear here.";
-  $("#inspect-drive").hidden = !drive || !["classic-library", "dual-library"].includes(drive.contents);
-  $("#inspect-drive").disabled = busy || !!active;
+  const reportDrives = drives.filter((item) => ["classic-library", "dual-library"].includes(item.contents));
+  const reportDrive = drive && reportDrives.some((item) => item.id === drive.id)
+    ? drive
+    : !drive && reportDrives.length === 1 ? reportDrives[0] : null;
+  $("#inspect-drive").disabled = busy || !!active || !reportDrive;
+  $("#inspect-hint").textContent = reportDrive
+    ? "Read playlists, tracks and file checks from " + reportDrive.label + ". No export needed."
+    : drive
+      ? "This drive has no classic export database to inspect."
+      : reportDrives.length > 1
+        ? "Select a USB drive above to inspect its library."
+        : "Connect a USB with a classic export database to view its report.";
   $("#confirmation").textContent = drive
     ? "I have checked " +
       drive.label +
@@ -622,7 +632,14 @@ function renderReportTracks() {
   }
 }
 $("#inspect-drive").onclick = async () => {
-  const id = $("#drive").value;
+  const selected = $("#drive");
+  const eligible = drives.filter((item) => ["classic-library", "dual-library"].includes(item.contents));
+  if (!selected.value && eligible.length === 1) {
+    selected.value = eligible[0].id;
+    updateDrivePicker();
+    renderUSB();
+  }
+  const id = selected.value;
   if (!id) return;
   $("#inspect-drive").disabled = true;
   $("#inspect-drive").textContent = "Reading USB library…";
