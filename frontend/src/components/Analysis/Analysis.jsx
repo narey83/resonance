@@ -220,28 +220,16 @@ const ScanSettings = ({
 
         {enhanced && (
           <fieldset className="ka-enhanced-features">
-            <legend>Enhanced measurements</legend>
-            <label>
-              <input
-                checked={enhancedFeatures === null}
-                name="enhanced-features-mode"
-                onChange={() => onEnhancedFeaturesChange(null)}
-                type="radio"
-              />
-              Full analysis (USB ready)
-            </label>
-            <label>
-              <input
-                checked={enhancedFeatures !== null}
-                name="enhanced-features-mode"
-                onChange={() =>
-                  onEnhancedFeaturesChange(['beats', 'key', 'waveform'])
-                }
-                type="radio"
-              />
-              Choose measurements
-            </label>
-            {enhancedFeatures !== null && (
+            <legend>
+              {enhancedFeatures === null
+                ? 'Full enhanced analysis'
+                : 'Choose enhanced measurements'}
+            </legend>
+            {enhancedFeatures === null ? (
+              <p className="ka-enhanced-summary">
+                All enhanced measurements are included for USB export.
+              </p>
+            ) : (
               <div className="ka-enhanced-feature-grid">
                 {[
                   ['beats', 'Beats and BPM'],
@@ -828,6 +816,10 @@ const Analysis = ({
   const [enhancedFeatures, setEnhancedFeatures] = useState(
     viewState?.current?.enhancedFeatures ?? null,
   );
+  const customFeatures = useRef(
+    viewState?.current?.customFeatures ??
+      viewState?.current?.enhancedFeatures ?? ['beats', 'key', 'waveform'],
+  );
   const [writeAutoCues, setWriteAutoCues] = useState(
     viewState?.current?.writeAutoCues ?? false,
   );
@@ -881,6 +873,7 @@ const Analysis = ({
         ...viewState.current,
         enhanced,
         enhancedFeatures,
+        customFeatures: customFeatures.current,
         writeAutoCues,
         search,
         filter,
@@ -2161,22 +2154,55 @@ const Analysis = ({
                   <strong>Basic</strong>
                   <span>BPM · key · waveform · LUFS</span>
                 </label>
-                <label className={enhanced ? 'ka-mode-selected' : ''}>
+                <label
+                  className={
+                    enhanced && enhancedFeatures === null
+                      ? 'ka-mode-selected'
+                      : ''
+                  }
+                >
                   <input
-                    checked={enhanced}
+                    checked={enhanced && enhancedFeatures === null}
                     disabled={preparation?.enhancedEnabled === false}
                     name="analysis-mode"
-                    onChange={() => setEnhanced(true)}
+                    onChange={() => {
+                      setEnhanced(true);
+                      setEnhancedFeatures(null);
+                    }}
                     type="radio"
                     value="enhanced"
                   />
-                  <strong>Enhanced</strong>
-                  <span>Basic + grids, vocals, structure and genre</span>
+                  <strong>Full enhanced</strong>
+                  <span>All measurements · USB ready</span>
+                </label>
+                <label
+                  className={
+                    enhanced && enhancedFeatures !== null
+                      ? 'ka-mode-selected'
+                      : ''
+                  }
+                >
+                  <input
+                    checked={enhanced && enhancedFeatures !== null}
+                    disabled={preparation?.enhancedEnabled === false}
+                    name="analysis-mode"
+                    onChange={() => {
+                      setEnhanced(true);
+                      setEnhancedFeatures(customFeatures.current);
+                    }}
+                    type="radio"
+                    value="enhanced-custom"
+                  />
+                  <strong>Custom enhanced</strong>
+                  <span>Choose the measurements you need</span>
                 </label>
               </fieldset>
             </div>
           }
-          onEnhancedFeaturesChange={setEnhancedFeatures}
+          onEnhancedFeaturesChange={(features) => {
+            customFeatures.current = features;
+            setEnhancedFeatures(features);
+          }}
           onStart={handleStartScan}
           onWriteAutoCuesChange={setWriteAutoCues}
           scanning={

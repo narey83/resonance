@@ -1275,6 +1275,7 @@
 }
 
 .ka-enhanced-features legend { padding: 0 4px; font-weight: 600; }
+.ka-enhanced-summary { margin: 0 0 10px; color: var(--text-muted); line-height: 1.5; }
 .ka-enhanced-features label { display: inline-flex; align-items: center; gap: 6px; margin: 0 18px 8px 0; cursor: pointer; }
 .ka-enhanced-features small { display: block; color: var(--text-muted); line-height: 1.5; }
 .ka-enhanced-feature-grid {

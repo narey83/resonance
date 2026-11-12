@@ -1767,7 +1767,7 @@ describe('analysis folder loading', () => {
       container.querySelector('[aria-label="Analysis settings"]'),
     ).not.toBeNull();
     expect(container.querySelectorAll('[name="analysis-mode"]')).toHaveLength(
-      2,
+      3,
     );
     expect(container.querySelector('input[value="basic"]').checked).toBe(true);
     expect(container.querySelector('.ka-analysis-actions')).toBeNull();
@@ -1824,14 +1824,32 @@ describe('analysis folder loading', () => {
         onlyPaths: ['one', 'two', 'three'],
       }),
     );
-    const featureMode = container.querySelector(
-      'input[name="enhanced-features-mode"]:not(:checked)',
+    expect(container.querySelector('.ka-enhanced-feature-grid')).toBeNull();
+    await act(async () =>
+      container.querySelector('input[value="enhanced-custom"]').click(),
     );
-    await act(async () => featureMode.click());
+    expect(
+      container.querySelector('input[value="enhanced-custom"]').checked,
+    ).toBe(true);
+    expect(
+      container.querySelectorAll('.ka-enhanced-feature-grid input'),
+    ).toHaveLength(14);
     const genre = Array.from(
       container.querySelectorAll('.ka-enhanced-feature-grid label'),
     ).find((label) => label.textContent.includes('Genre'));
     await act(async () => genre.querySelector('input').click());
+    await act(async () =>
+      container.querySelector('input[value="enhanced"]').click(),
+    );
+    expect(container.querySelector('.ka-enhanced-feature-grid')).toBeNull();
+    await act(async () =>
+      container.querySelector('input[value="enhanced-custom"]').click(),
+    );
+    expect(
+      Array.from(container.querySelectorAll('.ka-enhanced-feature-grid label'))
+        .find((label) => label.textContent.includes('Genre'))
+        .querySelector('input').checked,
+    ).toBe(true);
     const autoCues = Array.from(
       container.querySelectorAll('.ka-enhanced-features label'),
     ).find((label) => label.textContent.includes('Write auto cues'));
@@ -1859,9 +1877,7 @@ describe('analysis folder loading', () => {
       container.querySelector('.ka-folder-check input').click(),
     );
     await act(async () =>
-      container
-        .querySelector('input[name="enhanced-features-mode"]:not(:checked)')
-        .click(),
+      container.querySelector('input[value="enhanced-custom"]').click(),
     );
     await act(async () =>
       container.querySelector('[title="Analyse track"]').click(),
