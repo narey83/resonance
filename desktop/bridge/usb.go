@@ -602,6 +602,33 @@ func (h *helper) usbRoutes(mux *http.ServeMux) {
 		}
 		jsonReply(w, 200, v)
 	})
+	mux.HandleFunc("GET /api/usb/report", func(w http.ResponseWriter, r *http.Request) {
+		id := r.URL.Query().Get("id")
+		if len(id) != 64 {
+			jsonReply(w, 400, map[string]string{"error": "select a mounted USB drive to inspect"})
+			return
+		}
+		if _, err := hex.DecodeString(id); err != nil {
+			jsonReply(w, 400, map[string]string{"error": "invalid USB drive selection"})
+			return
+		}
+		if !h.operation.TryLock() {
+			jsonReply(w, 409, map[string]string{"error": "another Bridge operation is in progress"})
+			return
+		}
+		defer h.operation.Unlock()
+		volume, err := h.findUSBVolume(id)
+		if err != nil {
+			jsonReply(w, 409, map[string]string{"error": err.Error()})
+			return
+		}
+		report, err := inspectUSBDrive(volume)
+		if err != nil {
+			jsonReply(w, 409, map[string]string{"error": err.Error()})
+			return
+		}
+		jsonReply(w, 200, report)
+	})
 	mux.HandleFunc("POST /api/usb/receive", func(w http.ResponseWriter, r *http.Request) {
 		var c connection
 		if e := json.NewDecoder(http.MaxBytesReader(w, r.Body, 65536)).Decode(&c); e != nil {

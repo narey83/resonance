@@ -223,6 +223,9 @@
               <p id="destination" class="field-hint">
                 Mounted FAT32 and exFAT drives appear here.
               </p>
+              <button id="inspect-drive" class="text-button" hidden>
+                View USB library report
+              </button>
               <div class="safety-note">
                 <span class="icon" data-icon="shield"></span>
                 <p>
@@ -254,6 +257,36 @@
               </p>
             </section>
           </div>
+          <section class="card usb-report" id="usb-report" hidden>
+            <div class="card-heading">
+              <div>
+                <h2 id="report-title">USB library report</h2>
+                <p id="report-subtitle"></p>
+              </div>
+              <div class="actions">
+                <button id="report-refresh">Read drive again</button>
+                <button id="report-download">Download JSON report</button>
+              </div>
+            </div>
+            <p id="report-summary" role="status"></p>
+            <div id="report-databases"></div>
+            <div id="report-notes"></div>
+            <h3>Playlists</h3>
+            <div id="report-playlists" class="report-playlists"></div>
+            <h3>Tracks</h3>
+            <div class="report-filters">
+              <label>Search tracks <input id="report-search" type="search" placeholder="Title, artist, album, path or ID" /></label>
+              <label>Playlist <select id="report-playlist"><option value="">All tracks</option></select></label>
+            </div>
+            <p id="report-count"></p>
+            <div class="report-table-scroll" role="region" aria-label="USB database tracks" tabindex="0">
+              <table class="report-table">
+                <thead><tr><th scope="col">ID</th><th scope="col">Track</th><th scope="col">Artist / album</th><th scope="col">BPM / key</th><th scope="col">Duration</th><th scope="col">Files</th></tr></thead>
+                <tbody id="report-tracks"></tbody>
+              </table>
+            </div>
+            <div class="actions"><button id="report-prev">Previous</button><span id="report-page"></span><button id="report-next">Next</button></div>
+          </section>
           <div class="page-note">
             <span class="icon" data-icon="info"></span>
             <p>

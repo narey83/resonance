@@ -486,7 +486,7 @@ func (h *helper) routes(address string) http.Handler {
 				return
 			}
 			switch r.URL.Path {
-			case "/api/start", "/api/interfaces", "/api/usb/drives", "/api/usb/write", "/api/usb/receive", "/api/usb/eject", "/api/usb/format", "/api/usb/recover", "/api/usb/defer", "/api/usb/cancel-job":
+			case "/api/start", "/api/interfaces", "/api/usb/drives", "/api/usb/report", "/api/usb/write", "/api/usb/receive", "/api/usb/eject", "/api/usb/format", "/api/usb/recover", "/api/usb/defer", "/api/usb/cancel-job":
 				jsonReply(w, 409, map[string]string{"error": "Pair Bridge in Settings before using Network Link or USB Export.", "settingsPath": "/settings"})
 				return
 			}

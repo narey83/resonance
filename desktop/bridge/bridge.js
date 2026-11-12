@@ -19,6 +19,8 @@ let status = null,
   desktop = null,
   transfer = null,
   drives = [],
+  driveReport = null,
+  reportPage = 0,
   busy = false,
   refreshing = false,
   pollFailed = false,
@@ -443,6 +445,8 @@ function renderUSB() {
   $("#destination").textContent = drive
     ? drive.path + " · " + drive.filesystem + " · " + (contents[drive.contents] || contents.unreadable)
     : "Mounted FAT32 and exFAT drives appear here.";
+  $("#inspect-drive").hidden = !drive || !["classic-library", "dual-library"].includes(drive.contents);
+  $("#inspect-drive").disabled = busy || !!active;
   $("#confirmation").textContent = drive
     ? "I have checked " +
       drive.label +
@@ -477,6 +481,8 @@ async function refresh() {
 }
 async function refreshDrives() {
   drives = await request("usb/drives");
+  driveReport = null;
+  $("#usb-report").hidden = true;
   const select = $("#drive");
   select.replaceChildren(
     new Option(
@@ -523,6 +529,135 @@ function openDriveOptions() {
   $("#drive-options").hidden = false;
   $("#drive-trigger").setAttribute("aria-expanded", "true");
 }
+function renderDriveReport() {
+  const report = driveReport;
+  $("#usb-report").hidden = !report;
+  if (!report) return;
+  $("#report-title").textContent = report.label + " · USB library report";
+  $("#report-subtitle").textContent =
+    report.filesystem + " · Read from attached USB at " +
+    new Date(report.generatedAt).toLocaleString();
+  const playlists = report.playlists.filter((item) => !item.isFolder);
+  $("#report-summary").textContent =
+    report.tracks.length.toLocaleString() + (report.tracks.length === 1 ? " track" : " tracks") + " · " +
+    playlists.length.toLocaleString() + (playlists.length === 1 ? " playlist" : " playlists") + " · " +
+    report.audioIssues + " audio file issues · " +
+    report.analysisIssues + " analysis file issues";
+  const databases = $("#report-databases");
+  databases.replaceChildren();
+  for (const file of report.databases) {
+    const item = document.createElement("span");
+    item.className = "report-chip";
+    item.textContent = file.name + " · " + (file.bytes / 1048576).toFixed(1) + " MiB";
+    databases.append(item);
+  }
+  const notes = $("#report-notes");
+  notes.replaceChildren();
+  for (const note of report.notes) {
+    const p = document.createElement("p");
+    p.className = "field-hint";
+    p.textContent = note;
+    notes.append(p);
+  }
+  const list = $("#report-playlists");
+  list.replaceChildren();
+  const selector = $("#report-playlist");
+  const current = selector.value;
+  selector.replaceChildren(new Option("All tracks", ""));
+  const names = new Map(report.playlists.map((item) => [item.id, item.name]));
+  for (const item of report.playlists) {
+    const label = (item.parentId && names.has(item.parentId) ? names.get(item.parentId) + " / " : "") + item.name;
+    const row = document.createElement("div");
+    row.textContent = label + (item.isFolder ? " · folder" : " · " + item.trackIds.length + " tracks");
+    list.append(row);
+    if (!item.isFolder) selector.append(new Option(label, String(item.id)));
+  }
+  selector.value = current;
+  if (selector.selectedIndex < 0) selector.value = "";
+  renderReportTracks();
+}
+function renderReportTracks() {
+  if (!driveReport) return;
+  const query = $("#report-search").value.trim().toLocaleLowerCase();
+  const selected = driveReport.playlists.find((item) => String(item.id) === $("#report-playlist").value);
+  const ids = selected ? new Set(selected.trackIds) : null;
+  const tracks = driveReport.tracks.filter((track) =>
+    (!ids || ids.has(track.id)) &&
+    (!query || [track.id, track.title, track.artist, track.album, track.genre, track.key, track.audioPath]
+      .some((value) => String(value).toLocaleLowerCase().includes(query))));
+  const pages = Math.max(1, Math.ceil(tracks.length / 50));
+  reportPage = Math.min(reportPage, pages - 1);
+  $("#report-count").textContent = tracks.length.toLocaleString() +
+    (tracks.length === 1 ? " matching track" : " matching tracks");
+  $("#report-page").textContent = "Page " + (reportPage + 1) + " of " + pages;
+  $("#report-prev").disabled = reportPage === 0;
+  $("#report-next").disabled = reportPage + 1 >= pages;
+  const body = $("#report-tracks");
+  body.replaceChildren();
+  for (const track of tracks.slice(reportPage * 50, (reportPage + 1) * 50)) {
+    const row = document.createElement("tr");
+    const cell = (value) => { const td = document.createElement("td"); td.textContent = String(value); row.append(td); return td; };
+    cell(track.id);
+    const title = cell(track.title || "Untitled");
+    const details = document.createElement("details");
+    const summary = document.createElement("summary");
+    summary.textContent = "Full metadata";
+    const metadata = document.createElement("p");
+    metadata.textContent = [
+      "Genre: " + track.genre, "Label: " + track.label, "Year: " + track.year,
+      "Track/disc: " + track.trackNumber + "/" + track.discNumber,
+      "Rating: " + track.rating, "Plays: " + track.playCount,
+      "Bitrate: " + track.bitrate, "Sample: " + track.sampleDepth + " bit / " + track.sampleRate + " Hz",
+      "Database size: " + track.databaseFileBytes + " bytes", "Comment: " + track.comment,
+      "Audio: " + track.audioPath, "Analysis: " + track.analysisPath,
+    ].join(" · ");
+    details.append(summary, metadata);
+    title.append(details);
+    cell([track.artist, track.album].filter(Boolean).join(" · "));
+    cell(track.bpm + " · " + track.key);
+    cell(Math.floor(track.durationSeconds / 60) + ":" + String(track.durationSeconds % 60).padStart(2, "0"));
+    const files = cell("Audio: " + track.audioStatus + " · Analysis: " + track.analysisStatus);
+    if (track.audioStatus !== "present" || track.analysisStatus !== "present") files.className = "report-issue";
+    body.append(row);
+  }
+}
+$("#inspect-drive").onclick = async () => {
+  const id = $("#drive").value;
+  if (!id) return;
+  $("#inspect-drive").disabled = true;
+  $("#inspect-drive").textContent = "Reading USB library…";
+  error("");
+  try {
+    const report = await request("usb/report?id=" + encodeURIComponent(id));
+    if ($("#drive").value !== id) return;
+    driveReport = report;
+    reportPage = 0;
+    $("#report-search").value = "";
+    $("#report-playlist").value = "";
+    renderDriveReport();
+    $("#usb-report").scrollIntoView?.({ block: "start" });
+  } catch (failure) { error(failure); }
+  finally {
+    $("#inspect-drive").textContent = "View USB library report";
+    renderUSB();
+  }
+};
+$("#report-refresh").onclick = () => $("#inspect-drive").click();
+$("#report-search").oninput = () => { reportPage = 0; renderReportTracks(); };
+$("#report-playlist").onchange = () => { reportPage = 0; renderReportTracks(); };
+$("#report-prev").onclick = () => { reportPage--; renderReportTracks(); };
+$("#report-next").onclick = () => { reportPage++; renderReportTracks(); };
+$("#report-download").onclick = () => {
+  if (!driveReport) return;
+  const url = URL.createObjectURL(new Blob([JSON.stringify(driveReport, null, 2)], { type: "application/json" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "usb-library-" + driveReport.label.toLowerCase().replace(/[^a-z0-9_-]+/g, "-") + ".json";
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+};
 $("#drive-trigger").onclick = () => {
   if ($("#drive-options").hidden) openDriveOptions();
   else closeDriveOptions();
@@ -589,6 +724,8 @@ $("#stop").onclick = () => action(() => request("stop", {}));
 $("#drive").onchange = () => {
   updateDrivePicker();
   $("#confirm").checked = false;
+  driveReport = null;
+  $("#usb-report").hidden = true;
   renderUSB();
 };
 $("#confirm").onchange = renderUSB;

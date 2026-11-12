@@ -109,6 +109,20 @@ function launch(t, page, options = {}) {
               contents: options.driveContents || "empty",
             },
           ];
+    else if (url.startsWith("/api/usb/report?id="))
+      data = options.report || {
+        schemaVersion: 1, generatedAt: "2026-11-12T12:00:00Z",
+        driveId: "test-drive", label: "Test USB", filesystem: "exfat",
+        databases: [{ name: "export.pdb", bytes: 4096 }],
+        notes: ["Read from attached USB"], audioIssues: 0, analysisIssues: 1,
+        playlists: [{ id: 1, parentId: 0, name: "Test set", isFolder: false, trackIds: [7] }],
+        tracks: [{ id: 7, title: "Stored title", artist: "Artist", album: "Album",
+          genre: "House", key: "Am", label: "", comment: "", year: 2026,
+          trackNumber: 1, discNumber: 1, bpm: 126.5, durationSeconds: 180,
+          bitrate: 1411, sampleRate: 44100, sampleDepth: 16, rating: 0,
+          playCount: 0, databaseFileBytes: 1024, audioPath: "/Contents/track.wav",
+          analysisPath: "/PIONEER/ANLZ0000.DAT", audioStatus: "present", analysisStatus: "missing" }],
+      };
     else if (url === "/api/start") data = state;
     else if (url === "/api/usb/write") data = { writing: true };
     else throw Error("Unexpected endpoint " + url);
@@ -293,6 +307,27 @@ test("USB Export allows a dual-library set to be added on Mac", async (t) => {
   d.querySelector("#confirm").dispatchEvent(new w.Event("change"));
   assert.equal(d.querySelector("#write").disabled, false);
   assert.match(d.querySelector("#confirmation").textContent, /add this set/);
+});
+
+test("USB report reads the selected drive, filters tracks and clears on selection change", async (t) => {
+  const { w, document: d, calls } = launch(t, "/usb", { driveContents: "dual-library" });
+  await until(() => d.querySelector("#drive").options.length === 2);
+  const drive = d.querySelector("#drive");
+  drive.value = "test-drive";
+  drive.dispatchEvent(new w.Event("change"));
+  assert.equal(d.querySelector("#inspect-drive").hidden, false);
+  assert.equal(d.querySelector("#usb-report").hidden, true);
+  d.querySelector("#inspect-drive").click();
+  await until(() => !d.querySelector("#usb-report").hidden);
+  assert.ok(calls.some((call) => call.url === "/api/usb/report?id=test-drive"));
+  assert.match(d.querySelector("#report-summary").textContent, /1 track · 1 playlist/);
+  assert.match(d.querySelector("#report-tracks").textContent, /Stored title/);
+  d.querySelector("#report-search").value = "missing title";
+  d.querySelector("#report-search").dispatchEvent(new w.Event("input"));
+  assert.match(d.querySelector("#report-count").textContent, /0 matching/);
+  drive.value = "";
+  drive.dispatchEvent(new w.Event("change"));
+  assert.equal(d.querySelector("#usb-report").hidden, true);
 });
 
 test("USB formatting names the entire disk and requires a typed drive label", async (t) => {
