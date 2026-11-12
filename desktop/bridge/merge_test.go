@@ -38,7 +38,7 @@ func copyTestTree(t *testing.T, source, target string) {
 }
 
 func TestUSBPreflightChecksExistingAudioBeforeStaging(t *testing.T) {
-	for _, scenario := range []string{"present", "missing", "duplicate-playlist"} {
+	for _, scenario := range []string{"present", "present-with-extended", "extended-changed", "missing", "duplicate-playlist"} {
 		t.Run(scenario, func(t *testing.T) {
 			target := t.TempDir()
 			if err := os.MkdirAll(filepath.Join(target, "PIONEER", "rekordbox"), 0700); err != nil {
@@ -49,6 +49,11 @@ func TestUSBPreflightChecksExistingAudioBeforeStaging(t *testing.T) {
 			}
 			for _, name := range []string{"export.pdb", "exportLibrary.db"} {
 				if err := os.WriteFile(filepath.Join(target, "PIONEER", "rekordbox", name), []byte(strings.Repeat("x", 2048)), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if scenario == "present-with-extended" || scenario == "extended-changed" {
+				if err := os.WriteFile(filepath.Join(target, "PIONEER", "rekordbox", "exportExt.pdb"), []byte(strings.Repeat("x", 2048)), 0600); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -70,6 +75,12 @@ func TestUSBPreflightChecksExistingAudioBeforeStaging(t *testing.T) {
 					}
 					file.Close()
 				}
+				if scenario == "extended-changed" {
+					if err := os.WriteFile(filepath.Join(target, "PIONEER", "rekordbox", "exportExt.pdb"), []byte(strings.Repeat("y", 2048)), 0600); err != nil {
+						t.Error(err)
+						return
+					}
+				}
 				if scenario == "duplicate-playlist" {
 					w.WriteHeader(409)
 					w.Write([]byte("playlist already exists"))
@@ -81,8 +92,12 @@ func TestUSBPreflightChecksExistingAudioBeforeStaging(t *testing.T) {
 			defer server.Close()
 			connection := connection{ServerURL: server.URL, Token: strings.Repeat("b", 64)}
 			digests, err := preflightExistingUSB(context.Background(), server.Client(), connection, target, nil)
-			if scenario == "present" {
-				if err != nil || len(digests) != 2 {
+			if scenario == "present" || scenario == "present-with-extended" {
+				want := 2
+				if scenario == "present-with-extended" {
+					want = 3
+				}
+				if err != nil || len(digests) != want {
 					t.Fatal("valid USB was rejected", err)
 				}
 			} else if err == nil {

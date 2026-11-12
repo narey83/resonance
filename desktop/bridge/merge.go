@@ -234,12 +234,11 @@ func preflightExistingUSB(ctx context.Context, client *http.Client, c connection
 	if err != nil {
 		return nil, err
 	}
-	digests := make(map[string]string, 2)
-	for _, name := range []string{"export.pdb", "exportLibrary.db"} {
-		digests[name], err = fileDigest(filepath.Join(target, "PIONEER", "rekordbox", name))
-		if err != nil {
-			return nil, err
-		}
+	// Match the complete on-drive database set checked later, including the
+	// optional extended PDB. It is hashed for change detection, not relayed.
+	digests, err := playerDatabaseDigests(target)
+	if err != nil {
+		return nil, err
 	}
 	reader, writer := io.Pipe()
 	defer reader.Close()
