@@ -358,6 +358,16 @@ func (h *helper) routes(address string) http.Handler {
 		w.Write(bridgeScript)
 	})
 	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, r *http.Request) { jsonReply(w, 200, h.snapshot()) })
+	mux.HandleFunc("GET /api/browser-presence", func(w http.ResponseWriter, r *http.Request) {
+		h.mu.Lock()
+		paired := h.pairedLocked()
+		instance := ""
+		if paired {
+			instance = instanceIdentity(h.Sync.Connection)
+		}
+		h.mu.Unlock()
+		jsonReply(w, 200, map[string]any{"application": "resonance-bridge", "version": helperVersion, "paired": paired, "instance": instance})
+	})
 	mux.HandleFunc("GET /api/interfaces", func(w http.ResponseWriter, r *http.Request) { jsonReply(w, 200, adapters(h.AllowLoopback)) })
 	mux.HandleFunc("POST /api/start", func(w http.ResponseWriter, r *http.Request) {
 		h.operation.Lock()
@@ -446,8 +456,16 @@ func (h *helper) routes(address string) http.Handler {
 			return
 		}
 		if origin := r.Header.Get("Origin"); origin != "" && origin != "http://"+address {
-			http.Error(w, "untrusted origin", 403)
-			return
+			parsed, err := url.Parse(origin)
+			h.mu.Lock()
+			trusted := r.Method == "GET" && r.URL.Path == "/api/browser-presence" && err == nil && parsed.Path == "" && parsed.RawQuery == "" && parsed.Fragment == "" && h.pairedLocked() && normalizedOrigin(origin) == normalizedOrigin(h.Sync.Connection.ServerURL)
+			h.mu.Unlock()
+			if !trusted {
+				http.Error(w, "untrusted origin", 403)
+				return
+			}
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Add("Vary", "Origin")
 		}
 		if r.Method != "GET" && r.Header.Get("X-Resonance-Link") != "1" {
 			http.Error(w, "helper action header required", 403)

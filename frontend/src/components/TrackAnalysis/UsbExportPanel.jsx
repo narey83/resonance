@@ -2,6 +2,7 @@ import './UsbExportPanel.css';
 import { urlBase } from '../../config';
 import * as analysisApi from '../../lib/analysis';
 import api from '../../lib/api';
+import { requireLocalBridge } from '../../lib/bridgePresence';
 import ExportTrackPicker from './ExportTrackPicker';
 import UsbExportInspector from './UsbExportInspector';
 import React, { useEffect, useMemo, useState } from 'react';
@@ -355,6 +356,7 @@ const UsbExportPanel = ({
     setBusy(true);
     setError('');
     try {
+      await requireLocalBridge();
       const { data } = await api.post(
         `/analysis/usb-export/${job.jobId}/transfer`,
         null,

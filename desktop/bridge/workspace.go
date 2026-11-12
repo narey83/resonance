@@ -25,6 +25,17 @@ func instanceIdentity(c connection) string {
 	if at < 0 {
 		return ""
 	}
+	origin := normalizedOrigin(c.ServerURL)
+	if origin == "" {
+		return ""
+	}
+	return origin + parsed.Path[:at]
+}
+func normalizedOrigin(raw string) string {
+	parsed, e := url.Parse(raw)
+	if e != nil || parsed.User != nil || parsed.Hostname() == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return ""
+	}
 	port := parsed.Port()
 	if port == "" {
 		if parsed.Scheme == "https" {
@@ -35,7 +46,7 @@ func instanceIdentity(c connection) string {
 			return ""
 		}
 	}
-	return parsed.Scheme + "://" + net.JoinHostPort(strings.ToLower(parsed.Hostname()), port) + parsed.Path[:at]
+	return parsed.Scheme + "://" + net.JoinHostPort(strings.ToLower(parsed.Hostname()), port)
 }
 func sameInstance(pairing, export connection) bool {
 	base := instanceIdentity(pairing)

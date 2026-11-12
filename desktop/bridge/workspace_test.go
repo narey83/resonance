@@ -76,6 +76,42 @@ func TestPairedWorkspaceHasThreePagesAndOneSettingsPairingFlow(t *testing.T) {
 		t.Fatal("revoked pairing still unlocks workspace")
 	}
 }
+func TestBrowserPresenceOnlyAnswersThePairedOrigin(t *testing.T) {
+	h := workspaceHelper(t)
+	request := func(method, path, origin string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, "http://127.0.0.1:55460"+path, nil)
+		r.Header.Set("Origin", origin)
+		w := httptest.NewRecorder()
+		h.routes("127.0.0.1:55460").ServeHTTP(w, r)
+		return w
+	}
+	allowed := request("GET", "/api/browser-presence", "https://resonance.test")
+	if allowed.Code != 200 || allowed.Header().Get("Access-Control-Allow-Origin") != "https://resonance.test" {
+		t.Fatal("paired browser origin could not read Bridge presence", allowed.Code)
+	}
+	var presence struct {
+		Application string `json:"application"`
+		Paired      bool   `json:"paired"`
+		Instance    string `json:"instance"`
+	}
+	if err := json.Unmarshal(allowed.Body.Bytes(), &presence); err != nil || presence.Application != "resonance-bridge" || !presence.Paired || presence.Instance != "https://resonance.test:443/music" {
+		t.Fatal("incorrect browser presence", err, presence)
+	}
+	for _, test := range []struct{ method, path, origin string }{
+		{"GET", "/api/browser-presence", "https://other.test"},
+		{"GET", "/api/status", "https://resonance.test"},
+		{"POST", "/api/browser-presence", "https://resonance.test"},
+	} {
+		blocked := request(test.method, test.path, test.origin)
+		if blocked.Code != 403 || blocked.Header().Get("Access-Control-Allow-Origin") != "" {
+			t.Fatal("untrusted browser action was exposed", test, blocked.Code)
+		}
+	}
+	h.Sync.Connection.Expires = time.Now().Add(-time.Minute)
+	if blocked := request("GET", "/api/browser-presence", "https://resonance.test"); blocked.Code != 403 {
+		t.Fatal("expired pairing exposed presence", blocked.Code)
+	}
+}
 func TestUSBExportsStayScopedToThePairedInstance(t *testing.T) {
 	h := workspaceHelper(t)
 	usb := connection{SchemaVersion: 1, ServerURL: "https://other.test/music/api/v0/analysis/usb-export/transfer/" + strings.Repeat("a", 32), Token: strings.Repeat("b", 64), Expires: time.Now().Add(time.Hour)}

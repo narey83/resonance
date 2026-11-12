@@ -70,6 +70,7 @@ describe('Saved export database inspection', () => {
     });
     container.remove();
     jest.clearAllMocks();
+    jest.restoreAllMocks();
   });
   const open = async () => {
     await act(async () => {
@@ -126,6 +127,30 @@ describe('Saved export database inspection', () => {
       'saved for later',
     );
     expect(container.textContent).toContain('Open in Resonance Bridge');
+  });
+  it('keeps a saved export on Resonance when Bridge is unavailable here', async () => {
+    expect.hasAssertions();
+    jest
+      .spyOn(global, 'fetch')
+      .mockImplementation()
+      .mockRejectedValue(new TypeError('connection refused'));
+    await act(async () => {
+      ReactDOM.render(<UsbExportInspector />, container);
+    });
+    await open();
+    await act(async () =>
+      Simulate.change(container.querySelector('select'), {
+        target: { value: job.jobId },
+      }),
+    );
+    const openButton = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Open in Resonance Bridge',
+    );
+    await act(async () => Simulate.click(openButton));
+    expect(api.post).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="alert"]').textContent).toContain(
+      'Bridge could not be reached on this computer',
+    );
   });
   it('clears an old report when selecting another export that fails to load', async () => {
     expect.hasAssertions();

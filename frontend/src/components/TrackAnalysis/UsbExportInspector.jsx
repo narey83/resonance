@@ -1,4 +1,5 @@
 import api from '../../lib/api';
+import { requireLocalBridge } from '../../lib/bridgePresence';
 import React, { useEffect, useMemo, useState } from 'react';
 
 const size = (bytes) => `${(bytes / 1_024 / 1_024).toFixed(1)} MiB`;
@@ -74,6 +75,7 @@ const UsbExportInspector = ({ latestJob }) => {
     setLoading(true);
     setError('');
     try {
+      await requireLocalBridge();
       const { data } = await api.post(
         `/analysis/usb-export/${selected}/transfer`,
         null,

@@ -52,6 +52,7 @@ describe('USB export selection and failures', () => {
     });
     container.remove();
     jest.clearAllMocks();
+    jest.restoreAllMocks();
   });
   it('uses the selected source folder as the exported playlist name', async () => {
     expect.hasAssertions();
@@ -356,6 +357,34 @@ describe('USB export selection and failures', () => {
       false,
     );
     expect(container.querySelectorAll('.usb-export-notes')).toHaveLength(1);
+  });
+  it('does not create a handoff when Bridge is absent from this browser computer', async () => {
+    expect.hasAssertions();
+    jest
+      .spyOn(global, 'fetch')
+      .mockImplementation()
+      .mockRejectedValue(new TypeError('connection refused'));
+    await act(async () => {
+      ReactDOM.render(
+        <UsbExportPanel
+          initialPaths={['/library/one.mp3']}
+          wizard
+        />,
+        container,
+      );
+    });
+    act(() => Simulate.click(button('Continue')));
+    act(() => Simulate.click(button('Continue')));
+    await act(async () => Simulate.click(button('Prepare USB export')));
+    await act(async () => Simulate.click(button('Open in Resonance Bridge')));
+    expect(api.post).not.toHaveBeenCalledWith(
+      '/analysis/usb-export/job/transfer',
+      null,
+      { responseType: 'json' },
+    );
+    expect(container.querySelector('[role="alert"]').textContent).toContain(
+      'Bridge could not be reached on this computer',
+    );
   });
   it('defers a completed job while keeping its Bridge reopen action', async () => {
     expect.hasAssertions();

@@ -149,6 +149,12 @@ registers the MIME type and desktop handler. Plain .json remains accepted inside
 the helper dashboard for older connection files, but double-clicking a .json
 file may open the system editor (including Xcode). Use the new download instead.
 
+The browser checks `/api/browser-presence` on its own loopback address before
+creating a direct USB handoff. This read-only endpoint permits CORS only for the
+paired Resonance origin; all other Bridge actions retain the local-only origin
+rule. If Bridge is absent, unpaired or blocked by browser loopback permission,
+the export stays saved in Resonance for later transfer.
+
 See the [DJ workspace and worker setup](../../docs/dj-workspace.md) for server-side
 export configuration, and the [feature inventory](../../FEATURES.md) for product scope.
 
