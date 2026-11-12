@@ -11,7 +11,7 @@ Computer Use cannot operate this app's own settings. Complete the manual step in
 Settings > Connections > SSH by enabling `dev-laptop.local` and choosing a remote
 project folder. See [DEPLOYMENT.md](DEPLOYMENT.md#codex-remote-access--4-november-2026)
 for evidence and agent workflow constraints. This does not change the Mac source
-of truth, deployment authorization requirements or old-server restriction.
+of truth or old-server restriction.
 
 ## Web development mode — user instruction, 2 November 2026
 
@@ -63,7 +63,7 @@ Actual audible playback remains unverified.
 
 ## Local verification and human testing
 
-A Git push publishes source; it does not deploy a running service. Do not access a server or change its runtime as part of a Git synchronization request. For implementation changes, build affected targets on the dev laptop and make that result available for testing, or report a concrete blocker.
+A Git push publishes source; it does not deploy a running service. Do not change a runtime for a Git synchronization-only request. Routine fixes requested for the existing development app may be deployed to the dev laptop and development Bridge as part of completing the task, under the standing authorization in `AGENTS.md`. Build affected targets on the dev laptop and verify the running result, or report a concrete blocker.
 
 | Changed area | Required local verification |
 | --- | --- |
@@ -80,7 +80,7 @@ If a required tool, browser authentication, platform or local runtime is unavail
 
 ## Deployment
 
-Deployment is separate from Git synchronization and needs an explicit deployment request. The established default live destination and mobile delivery workflow are recorded in [DEPLOYMENT.md](DEPLOYMENT.md); read it first and do not ask the user to repeat those known destinations. Use that native runtime workflow, preserve private state, and verify the served artifact and changed behavior. Do not use the server checkout as a development workspace or run the historical Compose updater by default.
+Deployment is separate from Git synchronization. Routine updates to the existing development app and development Bridge are authorized when implementing a requested fix; production and other destinations still need an explicit request. The established default live destination and mobile delivery workflow are recorded in [DEPLOYMENT.md](DEPLOYMENT.md); read it first and do not ask the user to repeat those known destinations. Use that native runtime workflow, preserve private state and active jobs, and verify the served artifact and changed behavior. Do not use the server checkout as a development workspace or run the historical Compose updater by default.
 
 ## Mobile human-test flow
 
@@ -109,6 +109,6 @@ Run the documented mobile lint/tests before handoff. Native configuration change
 1. Read `git status --short` and preserve unrelated work.
 2. Identify affected targets: web, backend, Android, iOS, or a combination.
 3. Edit on the Mac and run focused checks on an isolated dev-laptop snapshot.
-4. Build and serve affected targets on the dev laptop; deploy/install only the requested targets. Mac-side SSH/ADB forwarding is transport only.
+4. Build and serve affected targets on the dev laptop; deploy routine development fixes to the affected dev targets. Mac-side SSH/ADB forwarding is transport only.
 5. Verify the local artifact, application health, and changed behavior.
 6. Report exactly what is ready, what was verified, and any platform still blocked.
