@@ -419,6 +419,40 @@ public class WorkspaceTests : IDisposable
         Assert.Throws<ArgumentException>(() => service.SetMode("other"));
         Assert.Equal("basic", service.Mode);
     }
+    [Fact] public async Task CustomBackgroundModePersistsAndRunsSelectedFeaturesWithoutScanningOtherTracks()
+    {
+        Add("nested/a.mp3");
+        Add("nested/other.mp3");
+        var worker = new CandidateAnalysisOptions("python", "worker.py", "config.json", "results");
+        var service = new PreparationService(store, repository, null!, analysis, worker) { BatchSize = 1 };
+        service.SetMode("custom", ["beats", "genre"], true, "alice");
+        var reopened = new WorkspaceStore(new(new Dictionary<Database, ConnectionString> { [Database.Music] = connection }, postgres));
+        Assert.Equal("custom", reopened.PreparationMode);
+        Assert.Equal(["beats", "genre", "cues"], reopened.PreparationSettings.Features);
+        Assert.Equal("alice", reopened.PreparationSettings.CueUsername);
+        Assert.Throws<ArgumentException>(() => service.SetMode("custom", []));
+        Assert.Throws<ArgumentException>(() => service.SetMode("custom", ["beats"], true));
+        service.Reconcile();
+        analysis.OnStart = () =>
+        {
+            var path = MusicPath.ToRelative(analysis.LastRequest!.OnlyPaths![0]);
+            using var db = Db();
+            db.Execute($"INSERT INTO {CacheTable} (masked_filename,file_size,overall_peaks,lufs,analysed_at,dj_summary) VALUES (@path,100,@peaks,-8,@now,@summary) ON CONFLICT(masked_filename) DO UPDATE SET overall_peaks=excluded.overall_peaks,lufs=excluded.lufs,dj_summary=excluded.dj_summary",
+                new { path, peaks = new byte[] { 1, 2, 3 }, now = Now, summary = "{\"availableFeatures\":[\"beats\",\"genre\",\"cues\"]}" });
+        };
+        await service.ProcessNext(default);
+        Assert.Single(analysis.LastRequest!.OnlyPaths!);
+        Assert.True(analysis.LastRequest.Enhanced);
+        Assert.Equal(["beats", "genre", "cues"], analysis.LastRequest.EnhancedFeatures);
+        Assert.True(analysis.LastRequest.WriteAutoCues);
+        Assert.Equal("alice", analysis.LastRequest.CueUsername);
+        var scanned = MusicPath.ToRelative(analysis.LastRequest.OnlyPaths[0]);
+        Assert.Equal("selected", store.Find(scanned).State);
+        Assert.Equal("queued", store.Find(scanned == "nested/a.mp3" ? "nested/other.mp3" : "nested/a.mp3").State);
+        service.SetMode("custom", ["stems"]);
+        service.Reconcile();
+        Assert.Equal("queued", store.Find(scanned).State);
+    }
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

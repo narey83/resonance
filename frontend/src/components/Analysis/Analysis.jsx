@@ -125,6 +125,23 @@ const ENHANCED_FEATURES = [
   ['loops', 'Loop analysis'],
   ['similarity', 'Similarity'],
 ];
+const DEFAULT_CUSTOM_FEATURES = ['beats', 'key', 'waveform'];
+const ENHANCED_MEASUREMENTS = [
+  ['beats', 'Beats and BPM'],
+  ['key', 'Musical key'],
+  ['waveform', 'Waveforms'],
+  ['energy', 'Energy'],
+  ['loudness', 'Loudness'],
+  ['embedding', 'Similarity'],
+  ['structure', 'Sections'],
+  ['stems', 'Stems'],
+  ['vocalActivity', 'Vocal activity'],
+  ['genre', 'Genre'],
+  ['cues', 'Cue suggestions'],
+  ['semanticPhrases', 'Song phrases'],
+  ['loops', 'Loop suggestions'],
+  ['vocalPresence', 'Vocal presence'],
+];
 
 const formatCount = (value) =>
   typeof value === 'number' ? value.toLocaleString('en-GB') : value;
@@ -231,22 +248,7 @@ const ScanSettings = ({
               </p>
             ) : (
               <div className="ka-enhanced-feature-grid">
-                {[
-                  ['beats', 'Beats and BPM'],
-                  ['key', 'Musical key'],
-                  ['waveform', 'Waveforms'],
-                  ['energy', 'Energy'],
-                  ['loudness', 'Loudness'],
-                  ['embedding', 'Similarity'],
-                  ['structure', 'Sections'],
-                  ['stems', 'Stems'],
-                  ['vocalActivity', 'Vocal activity'],
-                  ['genre', 'Genre'],
-                  ['cues', 'Cue suggestions'],
-                  ['semanticPhrases', 'Song phrases'],
-                  ['loops', 'Loop suggestions'],
-                  ['vocalPresence', 'Vocal presence'],
-                ].map(([feature, label]) => (
+                {ENHANCED_MEASUREMENTS.map(([feature, label]) => (
                   <label key={feature}>
                     <input
                       checked={enhancedFeatures.includes(feature)}
@@ -818,7 +820,8 @@ const Analysis = ({
   );
   const customFeatures = useRef(
     viewState?.current?.customFeatures ??
-      viewState?.current?.enhancedFeatures ?? ['beats', 'key', 'waveform'],
+      viewState?.current?.enhancedFeatures ??
+      DEFAULT_CUSTOM_FEATURES,
   );
   const [writeAutoCues, setWriteAutoCues] = useState(
     viewState?.current?.writeAutoCues ?? false,
@@ -1335,11 +1338,15 @@ const Analysis = ({
     }
   };
 
-  const handlePreparationMode = async (mode) => {
+  const handlePreparationMode = async (
+    mode,
+    features = preparation?.features ?? DEFAULT_CUSTOM_FEATURES,
+    backgroundAutoCues = preparation?.writeAutoCues ?? false,
+  ) => {
     if (!preparation || preparationBusy || stopRequested) return;
     setPreparationBusy('mode');
     try {
-      await setPreparationMode(mode);
+      await setPreparationMode(mode, features, backgroundAutoCues);
       const next = await getPreparationStatus();
       if (mountedRef.current) setPreparation(next);
     } catch (caughtError) {
@@ -1966,7 +1973,7 @@ const Analysis = ({
                 onClick={() => onNavigate('analysis')}
                 type="button"
               >
-                Choose tracks{' '}
+                Choose tracks &amp; measurements{' '}
                 <ChevronRight
                   aria-hidden="true"
                   size={16}
@@ -2228,8 +2235,9 @@ const Analysis = ({
               <small>Prepare new music automatically in the background.</small>
             </summary>
             <p className="ka-background-help">
-              Automatically analyses tracks in the background. This setting does
-              not pause or resume a scan you start manually.
+              Automatically analyses tracks in the background. For one track or
+              a selected group, choose the Enhanced measurements on Analyse
+              tracks. This setting does not pause or resume a manual scan.
             </p>
             <fieldset
               className="ka-preparation-modes"
@@ -2265,11 +2273,90 @@ const Analysis = ({
                   structure and genre. Often several minutes per track.
                 </span>
               </label>
+              <label>
+                <input
+                  checked={automaticMode === 'custom'}
+                  disabled={preparation?.enhancedEnabled === false}
+                  name="automatic-analysis-mode"
+                  onChange={() => handlePreparationMode('custom')}
+                  type="radio"
+                  value="custom"
+                />
+                <span>
+                  <strong>Custom enhanced</strong> — Choose measurements for
+                  background queue jobs.
+                </span>
+              </label>
+              {automaticMode === 'custom' && (
+                <div className="ka-enhanced-feature-grid ka-background-features">
+                  {ENHANCED_MEASUREMENTS.map(([feature, label]) => (
+                    <label key={feature}>
+                      <input
+                        checked={
+                          preparation?.features?.includes(feature) ?? false
+                        }
+                        disabled={
+                          preparation?.features?.length === 1 &&
+                          preparation.features.includes(feature)
+                        }
+                        onChange={() =>
+                          handlePreparationMode(
+                            'custom',
+                            preparation.features.includes(feature)
+                              ? preparation.features.filter(
+                                  (item) => item !== feature,
+                                )
+                              : [...preparation.features, feature],
+                          )
+                        }
+                        type="checkbox"
+                      />
+                      {label}
+                    </label>
+                  ))}
+                  <small>
+                    Dependencies run automatically. Partial results may need
+                    more measurements before USB export.
+                  </small>
+                </div>
+              )}
+              {automaticMode === 'custom' && (
+                <label>
+                  <input
+                    checked={preparation?.writeAutoCues ?? false}
+                    onChange={(event) =>
+                      handlePreparationMode(
+                        'custom',
+                        preparation.features,
+                        event.target.checked,
+                      )
+                    }
+                    type="checkbox"
+                  />
+                  <span>
+                    Write auto cues to my listening bookmarks and USB hot cues
+                  </span>
+                </label>
+              )}
               <small>
                 Times vary with track length, file format, hardware and
-                available models. Tracks waiting in the queue take longer.
+                available models. Turning on background analysis processes
+                waiting tracks using this mode.
               </small>
             </fieldset>
+            {onNavigate && (
+              <button
+                className="ka-btn ka-btn--sm hover-fx"
+                onClick={() => {
+                  setEnhanced(true);
+                  setEnhancedFeatures(customFeatures.current);
+                  onNavigate('analysis');
+                }}
+                type="button"
+              >
+                Choose measurements for selected tracks
+              </button>
+            )}
             <div className="ka-analysis-context">
               <div className="ka-preparation-actions">
                 <button

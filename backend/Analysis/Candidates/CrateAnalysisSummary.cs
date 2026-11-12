@@ -101,7 +101,11 @@ internal static class CrateAnalysisSummary
             similarity = Result("embedding").HasValue,
         };
 
-        if (genre == null && energy == null && vocals == null && arrangement == null && bpm == null && key == null
+        var availableFeatures = availability.EnumerateObject()
+            .Where(feature => feature.Value.ValueKind == JsonValueKind.String && feature.Value.GetString() == "available")
+            .Select(feature => feature.Name).ToArray();
+
+        if (availableFeatures.Length == 0 && genre == null && energy == null && vocals == null && arrangement == null && bpm == null && key == null
             && !coverage.beats && !coverage.downbeats && !coverage.stems && !coverage.sections && !coverage.cues && !coverage.loops && !coverage.similarity)
         {
             return null;
@@ -109,7 +113,7 @@ internal static class CrateAnalysisSummary
 
         return JsonSerializer.Serialize(new
         {
-            coverageVersion = 1, coverage,
+            coverageVersion = 1, coverage, availableFeatures,
             complete = CandidateAnalysisService.HasEnhanced(analysis), exportReady = ExportAnalysisContract.Ready(analysis), experimental = true, analysisId,
             bpm, key, genre, energy, energySemantics = "Mean PCM RMS; loudness-based energy proxy", vocals,
             automaticArrangement = automatic, neutralPhraseCount = neutralPhrases,

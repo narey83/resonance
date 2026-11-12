@@ -128,13 +128,16 @@ public class WorkspaceController(WorkspaceStore store, MusicRepository repositor
     {
         var counts = store.Counts();
         var metadata = enrichment.State;
+        var settings = preparation.Settings;
         return Ok(new
         {
             counts,
             total = counts.Values.Sum(),
             paused = store.Paused,
             automatic = true,
-            mode = preparation.Mode,
+            mode = settings.Mode,
+            features = settings.Features,
+            writeAutoCues = settings.WriteAutoCues,
             enhancedEnabled = enhanced.Enabled,
             waitingReason = preparation.WaitingReason,
             analysisError = preparation.DependencyError,
@@ -169,11 +172,13 @@ public class WorkspaceController(WorkspaceStore store, MusicRepository repositor
     }
 
     [HttpPost("preparation/mode")]
+    [Authorize(Policy = AuthPolicy.Any, Roles = AuthRole.ReadWriteOrAdministrator)]
     public IActionResult SetPreparationMode([FromBody] PreparationModeRequest request)
     {
         try
         {
-            preparation.SetMode(request?.Mode);
+            preparation.SetMode(request?.Mode, request?.Features, request?.WriteAutoCues ?? false,
+                request?.WriteAutoCues == true ? Username : null);
             return NoContent();
         }
         catch (ArgumentException exception)
@@ -216,5 +221,5 @@ public class WorkspaceController(WorkspaceStore store, MusicRepository repositor
     public record RetryRequest(string Path);
 
     public record PauseRequest(bool Paused);
-    public record PreparationModeRequest(string Mode);
+    public record PreparationModeRequest(string Mode, string[] Features = null, bool WriteAutoCues = false);
 }

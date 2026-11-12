@@ -95,23 +95,36 @@ public partial class WorkspaceStore
 
     // Null keeps the existing worker-dependent default for installations that
     // have not chosen an automatic analysis mode yet.
-    public string PreparationMode
+    public PreparationSettings PreparationSettings
     {
         get
         {
             using var db = Open();
-            return db.ExecuteScalar<string>($"SELECT value FROM {Settings} WHERE key='preparation-mode'");
+            var value = db.ExecuteScalar<string>($"SELECT value FROM {Settings} WHERE key='preparation-settings'");
+            if (value != null)
+            {
+                return JsonSerializer.Deserialize<PreparationSettings>(value, Json);
+            }
+
+            var legacyMode = db.ExecuteScalar<string>($"SELECT value FROM {Settings} WHERE key='preparation-mode'");
+            return legacyMode == null ? null : new PreparationSettings(legacyMode);
         }
         set
         {
-            if (value is not ("basic" or "enhanced"))
+            if (value?.Mode is not ("basic" or "enhanced" or "custom"))
             {
-                throw new ArgumentException("Choose Basic or Enhanced analysis.", nameof(value));
+                throw new ArgumentException("Choose Basic, Full enhanced or Custom enhanced analysis.", nameof(value));
             }
 
             using var db = Open();
-            db.Execute($"INSERT INTO {Settings} (key,value) VALUES ('preparation-mode',@value) ON CONFLICT(key) DO UPDATE SET value=excluded.value", new { value });
+            db.Execute($"INSERT INTO {Settings} (key,value) VALUES ('preparation-settings',@value) ON CONFLICT(key) DO UPDATE SET value=excluded.value", new { value = JsonSerializer.Serialize(value, Json) });
         }
+    }
+
+    public string PreparationMode
+    {
+        get => PreparationSettings?.Mode;
+        set => PreparationSettings = new PreparationSettings(value);
     }
 
     private string Crates => postgres ? "music.smart_crates" : "smart_crates";
@@ -227,7 +240,7 @@ public partial class WorkspaceStore
     public (int Total, IReadOnlyList<PreparationItem> Items) Page(string state, string search, int limit, int offset)
     {
         using var db = Open();
-        var clause = $"FROM {Preparation} p JOIN {Tracks} t ON t.path=p.path WHERE (@state='' OR p.state=@state OR (@state='analysed' AND p.state IN ('complete','basic')) OR (@state='waiting' AND p.state IN ('queued','retrying'))) AND (@search='' OR LOWER(COALESCE(t.title,t.filename)) LIKE @pattern OR LOWER(COALESCE(t.artist,'')) LIKE @pattern)";
+        var clause = $"FROM {Preparation} p JOIN {Tracks} t ON t.path=p.path WHERE (@state='' OR p.state=@state OR (@state='analysed' AND p.state IN ('complete','basic','selected')) OR (@state='waiting' AND p.state IN ('queued','retrying'))) AND (@search='' OR LOWER(COALESCE(t.title,t.filename)) LIKE @pattern OR LOWER(COALESCE(t.artist,'')) LIKE @pattern)";
         var args = new { state = state ?? string.Empty, search = search?.Trim() ?? string.Empty, pattern = "%" + search?.Trim().ToLowerInvariant() + "%", limit, offset };
         var total = db.ExecuteScalar<int>($"SELECT COUNT(*) {clause}", args);
         var columns = string.Join(",", ItemColumns.Split(',').Select(column => "p." + column.Trim()));

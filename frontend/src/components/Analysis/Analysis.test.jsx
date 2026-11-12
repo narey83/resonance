@@ -1108,7 +1108,7 @@ describe('analysis folder loading', () => {
     ).toBe(true);
     expect(resume.closest('.ka-automatic-details').open).toBe(false);
     expect(resume.closest('.ka-automatic-details').textContent).toContain(
-      'does not pause or resume a scan you start manually.',
+      'does not pause or resume a manual scan.',
     );
     expect(resume.disabled).toBe(false);
     expect(pausePreparation).not.toHaveBeenCalled();
@@ -1140,10 +1140,53 @@ describe('analysis folder loading', () => {
       counts: { basic: 1 },
     });
     await act(async () => panel.querySelector('[value="basic"]').click());
-    expect(setPreparationMode).toHaveBeenCalledWith('basic');
+    expect(setPreparationMode).toHaveBeenCalledWith(
+      'basic',
+      ['beats', 'key', 'waveform'],
+      false,
+    );
     expect(panel.querySelector('[value="basic"]').checked).toBe(true);
     expect(analysisApi.startScan).not.toHaveBeenCalled();
     expect(pausePreparation).not.toHaveBeenCalled();
+  });
+  it('configures custom background measurements while scheduling stays off', async () => {
+    expect.hasAssertions();
+    const onNavigate = jest.fn();
+    getPreparationStatus.mockResolvedValue({
+      paused: true,
+      enhancedEnabled: true,
+      mode: 'custom',
+      features: ['beats', 'key', 'waveform'],
+      writeAutoCues: false,
+      counts: {},
+    });
+    await render({ activeView: 'overview', onNavigate });
+    const panel = container.querySelector('.ka-automatic-details');
+    panel.open = true;
+    expect(
+      panel.querySelectorAll('.ka-background-features input'),
+    ).toHaveLength(14);
+    expect(panel.querySelector('[value="custom"]').checked).toBe(true);
+    const genre = Array.from(
+      panel.querySelectorAll('.ka-background-features label'),
+    ).find((label) => label.textContent.includes('Genre'));
+    await act(async () => genre.querySelector('input').click());
+    expect(setPreparationMode).toHaveBeenLastCalledWith(
+      'custom',
+      ['beats', 'key', 'waveform', 'genre'],
+      false,
+    );
+    const autoCues = Array.from(
+      panel.querySelectorAll('.ka-preparation-modes label'),
+    ).find((label) => label.textContent.includes('Write auto cues'));
+    await act(async () => autoCues.querySelector('input').click());
+    expect(setPreparationMode).toHaveBeenLastCalledWith(
+      'custom',
+      ['beats', 'key', 'waveform'],
+      true,
+    );
+    expect(pausePreparation).not.toHaveBeenCalled();
+    expect(analysisApi.startScan).not.toHaveBeenCalled();
   });
   it('pauses after active tracks without cancelling them', async () => {
     expect.hasAssertions();

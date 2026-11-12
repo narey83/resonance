@@ -50,9 +50,10 @@ public class PreparationService(WorkspaceStore store, MusicRepository repository
     private bool recoveryNeeded;
     public long LastCheckedAt { get; private set; }
     public string DependencyError => analysis.ScanState.DependencyUnavailable ? analysis.ScanState.Error : null;
-    public string Mode => store.PreparationMode ?? (enhanced.Enabled ? "enhanced" : "basic");
+    public PreparationSettings Settings => store.PreparationSettings ?? new(enhanced.Enabled ? "enhanced" : "basic");
+    public string Mode => Settings.Mode;
     public string WaitingReason => DependencyError ?? (store.Paused ? "Paused after active tracks"
-        : Mode == "enhanced" && !enhanced.Enabled ? "Enhanced analysis worker is not configured"
+        : Mode != "basic" && !enhanced.Enabled ? "Enhanced analysis worker is not configured"
         : FilesBeingUpdated ? "Waiting for metadata updates to finish"
         : analysis.PlaybackActive ? "Waiting for playback to go idle"
         : analysis.ScanState.Scanning ? "Analysis is running" : null);
@@ -61,15 +62,43 @@ public class PreparationService(WorkspaceStore store, MusicRepository repository
     private bool FilesBeingUpdated => library?.IsQueueActive("metadata") == true || library?.IsQueueActive("tag-sanitization") == true;
     private ILogger Log { get; } = Serilog.Log.ForContext("SourceContext", Logs.Music.Analysis);
 
-    public void SetMode(string mode)
+    public void SetMode(string mode, string[] features = null, bool writeAutoCues = false, string cueUsername = null)
     {
-        if (mode == "enhanced" && !enhanced.Enabled)
+        if (mode is not ("basic" or "enhanced" or "custom"))
+        {
+            throw new ArgumentException("Choose Basic, Full enhanced or Custom enhanced analysis.", nameof(mode));
+        }
+
+        if (mode != "basic" && !enhanced.Enabled)
         {
             throw new InvalidOperationException("The Enhanced analysis worker is not configured.");
         }
 
-        store.PreparationMode = mode;
+        var previous = store.PreparationSettings;
+        features ??= previous?.Features;
+        if (mode == "custom")
+        {
+            CandidateFeatureSelection.Validate(features);
+            if (features == null)
+            {
+                throw new ArgumentException("Choose enhanced measurements for automatic analysis.", nameof(features));
+            }
+        }
+
+        if (writeAutoCues && string.IsNullOrWhiteSpace(cueUsername))
+        {
+            throw new ArgumentException("An authenticated user is required to save automatic cues.", nameof(cueUsername));
+        }
+
+        if (writeAutoCues && mode == "custom" && !features.Contains("cues", StringComparer.Ordinal))
+        {
+            features = [.. features, "cues"];
+        }
+
+        store.PreparationSettings = new(mode, features, writeAutoCues, writeAutoCues ? cueUsername : null);
         Interlocked.Exchange(ref reconcileRequested, 1);
+        Log.Information("Automatic preparation mode set to {Mode}; Features: {Features}; WriteAutoCues: {WriteAutoCues}",
+            mode, features == null ? "full" : string.Join(",", features), writeAutoCues);
     }
 
     public void Retry(string path)
@@ -90,7 +119,7 @@ public class PreparationService(WorkspaceStore store, MusicRepository repository
     public void Reconcile(CancellationToken ct = default)
     {
         var timer = Stopwatch.StartNew();
-        var requireEnhanced = Mode == "enhanced";
+        var settings = Settings;
         var checkedTracks = 0;
         var updatedItems = 0;
         string afterPath = null;
@@ -116,7 +145,7 @@ public class PreparationService(WorkspaceStore store, MusicRepository repository
                         continue;
                     }
 
-                    var completed = PreparationPolicy.CompletedState(track, requireEnhanced);
+                    var completed = PreparationPolicy.CompletedState(track, settings);
                     var changed = existing == null || existing.FileSize != track.FileSize || existing.FileModified != track.FileModified;
                     if (completed != null)
                     {
@@ -125,7 +154,7 @@ public class PreparationService(WorkspaceStore store, MusicRepository repository
                             changes.Add(new(path, track.FileSize, track.FileModified, completed, 0, 0, "Analysis available", Now));
                         }
                     }
-                    else if (changed || existing.State is "complete" or "basic")
+                    else if (changed || existing.State is "complete" or "basic" or "selected")
                     {
                         changes.Add(new(path, track.FileSize, track.FileModified, "queued", 0, Now, "Waiting for analysis", Now));
                     }
@@ -150,7 +179,8 @@ public class PreparationService(WorkspaceStore store, MusicRepository repository
 
     internal async Task ProcessNext(CancellationToken ct)
     {
-        if (store.Paused || (Mode == "enhanced" && !enhanced.Enabled) || FilesBeingUpdated || analysis.ScanState.Scanning || playbackGate.ShouldWait(analysis.PlaybackActive, Now))
+        var settings = Settings;
+        if (store.Paused || (settings.Mode != "basic" && !enhanced.Enabled) || FilesBeingUpdated || analysis.ScanState.Scanning || playbackGate.ShouldWait(analysis.PlaybackActive, Now))
         {
             return;
         }
@@ -169,7 +199,7 @@ public class PreparationService(WorkspaceStore store, MusicRepository repository
 
         try
         {
-            await PrepareBatch(items, ct);
+            await PrepareBatch(items, settings, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -240,10 +270,10 @@ public class PreparationService(WorkspaceStore store, MusicRepository repository
 
     private void RequestReconcile(IReadOnlyList<string> changedPaths) => Interlocked.Exchange(ref reconcileRequested, 1);
 
-    private async Task PrepareBatch(IReadOnlyList<PreparationItem> items, CancellationToken ct)
+    private async Task PrepareBatch(IReadOnlyList<PreparationItem> items, PreparationSettings settings, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        var runEnhanced = Mode == "enhanced";
+        var runEnhanced = settings.Mode != "basic";
         var candidates = items.Select(item => (Item: item, Track: Track(item.Path))).ToArray();
         if (candidates.Any(candidate => candidate.Track == null))
         {
@@ -266,7 +296,7 @@ public class PreparationService(WorkspaceStore store, MusicRepository repository
                     continue;
                 }
 
-                var completed = PreparationPolicy.CompletedState(candidate.Track, runEnhanced);
+                var completed = PreparationPolicy.CompletedState(candidate.Track, settings);
                 if (completed != null)
                 {
                     store.Put(candidate.Item with { State = completed, Detail = "Analysis available", UpdatedAt = Now });
@@ -296,8 +326,12 @@ public class PreparationService(WorkspaceStore store, MusicRepository repository
 
         try
         {
-            Log.Information("Automatic preparation starting {Tracks} tracks across up to {Workers} CPU workers", batch.Count, Math.Min(batch.Count, Environment.ProcessorCount));
-            await analysis.StartScanAsync(new(OnlyPaths: batch.Select(candidate => candidate.Track.Path).ToArray(), SkipAnalysed: true, Enhanced: runEnhanced));
+            Log.Information("Automatic preparation starting {Tracks} tracks in {Mode} mode; Features: {Features}; WriteAutoCues: {WriteAutoCues}",
+                batch.Count, settings.Mode, settings.Features == null ? "full" : string.Join(",", settings.Features), settings.WriteAutoCues);
+            await analysis.StartScanAsync(new(OnlyPaths: batch.Select(candidate => candidate.Track.Path).ToArray(), SkipAnalysed: true,
+                Enhanced: runEnhanced, EnhancedFeatures: settings.Mode == "custom" ? settings.Features : null,
+                WriteAutoCues: settings.Mode == "custom" && settings.WriteAutoCues,
+                CueUsername: settings.Mode == "custom" && settings.WriteAutoCues ? settings.CueUsername : null));
         }
         catch (InvalidOperationException)
         {
@@ -321,12 +355,12 @@ public class PreparationService(WorkspaceStore store, MusicRepository repository
             var item = store.Find(candidate.Item.Path);
             if (item?.State == "running")
             {
-                Finish(item, runEnhanced);
+                Finish(item, settings);
             }
         }
     }
 
-    private void Finish(PreparationItem item, bool runEnhanced)
+    private void Finish(PreparationItem item, PreparationSettings settings)
     {
         var track = Track(item.Path);
         if (track == null)
@@ -336,7 +370,7 @@ public class PreparationService(WorkspaceStore store, MusicRepository repository
         }
 
         item = item with { FileSize = track.FileSize, FileModified = track.FileModified };
-        var completed = PreparationPolicy.CompletedState(track, runEnhanced);
+        var completed = PreparationPolicy.CompletedState(track, settings);
         if (completed != null)
         {
             store.Put(item with { State = completed, NextAttemptAt = 0, Detail = "Analysis available", UpdatedAt = Now });

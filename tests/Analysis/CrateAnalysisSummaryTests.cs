@@ -9,6 +9,7 @@ public class CrateAnalysisSummaryTests
         using var data = JsonDocument.Parse("""{"scope":{"fullTrack":true},"featureAvailability":{"genre":"available","vocalPresence":"failed"},"features":{"genre":{"result":{"scores":[{"label":"Techno","cosine":0.9}]}}}}""");
         using var result = JsonDocument.Parse(CrateAnalysisSummary.Create(data.RootElement,"partial")!);
         Assert.Equal("Techno", result.RootElement.GetProperty("genre").GetString());
+        Assert.Contains(result.RootElement.GetProperty("availableFeatures").EnumerateArray(), feature => feature.GetString() == "genre");
         Assert.Equal(JsonValueKind.Null, result.RootElement.GetProperty("vocals").ValueKind);
         Assert.False(result.RootElement.GetProperty("complete").GetBoolean());
         Assert.False(result.RootElement.GetProperty("exportReady").GetBoolean());
@@ -45,5 +46,13 @@ public class CrateAnalysisSummaryTests
         using var document = JsonDocument.Parse(CrateAnalysisSummary.Create(data.RootElement, "stems")!);
         Assert.True(document.RootElement.GetProperty("coverage").GetProperty("stems").GetBoolean());
         Assert.False(document.RootElement.GetProperty("complete").GetBoolean());
+    }
+
+    [Fact]
+    public void WaveformOnlyResultCanRecordSelectedFeatureAvailability()
+    {
+        using var data = JsonDocument.Parse("""{"scope":{"fullTrack":true},"featureAvailability":{"waveform":"available"},"features":{"waveform":{"result":{}}}}""");
+        using var document = JsonDocument.Parse(CrateAnalysisSummary.Create(data.RootElement, "waveform")!);
+        Assert.Equal("waveform", Assert.Single(document.RootElement.GetProperty("availableFeatures").EnumerateArray()).GetString());
     }
 }

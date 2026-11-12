@@ -35,8 +35,12 @@ export const getPreparationPage = async (params) => {
 
 export const pausePreparation = async (paused) =>
   api.post('/musiclibrary/preparation/pause', { paused });
-export const setPreparationMode = async (mode) =>
-  api.post('/musiclibrary/preparation/mode', { mode });
+export const setPreparationMode = async (mode, features, writeAutoCues) =>
+  api.post('/musiclibrary/preparation/mode', {
+    mode,
+    features,
+    writeAutoCues,
+  });
 export const retryPreparation = async (path) =>
   api.post('/musiclibrary/preparation/retry', { path });
 export const workspaceError = (error) =>
@@ -102,6 +106,7 @@ export const preparationLabel = (state) =>
     analysed: 'All analysed',
     waiting: 'All waiting',
     complete: 'Analysed',
+    selected: 'Custom analysed',
     basic: 'Basic analysed',
     queued: 'Queued',
     running: 'Analysing',

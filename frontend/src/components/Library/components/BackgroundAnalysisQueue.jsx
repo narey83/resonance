@@ -212,6 +212,7 @@ const BackgroundAnalysisQueue = ({ onRefresh, status, statusError }) => {
             'analysed',
             'waiting',
             'complete',
+            'selected',
             'basic',
             'queued',
             'running',

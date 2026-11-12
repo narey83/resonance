@@ -1188,6 +1188,8 @@
 .ka-preparation-modes input { margin-top: 2px; }
 .ka-preparation-modes small { color: var(--text-muted); line-height: 1.4; }
 .ka-preparation-modes input:disabled + span { color: var(--text-muted); }
+.ka-background-features { margin: 4px 0; }
+.ka-background-features label { align-items: center; }
 .ka-automatic-details .ka-analysis-context { padding-top: 10px; }
 .ka-scan-errors { margin-bottom: 12px; color: var(--danger); }
 .ka-idle-status, .ka-stop-status { font-size: 12px; color: var(--text-muted); margin: 8px 0; }

@@ -108,6 +108,8 @@ public record PreparationItem(string Path, long FileSize, long FileModified, str
     }
 }
 
+public record PreparationSettings(string Mode, string[] Features = null, bool WriteAutoCues = false, string CueUsername = null);
+
 public static class PreparationPolicy
 {
     public const int MaxAttempts = 3;
@@ -134,6 +136,33 @@ public static class PreparationPolicy
     public static string CompletedState(MusicTrack track, bool enhancedEnabled) =>
         BasicComplete(track) && EnhancedComplete(track) ? "complete"
         : BasicComplete(track) && !enhancedEnabled ? "basic" : null;
+
+    public static string CompletedState(MusicTrack track, PreparationSettings settings)
+    {
+        if (settings.Mode != "custom")
+        {
+            return CompletedState(track, settings.Mode == "enhanced");
+        }
+
+        if (!BasicComplete(track) || track.DjSummary == null || settings.Features is not { Length: > 0 })
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(track.DjSummary);
+            return document.RootElement.TryGetProperty("availableFeatures", out var available)
+                && available.ValueKind == JsonValueKind.Array
+                && settings.Features.All(feature => available.EnumerateArray().Any(item => item.ValueKind == JsonValueKind.String && item.GetString() == feature))
+                ? "selected" : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     public static PreparationItem Failed(PreparationItem item, long now, string detail) => item with
     {
         State = item.Attempts >= MaxAttempts ? "failed" : "retrying",
