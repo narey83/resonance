@@ -157,11 +157,11 @@ namespace resonance.Analysis.API
         {
             try
             {
-                var archive = exports.Download(id);
+                var manifest = exports.TransferManifest(id);
                 var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
                 var expires = DateTimeOffset.UtcNow.AddHours(24);
                 var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
-                var access = Path.Combine(Path.GetDirectoryName(archive), "helper-access.json");
+                var access = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(manifest)), "helper-access.json");
                 lock (TransferGate)
                 {
                     System.IO.File.WriteAllText(access, JsonSerializer.Serialize(new TransferAccess(hash, expires)));
@@ -190,25 +190,61 @@ namespace resonance.Analysis.API
         {
             try
             {
-                var archive = exports.Download(id);
-                if (!Request.Headers.TryGetValue("X-Resonance-Link-Token", out var value) || value.Count != 1 || value.ToString().Length != 64)
+                if (!AuthorizedTransfer(id))
                 {
                     return Unauthorized();
                 }
 
-                TransferAccess access;
-                lock (TransferGate)
-                {
-                    access = JsonSerializer.Deserialize<TransferAccess>(System.IO.File.ReadAllText(Path.Combine(Path.GetDirectoryName(archive), "helper-access.json")));
-                }
+                return PhysicalFile(exports.Download(id), "application/zip", "resonance-usb.zip", true);
+            }
+            catch (FileNotFoundException)
+            {
+                return NotFound();
+            }
+            catch (InvalidOperationException exception)
+            {
+                return Conflict(exception.Message);
+            }
+            catch (JsonException)
+            {
+                return Unauthorized();
+            }
+        }
 
-                var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value.ToString())));
-                if (access == null || access.Expires < DateTimeOffset.UtcNow || !CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(hash), Encoding.ASCII.GetBytes(access.Hash)))
+        [AllowAnonymous]
+        [HttpGet("transfer/{id}/manifest")]
+        public IActionResult TransferManifest(string id)
+        {
+            try
+            {
+                return AuthorizedTransfer(id) ? PhysicalFile(exports.TransferManifest(id), "application/json") : Unauthorized();
+            }
+            catch (FileNotFoundException)
+            {
+                return NotFound();
+            }
+            catch (InvalidOperationException exception)
+            {
+                return Conflict(exception.Message);
+            }
+            catch (JsonException)
+            {
+                return Unauthorized();
+            }
+        }
+
+        [AllowAnonymous]
+        [HttpGet("transfer/{id}/file")]
+        public IActionResult TransferFile(string id, [FromQuery] string path)
+        {
+            try
+            {
+                if (!AuthorizedTransfer(id))
                 {
                     return Unauthorized();
                 }
 
-                return PhysicalFile(archive, "application/zip", "resonance-usb.zip", true);
+                return PhysicalFile(exports.TransferFile(id, path), "application/octet-stream");
             }
             catch (FileNotFoundException)
             {
@@ -266,6 +302,24 @@ namespace resonance.Analysis.API
             {
                 return Conflict(exception.Message);
             }
+        }
+
+        private bool AuthorizedTransfer(string id)
+        {
+            var manifest = exports.TransferManifest(id);
+            if (!Request.Headers.TryGetValue("X-Resonance-Link-Token", out var value) || value.Count != 1 || value.ToString().Length != 64)
+            {
+                return false;
+            }
+
+            TransferAccess access;
+            lock (TransferGate)
+            {
+                access = JsonSerializer.Deserialize<TransferAccess>(System.IO.File.ReadAllText(Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(manifest)), "helper-access.json")));
+            }
+
+            var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value.ToString())));
+            return access != null && access.Expires >= DateTimeOffset.UtcNow && CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(hash), Encoding.ASCII.GetBytes(access.Hash));
         }
 
         private record TransferAccess(string Hash, DateTimeOffset Expires);

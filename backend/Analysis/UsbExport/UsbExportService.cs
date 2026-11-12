@@ -46,25 +46,28 @@ namespace resonance.Analysis.UsbExport
     using resonance.MusicLibrary;
     using Serilog;
 
-    public record UsbExportRequest(string[] Paths, string PlaylistName = "Resonance", string Profile = "dual", string SelectionId = null);
-    public record UsbExportJob(string JobId, string Status, int Total, int Prepared, string Profile, string PlaylistName, string Error = null, bool DownloadAvailable = false);
+    public record UsbExportRequest(string[] Paths, string PlaylistName = "Resonance", string Profile = "dual", string SelectionId = null, string PlayerModel = null);
+    public record UsbExportJob(string JobId, string Status, int Total, int Prepared, string Profile, string PlaylistName, string Error = null, bool DownloadAvailable = false, string PlayerModel = null);
 
     // Stages an export for download. This service deliberately has no device or destination API.
 
     /// <summary>Prepares server-side exports and retains their validation records.</summary>
     public sealed partial class UsbExportService : IDisposable
     {
+        private static readonly object ArchiveGate = new();
         private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
         private readonly IAnalysisService analysis;
         private readonly CandidateAnalysisService candidates;
         private readonly IMusicLibraryService library;
         private readonly ConcurrentDictionary<string, UsbExportJob> jobs = new();
+        private readonly ConcurrentDictionary<string, HashSet<string>> transferFiles = new();
         private readonly ConcurrentDictionary<string, CancellationTokenSource> cancellations = new();
         private readonly SemaphoreSlim gate = new(1, 1);
         private readonly string root = Environment.GetEnvironmentVariable("RESONANCE_USB_EXPORT_ROOT");
         private readonly string python = Environment.GetEnvironmentVariable("RESONANCE_USB_EXPORT_PYTHON");
         private readonly string worker = Environment.GetEnvironmentVariable("RESONANCE_USB_EXPORT_WORKER");
         private readonly string ffmpeg = Environment.GetEnvironmentVariable("RESONANCE_USB_EXPORT_FFMPEG");
+        private readonly string ffprobe = Environment.GetEnvironmentVariable("RESONANCE_USB_EXPORT_FFPROBE");
 
         public UsbExportService(IAnalysisService analysis, CandidateAnalysisService candidates, IMusicLibraryService library = null, resonance.Mixtapes.IMixtapeService playlists = null, resonance.MusicLibrary.Workspace.WorkspaceStore workspace = null)
         {
@@ -91,6 +94,12 @@ namespace resonance.Analysis.UsbExport
             if (request.Profile != "dual" && request.Profile != "legacy" && request.Profile != "network")
             {
                 throw new ArgumentException("Profile must be dual, legacy or network.");
+            }
+
+            if (request.PlayerModel != null && !((request.Profile == "dual" && request.PlayerModel is "opus-quad" or "cdj-3000x" or "xdj-az")
+                || (request.Profile == "legacy" && request.PlayerModel is "cdj-3000" or "cdj-2000nxs2")))
+            {
+                throw new ArgumentException("Player model does not match the selected library format.");
             }
 
             if (string.IsNullOrWhiteSpace(request.PlaylistName) || request.PlaylistName.Length > 100 || request.PlaylistName.Any(char.IsControl))
@@ -179,7 +188,7 @@ namespace resonance.Analysis.UsbExport
             }
 
             var id = Guid.NewGuid().ToString("N");
-            var job = new UsbExportJob(id, "queued", tracks.Length, 0, request.Profile, request.PlaylistName.Trim());
+            var job = new UsbExportJob(id, "queued", tracks.Length, 0, request.Profile, request.PlaylistName.Trim(), PlayerModel: request.PlayerModel);
             jobs[id] = job;
             if (source != null)
             {
@@ -205,7 +214,7 @@ namespace resonance.Analysis.UsbExport
             }
 
             var directory = Path.Combine(root, id);
-            if (!File.Exists(Path.Combine(directory, "resonance-usb.zip")))
+            if (!File.Exists(Path.Combine(directory, "export-complete")) && !File.Exists(Path.Combine(directory, "resonance-usb.zip")))
             {
                 throw new FileNotFoundException("Unknown export job.");
             }
@@ -213,7 +222,7 @@ namespace resonance.Analysis.UsbExport
             using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(directory, "export", "export-manifest.json")));
             var manifest = doc.RootElement;
             var total = manifest.GetProperty("trackCount").GetInt32();
-            return new UsbExportJob(id, "completed", total, total, manifest.GetProperty("profile").GetString(), manifest.GetProperty("playlistName").GetString(), DownloadAvailable: true);
+            return new UsbExportJob(id, "completed", total, total, manifest.GetProperty("profile").GetString(), manifest.GetProperty("playlistName").GetString(), DownloadAvailable: true, PlayerModel: manifest.TryGetProperty("playerModel", out var model) ? model.GetString() : null);
         }
 
         public UsbExportJob[] History()
@@ -295,7 +304,72 @@ namespace resonance.Analysis.UsbExport
                 throw new InvalidOperationException("Export is not ready.");
             }
 
-            return Path.Combine(root, id, "resonance-usb.zip");
+            var archive = Path.Combine(root, id, "resonance-usb.zip");
+            lock (ArchiveGate)
+            {
+                if (!File.Exists(archive))
+                {
+                    var temporary = archive + ".creating";
+                    try
+                    {
+                        var manifest = TransferManifest(id);
+                        using var document = JsonDocument.Parse(File.ReadAllText(manifest));
+                        using (var zip = ZipFile.Open(temporary, ZipArchiveMode.Create))
+                        {
+                            zip.CreateEntryFromFile(manifest, "export-manifest.json", CompressionLevel.Fastest);
+                            foreach (var file in document.RootElement.GetProperty("files").EnumerateArray())
+                            {
+                                var relativePath = file.GetProperty("path").GetString();
+                                zip.CreateEntryFromFile(ResolveExportFile(Path.GetDirectoryName(manifest), relativePath), relativePath, CompressionLevel.Fastest);
+                            }
+                        }
+
+                        File.Move(temporary, archive);
+                    }
+                    finally
+                    {
+                        if (File.Exists(temporary))
+                        {
+                            File.Delete(temporary);
+                        }
+                    }
+                }
+            }
+
+            return archive;
+        }
+
+        public string TransferManifest(string id)
+        {
+            if (!Read(id).DownloadAvailable)
+            {
+                throw new InvalidOperationException("Export is not ready.");
+            }
+
+            return Path.Combine(root, id, "export", "export-manifest.json");
+        }
+
+        public string TransferFile(string id, string relativePath)
+        {
+            var manifest = TransferManifest(id);
+            if (string.IsNullOrWhiteSpace(relativePath) || relativePath.Contains('\\') || relativePath.StartsWith('/') || relativePath.Split('/').Any(part => part is "" or "." or ".."))
+            {
+                throw new FileNotFoundException("Unknown export file.");
+            }
+
+            var allowed = transferFiles.GetOrAdd(id, _ =>
+            {
+                using var document = JsonDocument.Parse(File.ReadAllText(manifest));
+                return document.RootElement.GetProperty("files").EnumerateArray()
+                    .Select(file => file.GetProperty("path").GetString())
+                    .ToHashSet(StringComparer.Ordinal);
+            });
+            if (!allowed.Contains(relativePath))
+            {
+                throw new FileNotFoundException("Unknown export file.");
+            }
+
+            return ResolveExportFile(Path.GetDirectoryName(manifest), relativePath);
         }
 
         public long StagedBytes(string id)
@@ -331,12 +405,38 @@ namespace resonance.Analysis.UsbExport
                 }
 
                 jobs.TryRemove(id, out _);
+                transferFiles.TryRemove(id, out _);
                 return true;
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
                 return false;
             }
+        }
+
+        private static string ResolveExportFile(string exportDirectory, string relativePath)
+        {
+            if (string.IsNullOrWhiteSpace(relativePath) || relativePath.Contains('\\') || relativePath.StartsWith('/') || relativePath.Split('/').Any(part => part is "" or "." or ".."))
+            {
+                throw new FileNotFoundException("Unknown export file.");
+            }
+
+            var directory = Path.GetFullPath(exportDirectory);
+            var path = Path.GetFullPath(Path.Combine(directory, relativePath.Replace('/', Path.DirectorySeparatorChar)));
+            if (!path.StartsWith(directory + Path.DirectorySeparatorChar, StringComparison.Ordinal) || !File.Exists(path) || new FileInfo(path).LinkTarget != null)
+            {
+                throw new FileNotFoundException("Unknown export file.");
+            }
+
+            for (var parent = new DirectoryInfo(Path.GetDirectoryName(path)); parent.FullName != directory; parent = parent.Parent)
+            {
+                if (parent.LinkTarget != null)
+                {
+                    throw new FileNotFoundException("Unknown export file.");
+                }
+            }
+
+            return path;
         }
 
         private static string LibraryPath(string path) => Path.GetFullPath(MusicPath.ToAbsolute(path));
@@ -429,10 +529,10 @@ namespace resonance.Analysis.UsbExport
                 }
 
                 var manifest = Path.Combine(directory, "manifest.json");
-                await File.WriteAllTextAsync(manifest, JsonSerializer.Serialize(new { schemaVersion = 1, profile = job.Profile, playlistName = job.PlaylistName, source = jobSources.GetValueOrDefault(job.JobId), tracks = manifestTracks }, JsonOptions), ct);
+                await File.WriteAllTextAsync(manifest, JsonSerializer.Serialize(new { schemaVersion = 1, profile = job.Profile, playerModel = job.PlayerModel, playlistName = job.PlaylistName, source = jobSources.GetValueOrDefault(job.JobId), tracks = manifestTracks }, JsonOptions), ct);
                 var destination = Path.Combine(directory, "export");
                 var start = new ProcessStartInfo(python) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
-                foreach (var argument in new[] { worker, "--manifest", manifest, "--destination", destination, "--profile", job.Profile, "--ffmpeg", ffmpeg })
+                foreach (var argument in new[] { worker, "--manifest", manifest, "--destination", destination, "--profile", job.Profile, "--ffmpeg", ffmpeg, "--ffprobe", ffprobe ?? Path.Combine(Path.GetDirectoryName(ffmpeg), OperatingSystem.IsWindows() ? "ffprobe.exe" : "ffprobe") })
                 {
                     start.ArgumentList.Add(argument);
                 }
@@ -470,8 +570,13 @@ namespace resonance.Analysis.UsbExport
 
                 ct.ThrowIfCancellationRequested();
                 jobs[job.JobId] = job = job with { Status = "packaging" };
-                ZipFile.CreateFromDirectory(destination, Path.Combine(directory, "resonance-usb.zip"), CompressionLevel.Fastest, false);
+                if (job.Profile == "network")
+                {
+                    ZipFile.CreateFromDirectory(destination, Path.Combine(directory, "resonance-usb.zip"), CompressionLevel.Fastest, false);
+                }
+
                 ct.ThrowIfCancellationRequested();
+                File.WriteAllText(Path.Combine(directory, "export-complete"), string.Empty);
                 jobs[job.JobId] = job with { Status = "completed", DownloadAvailable = true };
             }
             catch (OperationCanceledException)

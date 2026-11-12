@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -78,28 +79,7 @@ func (h *helper) receiveUSB(c connection) error {
 		client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
 			return errors.New("export download redirects are not allowed")
 		}}
-		response, e := fetchSync(ctx, client, c, "")
-		if e != nil {
-			h.usbError(u, e)
-			return
-		}
-		defer response.Body.Close()
-		f, e := os.CreateTemp(h.Cache, "usb-*.zip")
-		if e != nil {
-			h.usbError(u, e)
-			return
-		}
-		defer os.Remove(f.Name())
-		n, e := io.Copy(f, io.LimitReader(response.Body, maxBundleBytes+1))
-		f.Close()
-		if e != nil || n > maxBundleBytes {
-			if e == nil {
-				e = errors.New("USB export exceeds 50 GiB")
-			}
-			h.usbError(u, e)
-			return
-		}
-		b, e := importBundle(f.Name(), h.Cache)
+		b, e := downloadUSBFiles(ctx, client, c, h.Cache)
 		if e != nil {
 			h.usbError(u, e)
 			return
@@ -122,6 +102,83 @@ func (h *helper) receiveUSB(c connection) error {
 		h.mu.Unlock()
 	}()
 	return nil
+}
+
+// downloadUSBFiles stages only inventoried files; the server never creates a ZIP
+// for the Bridge path. Every file is checked before the bundle becomes writable.
+func downloadUSBFiles(ctx context.Context, client *http.Client, c connection, cache string) (*bundle, error) {
+	response, err := fetchSync(ctx, client, c, "/manifest")
+	if err != nil {
+		return nil, err
+	}
+	manifestBytes, err := io.ReadAll(io.LimitReader(response.Body, 16<<20+1))
+	response.Body.Close()
+	if err != nil || len(manifestBytes) > 16<<20 {
+		return nil, errors.New("USB export manifest is unreadable or too large")
+	}
+	var manifest exportManifest
+	if err = json.Unmarshal(manifestBytes, &manifest); err != nil {
+		return nil, err
+	}
+	if manifest.SchemaVersion != 1 || (manifest.Profile != "dual" && manifest.Profile != "legacy") || manifest.TrackCount < 1 || manifest.TrackCount > 65535 || manifest.PlaylistName == "" || len(manifest.Files) == 0 || len(manifest.Files) > 100000 || len(manifest.Streams) != 0 {
+		return nil, errors.New("unsupported USB export manifest")
+	}
+	var total int64
+	seen := map[string]bool{}
+	for _, spec := range manifest.Files {
+		name, nameErr := safeName(spec.Path)
+		if nameErr != nil || name == "export-manifest.json" || seen[strings.ToLower(name)] || spec.Bytes < 0 || spec.Bytes > maxBundleBytes-total || !validDigest(spec.SHA256) {
+			return nil, errors.New("invalid USB export file inventory")
+		}
+		seen[strings.ToLower(name)] = true
+		total += spec.Bytes
+	}
+	if !seen["pioneer/rekordbox/export.pdb"] {
+		return nil, errors.New("USB export has no player database")
+	}
+	root, err := os.MkdirTemp(cache, "library-")
+	if err != nil {
+		return nil, err
+	}
+	complete := false
+	defer func() {
+		if !complete {
+			os.RemoveAll(root)
+		}
+	}()
+	for _, spec := range manifest.Files {
+		response, err := fetchSync(ctx, client, c, "/file?path="+url.QueryEscape(spec.Path))
+		if err != nil {
+			return nil, err
+		}
+		path := filepath.Join(root, filepath.FromSlash(spec.Path))
+		if err = os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			response.Body.Close()
+			return nil, err
+		}
+		out, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+		if err != nil {
+			response.Body.Close()
+			return nil, err
+		}
+		hash := sha256.New()
+		count, copyErr := io.Copy(io.MultiWriter(out, hash), io.LimitReader(response.Body, spec.Bytes+1))
+		response.Body.Close()
+		syncErr := out.Sync()
+		closeErr := out.Close()
+		if copyErr != nil || syncErr != nil || closeErr != nil || count != spec.Bytes || hex.EncodeToString(hash.Sum(nil)) != spec.SHA256 {
+			return nil, errors.New("USB export file checksum or size differs from inventory")
+		}
+	}
+	if err = os.WriteFile(filepath.Join(root, "export-manifest.json"), manifestBytes, 0600); err != nil {
+		return nil, err
+	}
+	b, err := loadBundle(root, manifest)
+	if err != nil {
+		return nil, err
+	}
+	complete = true
+	return b, nil
 }
 func (h *helper) usbError(u *usbTransfer, e error) {
 	h.mu.Lock()

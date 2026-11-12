@@ -1,7 +1,7 @@
 from pathlib import Path
-import json,tempfile,unittest,wave
+import json,os,subprocess,tempfile,unittest,wave
 from anlz_writer import path_for_audio,encode_beats,encode_cues,write_anlz,resample
-from usb_export import prepare,export_key,sha
+from usb_export import prepare,export_key,sha,source_audio
 from pyrekordbox.anlz import AnlzFile
 class FormatTests(unittest.TestCase):
  def test_grid_preserves_phase_and_variable_tempo(self):
@@ -41,4 +41,40 @@ class FormatTests(unittest.TestCase):
    self.assertTrue((destination/'PIONEER/rekordbox/export.pdb').is_file())
    saved=json.loads((destination/'export-manifest.json').read_text())
    self.assertEqual(saved['streams'][0]['sourceKey'],'a'*64)
+ def test_usb_preserves_supported_flac_and_mp3_bytes(self):
+  ffmpeg=os.environ.get('RESONANCE_TEST_FFMPEG','ffmpeg');ffprobe=os.environ.get('RESONANCE_TEST_FFPROBE','ffprobe')
+  analysis={'scope':{'fullTrack':True},'durationSeconds':1.0,'featureAvailability':{'beats':'available','key':'available','waveform':'available'},'features':{'beats':{'result':{'bpm_median_interval':120,'beats_seconds':[0,.5],'downbeats_seconds':[0]}},'key':{'result':{'key':'Am'}},'genre':{'result':{'scores':[{'label':'House','cosine':1}]}},'waveform':{'result':{'overallPeaks':[.1,.5],'bands':{'low':[.1,.4],'mid':[.7,.1],'high':[.4,.8]}}}}}
+  with tempfile.TemporaryDirectory() as temp:
+   tracks=[]
+   for index,codec in enumerate(('flac','mp3'),1):
+    source=Path(temp)/f'source.{codec}'
+    subprocess.run([ffmpeg,'-v','error','-f','lavfi','-i','sine=frequency=440:duration=1','-ar','44100','-ac','2',str(source)],check=True)
+    tracks.append({'id':index,'sourceKey':f'{index:064x}','sourcePath':str(source),'sourceSha256':sha(source),'sourceBytes':source.stat().st_size,'title':codec,'artist':'Artist','analysis':analysis})
+   with self.assertRaisesRegex(ValueError,'specific player model'):source_audio(tracks[0]['sourcePath'],ffprobe,'legacy')
+   manifest={'schemaVersion':1,'playlistName':'Original formats','tracks':tracks}
+   destination=Path(temp)/'out';prepare(manifest,destination,'dual','unused',ffprobe)
+   for index,codec in enumerate(('flac','mp3'),1):
+    copied=destination/f'Contents/Resonance/{index:05d}-track.{codec}'
+    self.assertEqual(copied.read_bytes(),Path(tracks[index-1]['sourcePath']).read_bytes())
+   from rekordbox_pdb import Database
+   database=Database.from_file(destination/'PIONEER/rekordbox/export.pdb')
+   self.assertEqual([track.sample_rate for track in database.tracks],[44100,44100])
+   from onelibrary_writer import _dependencies,_connect
+   dbapi,_,_,key=_dependencies();connection=_connect(dbapi,destination/'PIONEER/rekordbox/exportLibrary.db',key)
+   try:self.assertEqual([row[0] for row in connection.execute('SELECT fileType FROM content ORDER BY content_id')],[5,1])
+   finally:connection.close()
+ def test_unsupported_sample_rate_is_rejected_without_conversion(self):
+  ffmpeg=os.environ.get('RESONANCE_TEST_FFMPEG','ffmpeg');ffprobe=os.environ.get('RESONANCE_TEST_FFPROBE','ffprobe')
+  with tempfile.TemporaryDirectory() as temp:
+   source=Path(temp)/'slow.flac'
+   subprocess.run([ffmpeg,'-v','error','-f','lavfi','-i','sine=frequency=440:duration=1','-ar','22050',str(source)],check=True)
+   with self.assertRaisesRegex(ValueError,'sample rate'):source_audio(source,ffprobe)
+ def test_supported_container_codecs_are_identified(self):
+  ffmpeg=os.environ.get('RESONANCE_TEST_FFMPEG','ffmpeg');ffprobe=os.environ.get('RESONANCE_TEST_FFPROBE','ffprobe')
+  cases=[('track.wav','pcm_s16le','pcm_s16le'),('track.aiff','pcm_s16be','pcm_s16be'),('aac.m4a','aac','aac'),('lossless.m4a','alac','alac')]
+  with tempfile.TemporaryDirectory() as temp:
+   for name,codec,expected in cases:
+    source=Path(temp)/name
+    subprocess.run([ffmpeg,'-v','error','-f','lavfi','-i','sine=frequency=440:duration=1','-ar','44100','-ac','2','-c:a',codec,str(source)],check=True)
+    self.assertEqual(source_audio(source,ffprobe)['codec'],expected)
 if __name__=='__main__':unittest.main()

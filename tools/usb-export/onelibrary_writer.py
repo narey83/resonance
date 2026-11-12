@@ -103,7 +103,7 @@ def write_onelibrary(destination: Path, tracks: list, playlist_name: str) -> Pat
                 values = dict(content_id=int(track['id']), title=str(track['title']), titleForSearch=str(track['title']).casefold(),
                     bpmx100=round(float(track.get('bpm') or 0)*100), length=round(float(track['durationSeconds'])*1000),
                     path=path, fileName=PurePosixPath(path).name, fileSize=int(track['fileBytes']),
-                    fileType=file_types[PurePosixPath(path).suffix.lower()], bitrate=int(track.get('bitRate') or 0),
+                    fileType=(int(models.FileType.ALAC) if track.get('codec') == 'alac' else file_types[PurePosixPath(path).suffix.lower()]), bitrate=int(track.get('bitRate') or 0),
                     bitDepth=int(track.get('bitDepth') or 0), samplingRate=int(track.get('sampleRate') or 0),
                     analysisDataFilePath=_usb_path(track['anlzPath']), dateCreated=now, dateAdded=now,
                     hasModified=0, cueUpdateCount=0, analysisDataUpdateCount=0, informationUpdateCount=0)
@@ -137,15 +137,16 @@ def write_onelibrary(destination: Path, tracks: list, playlist_name: str) -> Pat
 
 def validate_onelibrary(path: Path, tracks: list) -> dict:
     """Read back with SQLCipher DBAPI, independently of SQLAlchemy writes."""
-    dbapi, _, _, key = _dependencies()
+    dbapi, _, models, key = _dependencies()
     if Path(path).read_bytes()[:16] == b'SQLite format 3\x00':
         raise ValueError('OneLibrary database must be encrypted')
     connection = _connect(dbapi, path, key)
     try:
         if connection.execute('PRAGMA integrity_check').fetchone()[0] != 'ok':
             raise ValueError('SQLCipher integrity check failed')
-        rows = connection.execute('SELECT content_id,title,path,analysisDataFilePath,bpmx100,length,fileSize FROM content ORDER BY content_id').fetchall()
-        expected = sorted((int(t['id']), str(t['title']), _usb_path(t['usbPath']), _usb_path(t['anlzPath']), round(float(t.get('bpm') or 0)*100), round(float(t['durationSeconds'])*1000), int(t['fileBytes'])) for t in tracks)
+        rows = connection.execute('SELECT content_id,title,path,analysisDataFilePath,bpmx100,length,fileSize,fileType,bitrate,bitDepth,samplingRate FROM content ORDER BY content_id').fetchall()
+        file_types = {'.mp3': int(models.FileType.MP3), '.m4a': int(models.FileType.M4A), '.wav': int(models.FileType.WAV), '.aif': int(models.FileType.AIFF), '.aiff': int(models.FileType.AIFF), '.flac': int(models.FileType.FLAC)}
+        expected = sorted((int(t['id']), str(t['title']), _usb_path(t['usbPath']), _usb_path(t['anlzPath']), round(float(t.get('bpm') or 0)*100), round(float(t['durationSeconds'])*1000), int(t['fileBytes']), (int(models.FileType.ALAC) if t.get('codec') == 'alac' else file_types[PurePosixPath(t['usbPath']).suffix.lower()]), int(t.get('bitRate') or 0), int(t.get('bitDepth') or 0), int(t.get('sampleRate') or 0)) for t in tracks)
         if rows != expected:
             raise ValueError('OneLibrary content read-back mismatch')
         playlist = [row[0] for row in connection.execute('SELECT content_id FROM playlist_content ORDER BY sequenceNo')]

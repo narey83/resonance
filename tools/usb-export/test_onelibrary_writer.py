@@ -25,6 +25,13 @@ class OneLibraryTests(unittest.TestCase):
                 self.assertEqual(connection.execute('SELECT fileType FROM content').fetchone()[0],5)
                 self.assertEqual(connection.execute('SELECT name FROM menuItem WHERE menuItem_id=5').fetchone()[0],'\ufffaPLAYLIST\ufffb')
             finally:connection.close()
+    def test_alac_uses_its_own_file_type(self):
+        with tempfile.TemporaryDirectory() as folder:
+            tracks=self.tracks();tracks[0]['usbPath']='/Contents/example.m4a';tracks[0]['codec']='alac'
+            target=write_onelibrary(Path(folder),tracks,'Test')
+            dbapi,_,_,key=_dependencies();connection=_connect(dbapi,target,key)
+            try:self.assertEqual(connection.execute('SELECT fileType FROM content').fetchone()[0],6)
+            finally:connection.close()
     def test_duplicate_ids_and_traversal_rejected(self):
         with tempfile.TemporaryDirectory() as folder:
             with self.assertRaises(ValueError): write_onelibrary(Path(folder),self.tracks()*2,'Invalid')

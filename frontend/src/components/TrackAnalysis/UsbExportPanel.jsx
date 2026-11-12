@@ -15,8 +15,17 @@ const active = (job) =>
 const exportStage = {
   queued: 'Waiting to start export…',
   preparing: 'Checking tracks and analysis…',
-  exporting: 'Converting audio and building player databases…',
-  packaging: 'Creating the USB ZIP…',
+  exporting: 'Copying supported audio and building player databases…',
+  packaging: 'Finalizing the USB export…',
+};
+const players = {
+  mixed: { name: 'OPUS-QUAD + CDJ-3000/2000NXS2', profile: 'dual' },
+  legacy: { name: 'Classic players', profile: 'legacy' },
+  'opus-quad': { name: 'OPUS-QUAD', profile: 'dual' },
+  'cdj-3000x': { name: 'CDJ-3000X', profile: 'dual' },
+  'xdj-az': { name: 'XDJ-AZ', profile: 'dual' },
+  'cdj-3000': { name: 'CDJ-3000', profile: 'legacy' },
+  'cdj-2000nxs2': { name: 'CDJ-2000NXS2', profile: 'legacy' },
 };
 const shortenPlaylistName = (name) => {
   const shortened = name.slice(0, 100);
@@ -43,7 +52,8 @@ const UsbExportPanel = ({
   const [selected, setSelected] = useState([]);
   const [playlistName, setPlaylistName] = useState(initialPlaylistName);
   const [playlistNameSource, setPlaylistNameSource] = useState('custom');
-  const [profile, setProfile] = useState('dual');
+  const [playerChoice, setPlayerChoice] = useState('mixed');
+  const profile = players[playerChoice].profile;
   const [job, setJob] = useState(null);
   useEffect(() => {
     onJobChange?.(job);
@@ -150,7 +160,13 @@ const UsbExportPanel = ({
           setStep(3);
           setPlaylistName(data.playlistName);
           setPlaylistNameSource('custom');
-          setProfile(data.profile);
+          setPlayerChoice(
+            data.playerModel && players[data.playerModel]
+              ? data.playerModel
+              : data.profile === 'legacy'
+                ? 'legacy'
+                : 'mixed',
+          );
         }
       })
       .catch(() => sessionStorage.removeItem('resonance-usb-export-job'));
@@ -266,6 +282,9 @@ const UsbExportPanel = ({
         paths: selected,
         playlistName: exportPlaylistName,
         profile,
+        ...(!['mixed', 'legacy'].includes(playerChoice)
+          ? { playerModel: playerChoice }
+          : {}),
       });
       setJob(data);
       if (wizard)
@@ -315,13 +334,36 @@ const UsbExportPanel = ({
       'resonance-usb.zip',
       'USB export download failed. Retry when the export is complete.',
     );
-  const openHelper = () =>
+  const downloadHandoff = () =>
     downloadFile(
       `/analysis/usb-export/${job.jobId}/transfer`,
       'resonance-export.resonance',
       'Could not prepare the Resonance Bridge handoff.',
       true,
     );
+  const openHelper = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const { data } = await api.post(
+        `/analysis/usb-export/${job.jobId}/transfer`,
+        null,
+        { responseType: 'json' },
+      );
+      if (data?.schemaVersion !== 1 || !data.serverUrl || !data.token)
+        throw new Error('Resonance Bridge handoff is incomplete.');
+      const target = new URL('http://127.0.0.1:55460/usb');
+      target.hash = new URLSearchParams({
+        handoff: JSON.stringify(data),
+      }).toString();
+      window.location.assign(target.toString());
+    } catch (error_) {
+      setError(message(error_));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const downloadHelper = (platform) =>
     downloadFile(
       `/bridge/helper?platform=${platform}`,
@@ -362,8 +404,8 @@ const UsbExportPanel = ({
         compatibility depends on the player and firmware.
       </p>
       <p>
-        Audio is exported as stereo 16-bit 44.1 kHz WAV for broad player
-        support. This creates new copies and does not change your music files.
+        Supported MP3, AAC in M4A, WAV, AIFF, Apple Lossless and FLAC files are
+        copied without changing their audio. Your music files are not modified.
       </p>
       <p>
         Run full Track Analysis first. Beat grids and waveforms use Resonance’s
@@ -416,17 +458,21 @@ const UsbExportPanel = ({
         <>
           <div className="usb-export-settings">
             <label>
-              Player profile
+              Player
               <select
-                aria-label="Player profile"
+                aria-label="Player"
                 disabled={locked}
-                onChange={(event) => setProfile(event.target.value)}
-                value={profile}
+                onChange={(event) => setPlayerChoice(event.target.value)}
+                value={playerChoice}
               >
-                <option value="dual">
-                  OPUS-QUAD + legacy players (dual database)
-                </option>
-                <option value="legacy">Legacy players</option>
+                {Object.entries(players).map(([id, player]) => (
+                  <option
+                    key={id}
+                    value={id}
+                  >
+                    {player.name}
+                  </option>
+                ))}
               </select>
             </label>
             <label>
@@ -465,6 +511,16 @@ const UsbExportPanel = ({
               />
             </label>
           </div>
+          <p>
+            {playerChoice === 'legacy'
+              ? 'Classic database: MP3, WAV and AIFF. Choose a specific player to include its other supported formats.'
+              : `${players[playerChoice].name}: MP3, AAC (M4A), WAV, AIFF, Apple Lossless and FLAC.`}{' '}
+            {profile === 'dual'
+              ? 'OneLibrary + classic database.'
+              : 'Classic database.'}{' '}
+            Files outside the selected player’s supported audio limits are
+            reported before transfer.
+          </p>
           {automaticPlaylistName.length > exportPlaylistName.length && (
             <p className="usb-export-name-hint">
               The selected name has been shortened to fit the 100-character
@@ -524,15 +580,12 @@ const UsbExportPanel = ({
             {(step === 3 && job ? job.total : selected.length) === 1
               ? 'track'
               : 'tracks'}{' '}
-            · Playlist: {exportPlaylistName} ·{' '}
-            {profile === 'dual'
-              ? 'OPUS-QUAD + legacy players'
-              : 'Legacy players'}
+            · Playlist: {exportPlaylistName} · {players[playerChoice].name}
           </p>
           <p>
-            Audio: stereo WAV, 16-bit / 44.1 kHz. Includes playlist, beat grids
-            and waveforms. Use the native helper to install the downloaded ZIP
-            onto an empty compatible USB drive.
+            Supported original audio is copied without conversion. Includes
+            playlist, beat grids and waveforms. Resonance Bridge transfers the
+            prepared files to an empty compatible USB drive.
           </p>
         </div>
       )}
@@ -576,9 +629,7 @@ const UsbExportPanel = ({
           <strong>USB export ready</strong>
           <p>
             {job.total} tracks · {exportPlaylistName} ·{' '}
-            {profile === 'dual'
-              ? 'OPUS-QUAD + legacy players'
-              : 'Legacy players'}
+            {players[playerChoice].name}
           </p>
           <div className="usb-export-ready-actions">
             <button
@@ -767,12 +818,21 @@ const UsbExportPanel = ({
             </a>
           </p>
           <p>
-            Open in Resonance Bridge downloads a small .resonance action file.
-            Open that file with the updated Resonance Bridge app; it downloads
-            this export and lets you choose a USB drive. Confirm the destination
-            in the helper to begin writing. The same installed helper now
-            handles USB Export and Network Link.
+            Open in Resonance Bridge takes you straight to the installed Bridge
+            app. It fetches this export’s files directly and lets you choose a
+            USB drive. Confirm the destination there to begin writing.
           </p>
+          {job?.downloadAvailable && (
+            <p>
+              <button
+                disabled={busy}
+                onClick={downloadHandoff}
+                type="button"
+              >
+                Download action file instead
+              </button>
+            </p>
+          )}
           <p>
             <a
               href="http://127.0.0.1:55460/"
@@ -811,9 +871,9 @@ const UsbExportPanel = ({
             </button>
           </p>
           <p>
-            Extract the ZIP, then copy its device-library folders together to
-            the root of a compatible USB drive. Use an empty test drive and
-            safely eject it before testing on hardware.
+            Use an empty test drive and safely eject it before testing on
+            hardware. For manual transfer, extract the ZIP and copy its device
+            library folders together to the drive root.
           </p>
         </details>
       )}

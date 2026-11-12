@@ -1,6 +1,7 @@
 namespace Resonance.Tests.Security;
 
 using System.Text.Json;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using global::resonance.Analysis.API;
 using global::resonance.Analysis.UsbExport;
@@ -26,6 +27,43 @@ public class UsbExportInspectionTests : IDisposable
         Assert.Equal("Test album", exports.Inspect(id).GetProperty("playlistName").GetString());
         var controller = new UsbExportController(exports);
         Assert.IsType<OkObjectResult>(controller.Inspect(id));
+    }
+
+    [Fact]
+    public void Direct_Transfer_Only_Serves_Manifested_Files_And_Zip_Is_On_Demand()
+    {
+        var id = Guid.NewGuid().ToString("N");
+        var directory = Path.Combine(root, id, "export");
+        Directory.CreateDirectory(Path.Combine(directory, "Contents"));
+        File.WriteAllText(Path.Combine(root, id, "export-complete"), string.Empty);
+        File.WriteAllText(Path.Combine(directory, "Contents", "track.mp3"), "audio");
+        File.WriteAllText(Path.Combine(directory, "private.txt"), "private");
+        File.WriteAllText(Path.Combine(directory, "export-manifest.json"), JsonSerializer.Serialize(new
+        {
+            trackCount = 1, profile = "dual", playlistName = "Test", files = new[] { new { path = "Contents/track.mp3" } },
+        }));
+        using var exports = new UsbExportService(null!, null!);
+        Assert.True(exports.Read(id).DownloadAvailable);
+        Assert.False(File.Exists(Path.Combine(root, id, "resonance-usb.zip")));
+        Assert.Equal(Path.Combine(directory, "Contents", "track.mp3"), exports.TransferFile(id, "Contents/track.mp3"));
+        Assert.Throws<FileNotFoundException>(() => exports.TransferFile(id, "private.txt"));
+        Assert.Throws<FileNotFoundException>(() => exports.TransferFile(id, "../private.txt"));
+        var controller = new UsbExportController(exports)
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
+        };
+        controller.Request.Scheme = "https";
+        controller.Request.Host = new HostString("resonance.test");
+        Assert.IsType<UnauthorizedResult>(controller.TransferManifest(id));
+        var handoff = Assert.IsType<FileContentResult>(controller.Transfer(id));
+        using var ticket = JsonDocument.Parse(handoff.FileContents);
+        controller.Request.Headers["X-Resonance-Link-Token"] = ticket.RootElement.GetProperty("token").GetString();
+        Assert.IsType<PhysicalFileResult>(controller.TransferManifest(id));
+        Assert.IsType<PhysicalFileResult>(controller.TransferFile(id, "Contents/track.mp3"));
+        Assert.IsType<NotFoundResult>(controller.TransferFile(id, "private.txt"));
+        controller.Request.Headers["X-Resonance-Link-Token"] = new string('f', 64);
+        Assert.IsType<UnauthorizedResult>(controller.TransferFile(id, "Contents/track.mp3"));
+        Assert.True(File.Exists(exports.Download(id)));
     }
 
     [Theory]

@@ -13,26 +13,27 @@ installer tooling are in this directory; see Platforms and firewall below.
 ## USB Export
 
 1. In Resonance, start an export from library selections, a set plan or Music →
-   Export. Complete the track, player/playlist and review steps, then prepare the ZIP.
-2. Choose **Open in USB helper** on the completed export and open the downloaded
-   `.resonance` action file with the installed helper. The browser handoff is a file;
-   it may need opening from Downloads if the browser does not launch the association.
+   Export. Complete the track, player/playlist and review steps, then prepare the export.
+2. Choose **Open in Resonance Bridge** on the completed export. The browser opens
+   the local Bridge dashboard and hands it this export. A `.resonance` action file
+   is available as a manual fallback in the export's transfer options.
 3. In the helper, select a mounted external FAT32/exFAT destination, confirm the
    destination checkbox and choose **Write**.
 4. Wait for verification to complete, then choose **Safely eject USB**. Wait for the safe-removal message before unplugging. This ejects the selected physical USB drive; it never forces removal when the operating system reports it is busy.
 
 The app’s **Safely eject USB…** tray/menu shortcut and Resonance Export’s **Safely eject in Bridge** link open the same local drive picker. Choose the drive there; the main server never unmounts devices on its own host. Linux safe removal requires the desktop UDisks service and `udisksctl`. If the OS refuses removal, close files/apps using the drive and retry or use its normal system eject control.
 
-The helper downloads only that export using a scoped 24-hour token. It verifies the
-bundle, refuses existing-file/export overwrites and never formats drives. Cancellation
+The helper fetches that export's manifested files directly using a scoped 24-hour
+token. It verifies each file before offering the USB write, refuses existing-file/export
+overwrites and never formats drives. Cancellation
 and failures roll back only files created by that transfer. New files are read back
 and checked against their SHA-256 inventory before publishing. Keep action files
 private while valid.
 
 Folder selection chooses source tracks; it does not reproduce the source folder
 hierarchy on the USB. The prepared bundle supplies the player database layout.
-Manual ZIP transfer remains available: extract it, then place its `Contents` and
-`PIONEER` folders together at the root of an empty, compatible test drive.
+Manual ZIP transfer remains available on demand: extract it, then place its `Contents`
+and `PIONEER` folders together at the root of an empty, compatible test drive.
 
 USB writes have been tested in isolated local folders. Physical drive and player
 validation, including OPUS-QUAD and legacy models, remains required. The dual profile

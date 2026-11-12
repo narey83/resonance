@@ -281,7 +281,7 @@ describe('USB export selection and failures', () => {
     ).toContain('Player and playlist');
     act(() => {
       Simulate.change(container.querySelector('select'), {
-        target: { value: 'legacy' },
+        target: { value: 'cdj-3000' },
       });
       Simulate.change(container.querySelector('input[maxlength]'), {
         target: { value: 'Weekend' },
@@ -289,7 +289,7 @@ describe('USB export selection and failures', () => {
       Simulate.click(button('Continue'));
     });
     expect(container.textContent).toContain('Playlist: Weekend');
-    expect(container.textContent).toContain('Legacy players');
+    expect(container.textContent).toContain('CDJ-3000');
     await act(async () => {
       Simulate.click(button('Prepare USB export'));
     });
@@ -297,6 +297,7 @@ describe('USB export selection and failures', () => {
       paths: ['/library/one.mp3', '/library/two.flac'],
       playlistName: 'Weekend',
       profile: 'legacy',
+      playerModel: 'cdj-3000',
     });
     expect(
       container.querySelector('[aria-current="step"]').textContent,
@@ -605,7 +606,9 @@ describe('USB export selection and failures', () => {
       responseType: 'blob',
     });
     expect(click).toHaveBeenCalledWith();
-    expect(container.textContent).toContain('same installed helper now');
+    expect(container.textContent).toContain(
+      'takes you straight to the installed Bridge app',
+    );
     click.mockRestore();
   });
   it('shows a clear helper download failure', async () => {

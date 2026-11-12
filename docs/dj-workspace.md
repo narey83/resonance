@@ -165,7 +165,7 @@ path for existing saved analysis, not an inference dependency.
 
 ## Experimental USB export and Network Link
 
-The Export wizard prepares tracks, playlists, waveforms and beatgrids in a ZIP. It can
+The Export wizard prepares supported original audio, playlists, waveforms and beatgrids. It can
 also be opened from library selections or a set plan. Folder selection chooses tracks
 without imposing the source folder layout on the USB. The
 server uses the Python writer in `tools/usb-export/`; install its `requirements.txt`
@@ -176,18 +176,42 @@ export RESONANCE_USB_EXPORT_ROOT=/var/lib/resonance/usb-exports
 export RESONANCE_USB_EXPORT_PYTHON=/opt/resonance/venvs/usb-export/bin/python
 export RESONANCE_USB_EXPORT_WORKER=/opt/resonance/tools/usb-export/usb_export.py
 export RESONANCE_USB_EXPORT_FFMPEG=/usr/bin/ffmpeg
+export RESONANCE_USB_EXPORT_FFPROBE=/usr/bin/ffprobe
 ```
 
 `desktop/bridge/` contains Resonance Bridge with USB Export and Network Link, native launcher,
 installer builders, protocol sources and licenses. Build/install instructions are in
-its [README](../desktop/bridge/README.md). Both actions use `.resonance` files.
+its [README](../desktop/bridge/README.md). USB export opens the local Bridge dashboard
+directly; `.resonance` files remain available for manual handoff and Network Link pairing.
 Network Link serves the prepared whole library, checks for changes every 15 seconds
 and refreshes as its revision changes. Tracks need indexing and complete enhanced
 analysis before becoming available; there is no manual track picker.
 It runs on the players' local network; the main Resonance server may be elsewhere.
 
-USB export writes both classic and OneLibrary database formats when the dual profile
-is selected. File-format readback and isolated-folder transfer checks have passed.
+USB export copies supported MP3, AAC in M4A, WAV, AIFF, ALAC and FLAC files without
+transcoding. FFprobe checks codec, sample rate, channel count and bit depth before
+copying, and both player databases record the source audio properties. Unsupported
+files fail with a format error. The selected player determines whether the export
+includes the classic database, OneLibrary, or both for a mixed set. Bridge fetches
+manifested files directly and checks each SHA-256; a ZIP is generated only if a
+manual download or an older Bridge requests one. Network Link batches still use
+their existing ZIP transport. File-format readback and isolated-folder transfer
+checks have passed; physical player playback remains to be checked.
+
+The player dropdown includes OPUS-QUAD, CDJ-3000X, XDJ-AZ, CDJ-3000 and
+CDJ-2000NXS2. AlphaTheta's [USB library-format table](https://alphatheta.com/en/information/important-notice-for-customers-using-usb-devices-with-our-dj-equipment/)
+determines whether the device reads OneLibrary or the classic database. Their
+published audio lists include MP3, AAC, WAV, AIFF, Apple Lossless and FLAC:
+[OPUS-QUAD](https://pioneer-support.zendesk.com/hc/en-us/articles/16242884611097-Which-file-formats-can-I-play),
+[CDJ-3000X](https://alphatheta.com/en/product/player/cdj-3000x/black/),
+[XDJ-AZ](https://downloads.support.alphatheta.com/manuals/all-in-one-dj-systems/XDJ-AZ/XDJ-AZ_DRI1936C_manual_EN.pdf),
+[CDJ-3000](https://www.pioneerdj.com/en/news/2020/cdj-3000-professional-dj-multi-player/),
+and [CDJ-2000NXS2](https://www.pioneerdj.com/en/product/dj-players-turntables/cdj-2000nxs2/).
+The exporter accepts a conservative common subset: MP3 and AAC in M4A at
+44.1/48 kHz, and 16/24-bit WAV, AIFF, ALAC and FLAC at 44.1/48/88.2/96 kHz.
+The generic classic choice accepts only MP3, WAV and AIFF; select a named model
+to include FLAC, ALAC or AAC. Some older players support fewer formats. Supported file extensions alone do not certify
+that the generated library loads on a physical player.
 Physical USB/player acceptance remains outstanding, including OPUS-QUAD and legacy
 models. Do not interpret source availability as a guarantee for every DJ device.
 Helper binaries/installers also require native platform validation and signing before

@@ -548,6 +548,10 @@ $("#diagnostics").onclick = () =>
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   });
 (async () => {
+  const handoff = page === "usb"
+    ? new URLSearchParams(location.hash.slice(1)).get("handoff")
+    : null;
+  if (handoff) history.replaceState(null, "", location.pathname + location.search);
   await refresh();
   if (page === "network" && paired()) {
     const adapters = await request("interfaces");
@@ -566,6 +570,12 @@ $("#diagnostics").onclick = () =>
   }
   if (page === "usb" && paired()) {
     await refreshDrives();
+    if (handoff) {
+      await action(async () => {
+        if (handoff.length > 65536) throw Error("Invalid export handoff.");
+        await request("usb/receive", JSON.parse(handoff));
+      });
+    }
     if (location.hash === "#eject") {
       $("#usb-drive-card").scrollIntoView?.({ block: "start" });
       $("#drive").focus();

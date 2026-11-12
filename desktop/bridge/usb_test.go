@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -100,6 +101,60 @@ func TestUSBHTTPRequiresConfirmation(t *testing.T) {
 	h.routes("127.0.0.1:55460").ServeHTTP(w, r)
 	if w.Code != 400 {
 		t.Fatal(w.Code)
+	}
+}
+func TestUSBDirectDownloadRejectsUnsafeManifest(t *testing.T) {
+	filesRequested := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/manifest") {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"schemaVersion":1,"profile":"dual","trackCount":1,"playlistName":"Test","files":[{"path":"../escape.mp3","bytes":1,"sha256":"` + strings.Repeat("a", 64) + `"}]}`))
+			return
+		}
+		filesRequested = true
+		w.WriteHeader(404)
+	}))
+	defer server.Close()
+	cache := t.TempDir()
+	c := connection{ServerURL: server.URL + "/transfer/" + strings.Repeat("a", 32), Token: strings.Repeat("b", 64)}
+	if _, err := downloadUSBFiles(context.Background(), server.Client(), c, cache); err == nil {
+		t.Fatal("unsafe manifest accepted")
+	}
+	if filesRequested {
+		t.Fatal("fetched a file from an unsafe manifest")
+	}
+	entries, _ := os.ReadDir(cache)
+	if len(entries) != 0 {
+		t.Fatal("unsafe manifest left staged files")
+	}
+}
+func TestUSBDirectDownloadAndWrite(t *testing.T) {
+	fixture := usbFixture(t)
+	filesRequested := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/manifest"):
+			http.ServeFile(w, r, filepath.Join(fixture.Root, "export-manifest.json"))
+		case strings.HasSuffix(r.URL.Path, "/file"):
+			filesRequested++
+			http.ServeFile(w, r, filepath.Join(fixture.Root, filepath.FromSlash(r.URL.Query().Get("path"))))
+		default:
+			w.WriteHeader(404)
+		}
+	}))
+	defer server.Close()
+	c := connection{ServerURL: server.URL + "/transfer/" + strings.Repeat("a", 32), Token: strings.Repeat("b", 64)}
+	downloaded, err := downloadUSBFiles(context.Background(), server.Client(), c, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(downloaded.Root)
+	if filesRequested == 0 || downloaded.Tracks != fixture.Tracks {
+		t.Fatal("direct file transfer omitted files or tracks")
+	}
+	target, _ := filepath.EvalSymlinks(t.TempDir())
+	if err = writeUSB(context.Background(), downloaded, target, nil, nil); err != nil {
+		t.Fatal(err)
 	}
 }
 func TestSharedHandoffRouting(t *testing.T) {
