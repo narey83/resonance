@@ -280,18 +280,16 @@
               <div id="report-databases" class="report-databases"></div>
               <div id="report-notes" class="report-notes"></div>
             </div>
-            <div class="report-section-heading"><h3>Playlists</h3><p>Open a playlist to see its tracks in order.</p></div>
-            <div id="report-playlists" class="report-playlists"></div>
-            <div class="report-section-heading"><h3>Tracks</h3><p>Browse the tracks stored in the USB database.</p></div>
+            <div class="report-section-heading"><h3>Tracks</h3><p>Choose a playlist to show its tracks in order. Results are shown 50 at a time.</p></div>
             <div class="report-filters">
+              <label for="report-playlist">Show playlist <select id="report-playlist"><option value="">All tracks on USB</option></select></label>
               <label for="report-search">Search tracks <input id="report-search" type="search" placeholder="Title, artist, album, path or ID" /></label>
-              <label for="report-playlist">Playlist <select id="report-playlist"><option value="">All tracks</option></select></label>
             </div>
             <p id="report-count" class="report-count"></p>
             <p class="report-scroll-hint">Scroll sideways to view all track columns.</p>
             <div class="report-table-scroll" role="region" aria-label="USB database tracks" tabindex="0">
               <table class="report-table">
-                <thead><tr><th scope="col">ID</th><th scope="col">Track</th><th scope="col">Artist / album</th><th scope="col">BPM / key</th><th scope="col">Duration</th><th scope="col">Files</th></tr></thead>
+                <thead><tr><th id="report-first-column" scope="col">ID</th><th scope="col">Track</th><th scope="col">Artist / album</th><th scope="col">BPM / key</th><th scope="col">Duration</th><th scope="col">Files</th></tr></thead>
                 <tbody id="report-tracks"></tbody>
               </table>
             </div>

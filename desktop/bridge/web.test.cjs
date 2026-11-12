@@ -323,10 +323,8 @@ test("USB report reads the selected drive, filters tracks and clears on selectio
   assert.ok(calls.some((call) => call.url === "/api/usb/report?id=test-drive"));
   assert.match(d.querySelector("#report-summary").textContent, /1 track/);
   assert.match(d.querySelector("#report-summary").textContent, /1 playlist/);
-  const playlist = d.querySelector(".report-playlist");
-  assert.match(playlist.querySelector("summary").textContent, /Test set.*1 track/);
-  playlist.open = true;
-  assert.deepEqual([...playlist.querySelectorAll("li strong")].map((item) => item.textContent), ["Stored title"]);
+  assert.equal(d.querySelector("#report-playlists"), null);
+  assert.match(d.querySelector("#report-playlist").options[1].textContent, /Test set · 1 track/);
   assert.match(d.querySelector("#report-tracks").textContent, /Stored title/);
   d.querySelector("#report-search").value = "missing title";
   d.querySelector("#report-search").dispatchEvent(new w.Event("input"));
@@ -336,12 +334,12 @@ test("USB report reads the selected drive, filters tracks and clears on selectio
   assert.equal(d.querySelector("#usb-report").hidden, true);
 });
 
-test("USB report playlist dropdown preserves track order and identifies missing entries", async (t) => {
+test("USB report playlist selection updates the table in stored order", async (t) => {
   const tracks = [
     { id: 7, title: "First", artist: "Alpha", audioStatus: "present", analysisStatus: "present" },
     { id: 8, title: "Second", artist: "Beta", audioStatus: "present", analysisStatus: "present" },
   ];
-  const { document: d } = launch(t, "/usb", {
+  const { w, document: d } = launch(t, "/usb", {
     driveContents: "classic-library",
     report: {
       label: "Test USB", filesystem: "exfat", generatedAt: "2026-11-12T12:00:00Z",
@@ -352,14 +350,48 @@ test("USB report playlist dropdown preserves track order and identifies missing 
   await until(() => d.querySelector("#drive").options.length === 2);
   d.querySelector("#inspect-drive").click();
   await until(() => !d.querySelector("#usb-report").hidden);
-  const playlist = d.querySelector(".report-playlist");
-  assert.equal(playlist.open, false);
-  assert.match(playlist.querySelector("summary").textContent, /Set.*4 tracks/);
-  playlist.open = true;
-  assert.deepEqual([...playlist.querySelectorAll("li strong")].map((item) => item.textContent),
-    ["Second", "First", "Second", "Missing track #99"]);
-  assert.deepEqual([...playlist.querySelectorAll("li span")].map((item) => item.textContent),
-    ["Beta", "Alpha", "Beta"]);
+  const selector = d.querySelector("#report-playlist");
+  assert.match(selector.options[1].textContent, /Set · 4 tracks/);
+  selector.value = "2";
+  selector.dispatchEvent(new w.Event("change"));
+  const rows = [...d.querySelectorAll("#report-tracks tr")];
+  assert.deepEqual(rows.map((row) => row.cells[0].textContent), ["1 · 8", "2 · 7", "3 · 8", "4 · 99"]);
+  assert.deepEqual(rows.map((row) => row.cells[1].textContent.includes("Full metadata")
+    ? row.cells[1].firstChild.textContent : row.cells[1].textContent),
+    ["Second", "First", "Second", "Missing database track #99"]);
+  assert.match(d.querySelector("#report-count").textContent, /4 playlist entries in Set/);
+  d.querySelector("#report-search").value = "First";
+  d.querySelector("#report-search").dispatchEvent(new w.Event("input"));
+  assert.match(d.querySelector("#report-count").textContent, /1 playlist entry in Set/);
+  assert.equal(d.querySelector("#report-tracks tr").cells[0].textContent, "2 · 7");
+  selector.value = "";
+  selector.dispatchEvent(new w.Event("change"));
+  assert.equal(d.querySelector("#report-first-column").textContent, "ID");
+});
+
+test("USB report paginates a playlist with more than a thousand entries", async (t) => {
+  const { document: d } = launch(t, "/usb", {
+    driveContents: "classic-library",
+    report: {
+      label: "Test USB", filesystem: "exfat", generatedAt: "2026-11-12T12:00:00Z",
+      databases: [], notes: [], audioIssues: 0, analysisIssues: 0,
+      tracks: [{ id: 7, title: "Repeated", audioStatus: "present", analysisStatus: "present" }],
+      playlists: [{ id: 2, parentId: 0, name: "Long set", isFolder: false,
+        trackIds: Array(1001).fill(7) }],
+    },
+  });
+  await until(() => d.querySelector("#drive").options.length === 2);
+  d.querySelector("#inspect-drive").click();
+  await until(() => !d.querySelector("#usb-report").hidden);
+  const selector = d.querySelector("#report-playlist");
+  selector.value = "2";
+  selector.dispatchEvent(new d.defaultView.Event("change"));
+  assert.match(d.querySelector("#report-count").textContent, /1,001 playlist entries/);
+  assert.equal(d.querySelectorAll("#report-tracks tr").length, 50);
+  assert.equal(d.querySelector("#report-page").textContent, "Page 1 of 21");
+  d.querySelector("#report-next").click();
+  assert.equal(d.querySelector("#report-tracks tr").cells[0].textContent, "51 · 7");
+  assert.equal(d.querySelectorAll("#report-tracks tr").length, 50);
 });
 
 test("failed USB export warns that the report counts only written tracks", async (t) => {

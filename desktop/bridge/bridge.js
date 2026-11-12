@@ -20,6 +20,7 @@ let status = null,
   transfer = null,
   drives = [],
   driveReport = null,
+  reportTracksById = null,
   reportPage = 0,
   busy = false,
   refreshing = false,
@@ -504,6 +505,7 @@ async function refresh() {
 async function refreshDrives() {
   drives = await request("usb/drives");
   driveReport = null;
+  reportTracksById = null;
   $("#usb-report").hidden = true;
   const select = $("#drive");
   select.replaceChildren(
@@ -555,6 +557,7 @@ function renderDriveReport() {
   const report = driveReport;
   $("#usb-report").hidden = !report;
   if (!report) return;
+  reportTracksById = new Map(report.tracks.map((track) => [track.id, track]));
   renderUSB();
   $("#report-title").textContent = report.label + " · USB library report";
   $("#report-subtitle").textContent =
@@ -594,53 +597,15 @@ function renderDriveReport() {
     p.textContent = note;
     notes.append(p);
   }
-  const list = $("#report-playlists");
-  list.replaceChildren();
   const selector = $("#report-playlist");
   const current = selector.value;
-  selector.replaceChildren(new Option("All tracks", ""));
+  selector.replaceChildren(new Option("All tracks on USB", ""));
   const names = new Map(report.playlists.map((item) => [item.id, item.name]));
-  const tracksById = new Map(report.tracks.map((track) => [track.id, track]));
   for (const item of report.playlists) {
+    if (item.isFolder) continue;
     const label = (item.parentId && names.has(item.parentId) ? names.get(item.parentId) + " / " : "") + item.name;
-    if (item.isFolder) {
-      const folder = document.createElement("div");
-      folder.className = "report-playlist-folder";
-      folder.textContent = label + " · folder";
-      list.append(folder);
-      continue;
-    }
-    const details = document.createElement("details");
-    details.className = "report-playlist";
-    const heading = document.createElement("summary");
-    const title = document.createElement("strong");
-    title.textContent = label;
-    const count = document.createElement("span");
-    count.textContent = item.trackIds.length.toLocaleString() + (item.trackIds.length === 1 ? " track" : " tracks");
-    heading.append(title, count);
-    const entries = document.createElement("ol");
-    entries.className = "report-playlist-items";
-    for (const id of item.trackIds) {
-      const track = tracksById.get(id);
-      const entry = document.createElement("li");
-      const trackName = document.createElement("strong");
-      trackName.textContent = track?.title || (track ? "Untitled" : "Missing track #" + id);
-      entry.append(trackName);
-      if (track?.artist) {
-        const artist = document.createElement("span");
-        artist.textContent = track.artist;
-        entry.append(artist);
-      }
-      entries.append(entry);
-    }
-    if (!item.trackIds.length) {
-      const empty = document.createElement("p");
-      empty.className = "report-playlist-empty";
-      empty.textContent = "This playlist is empty.";
-      details.append(heading, empty);
-    } else details.append(heading, entries);
-    list.append(details);
-    selector.append(new Option(label, String(item.id)));
+    selector.append(new Option(label + " · " + item.trackIds.length.toLocaleString() +
+      (item.trackIds.length === 1 ? " track" : " tracks"), String(item.id)));
   }
   selector.value = current;
   if (selector.selectedIndex < 0) selector.value = "";
@@ -650,24 +615,34 @@ function renderReportTracks() {
   if (!driveReport) return;
   const query = $("#report-search").value.trim().toLocaleLowerCase();
   const selected = driveReport.playlists.find((item) => String(item.id) === $("#report-playlist").value);
-  const ids = selected ? new Set(selected.trackIds) : null;
-  const tracks = driveReport.tracks.filter((track) =>
-    (!ids || ids.has(track.id)) &&
-    (!query || [track.id, track.title, track.artist, track.album, track.genre, track.key, track.audioPath]
-      .some((value) => String(value).toLocaleLowerCase().includes(query))));
-  const pages = Math.max(1, Math.ceil(tracks.length / 50));
+  const entries = selected
+    ? selected.trackIds.map((id, index) => ({ id, position: index + 1, track: reportTracksById.get(id) }))
+    : driveReport.tracks.map((track) => ({ id: track.id, track }));
+  const matching = query ? entries.filter(({ id, track }) =>
+    [id, track?.title, track?.artist, track?.album, track?.genre, track?.key, track?.audioPath]
+      .some((value) => String(value ?? "").toLocaleLowerCase().includes(query))) : entries;
+  const pages = Math.max(1, Math.ceil(matching.length / 50));
   reportPage = Math.min(reportPage, pages - 1);
-  $("#report-count").textContent = tracks.length.toLocaleString() +
-    (tracks.length === 1 ? " matching track" : " matching tracks");
+  $("#report-count").textContent = matching.length.toLocaleString() +
+    (selected ? (matching.length === 1 ? " playlist entry" : " playlist entries") + " in " + selected.name :
+      matching.length === 1 ? " matching track" : " matching tracks");
+  $("#report-first-column").textContent = selected ? "Position · ID" : "ID";
   $("#report-page").textContent = "Page " + (reportPage + 1) + " of " + pages;
   $("#report-prev").disabled = reportPage === 0;
   $("#report-next").disabled = reportPage + 1 >= pages;
   const body = $("#report-tracks");
   body.replaceChildren();
-  for (const track of tracks.slice(reportPage * 50, (reportPage + 1) * 50)) {
+  for (const { id, position, track } of matching.slice(reportPage * 50, (reportPage + 1) * 50)) {
     const row = document.createElement("tr");
     const cell = (value) => { const td = document.createElement("td"); td.textContent = String(value); row.append(td); return td; };
-    cell(track.id);
+    cell(selected ? position + " · " + id : id);
+    if (!track) {
+      cell("Missing database track #" + id);
+      cell(""); cell(""); cell("");
+      cell("Not in USB database").className = "report-issue";
+      body.append(row);
+      continue;
+    }
     const title = cell(track.title || "Untitled");
     const details = document.createElement("details");
     const summary = document.createElement("summary");
@@ -688,6 +663,15 @@ function renderReportTracks() {
     cell(Math.floor(track.durationSeconds / 60) + ":" + String(track.durationSeconds % 60).padStart(2, "0"));
     const files = cell("Audio: " + track.audioStatus + " · Analysis: " + track.analysisStatus);
     if (track.audioStatus !== "present" || track.analysisStatus !== "present") files.className = "report-issue";
+    body.append(row);
+  }
+  if (!matching.length) {
+    const row = document.createElement("tr");
+    const empty = document.createElement("td");
+    empty.colSpan = 6;
+    empty.className = "report-empty";
+    empty.textContent = query ? "No tracks match this search." : "No tracks in this playlist.";
+    row.append(empty);
     body.append(row);
   }
 }
@@ -802,6 +786,7 @@ $("#drive").onchange = () => {
   updateDrivePicker();
   $("#confirm").checked = false;
   driveReport = null;
+  reportTracksById = null;
   $("#usb-report").hidden = true;
   renderUSB();
 };

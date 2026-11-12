@@ -23,7 +23,7 @@ import (
 )
 
 // Set by the release build. A missing key disables executable downloads.
-var helperVersion = "0.3.28"
+var helperVersion = "0.3.29"
 var updatePublicKey string
 
 const maxUpdateBytes int64 = 128 << 20

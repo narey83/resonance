@@ -528,85 +528,9 @@ select:disabled {
 .report-section-heading p {
   font-size: 11px;
 }
-.report-playlists {
-  display: grid;
-  gap: 8px;
-}
-.report-playlist,
-.report-playlist-folder {
-  min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--soft);
-}
-.report-playlist > summary {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 13px 15px;
-  cursor: pointer;
-  list-style: none;
-}
-.report-playlist > summary::-webkit-details-marker {
-  display: none;
-}
-.report-playlist > summary::before {
-  content: "›";
-  color: var(--accent);
-  font-size: 21px;
-  line-height: 0.8;
-  transition: transform 150ms ease;
-}
-.report-playlist[open] > summary::before {
-  transform: rotate(90deg);
-}
-.report-playlist > summary strong {
-  overflow-wrap: anywhere;
-  font-size: 12px;
-}
-.report-playlist > summary span {
-  margin-left: auto;
-  flex: none;
-  color: var(--muted);
-  font-size: 11px;
-}
-.report-playlist-items {
-  max-height: 720px;
-  overflow: auto;
-  margin: 0;
-  padding: 0 16px 0 46px;
-  border-top: 1px solid var(--line);
-}
-.report-playlist-items li {
-  padding: 9px 4px;
-  border-bottom: 1px solid var(--line);
-  font-size: 12px;
-}
-.report-playlist-items li:last-child {
-  border-bottom: 0;
-}
-.report-playlist-items li::marker {
-  color: var(--muted);
-}
-.report-playlist-items li span {
-  display: block;
-  margin-top: 2px;
-  color: var(--muted);
-  font-size: 11px;
-}
-.report-playlist-empty {
-  padding: 12px 16px;
-  border-top: 1px solid var(--line);
-  font-size: 11px;
-}
-.report-playlist-folder {
-  padding: 12px 16px;
-  color: var(--muted);
-  font-size: 11px;
-}
 .report-filters {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
   gap: 14px;
 }
 .report-filters label {
@@ -677,6 +601,11 @@ select:disabled {
 }
 .report-table details p {
   line-height: 1.6;
+}
+.report-empty {
+  color: var(--muted);
+  text-align: center !important;
+  padding: 24px !important;
 }
 .report-pagination {
   justify-content: flex-end;
