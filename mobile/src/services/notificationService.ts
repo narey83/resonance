@@ -45,9 +45,39 @@ import { useAppSettings } from '../store/appSettingsStore';
 import { useAuthStore } from '../store/auth';
 import { createApplicationHubConnection } from '../api/applicationHub';
 import { attachHubLogging, remoteLog } from '../api/remoteLogger';
-import { useRoomStore } from '../store/roomStore';
+import { totalRoomUnread, useRoomStore } from '../store/roomStore';
+import { useConversationStore } from '../store/conversationStore';
+import { messageCount } from '../lib/messageCount';
 import { useBlockedUsersStore } from '../store/blockedUsersStore';
 import type { BlockedUsersPayload } from '../api/blockedUsers';
+
+// Serialize native writes so a late badge update cannot overwrite a newer read.
+let badgeRevision = 0;
+let badgeWrites = Promise.resolve();
+export function updateMessageBadge(count: number) {
+  const revision = ++badgeRevision;
+  badgeWrites = badgeWrites.catch(() => {}).then(async () => {
+    if (revision !== badgeRevision) return;
+    const notifications = await getNotificationsModule();
+    if (revision !== badgeRevision || !notifications) return;
+    await notifications.setBadgeCountAsync(count);
+  }).catch(() => {});
+  return badgeWrites;
+}
+
+export function refreshMessageBadge() {
+  return updateMessageBadge(messageCount(
+    useConversationStore.getState().totalUnread,
+    totalRoomUnread(useRoomStore.getState()),
+  ));
+}
+
+export function useMessageBadge() {
+  const privateUnread = useConversationStore((state) => state.totalUnread);
+  const roomUnread = useRoomStore(totalRoomUnread);
+  useEffect(() => { void refreshMessageBadge(); }, [privateUnread, roomUnread]);
+  useEffect(() => () => { void updateMessageBadge(0); }, []);
+}
 
 export async function initNotifications(): Promise<boolean> {
   const N = await getNotificationsModule();

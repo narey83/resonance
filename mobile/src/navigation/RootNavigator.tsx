@@ -32,9 +32,9 @@ import { useServerProfiles } from '../store/serverProfilesStore';
 import { tokenUsername } from '../lib/jwt';
 import StudioController from '../components/StudioController';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, ActivityIndicator, Pressable } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, useNavigationContainerRef } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import TrackPlayer from 'react-native-track-player';
 import { useAuthStore } from '../store/auth';
@@ -44,37 +44,46 @@ import { useMixtapesHub } from '../store/mixtapeStore';
 import { useLibraryActivityHub } from '../store/libraryActivityStore';
 import { enableRemoteLogging, disableRemoteLogging } from '../api/remoteLogger';
 import { ThemeProvider, useTheme } from '../context/ThemeContext';
-import { initNotifications, useNotificationHub } from '../services/notificationService';
+import { initNotifications, refreshMessageBadge, useMessageBadge, useNotificationHub } from '../services/notificationService';
 import { useConnectionMonitor } from '../services/connectionMonitor';
 import { OverlayProgressRing, useFloatingOverlay } from '../hooks/useFloatingOverlay';
 import { PerfProfiler, usePerfProbe } from '../lib/perfProbe';
 import { occludingFold, useWindowFold } from '../lib/adaptiveWindow';
 import PlayerOverlay from '../components/PlayerOverlay';
 import { PlayerBubble } from '../components/PlayerBubble';
+import { ChatBubble } from '../components/ChatBubble';
+import { useMiniBarHeight } from '../components/PlayerMiniBar';
 import ConnectionBanner from '../components/ConnectionBanner';
 import AuthStack from './AuthStack';
-import MainTabs  from './MainTabs';
+import MainTabs from './MainTabs';
+import type { MainTabParamList } from './MainTabs';
 import StartScreen from '../screens/auth/StartScreen';
 import { useAppMode } from '../store/appModeStore';
 import { useLibrarySettings } from '../store/librarySettingsStore';
 
 function RemoteServices() {
   useEffect(() => startSessionHealth(), []);
-  useEffect(() => { void initNotifications(); }, []);
+  useEffect(() => {
+    let active = true;
+    void initNotifications().then(() => { if (active) void refreshMessageBadge(); });
+    return () => { active = false; };
+  }, []);
   useMixtapesHub();
   useLibraryActivityHub();
   useNotificationHub();
+  useMessageBadge();
   useConnectionMonitor();
   return <ConnectionBanner />;
 }
 
-function MusicApp({ remote }: { remote: boolean }) {
+function MusicApp({ remote, activeTab, onOpenChat }: { remote: boolean; activeTab: string | null; onOpenChat: () => void }) {
   usePerfProbe();
   const fold = occludingFold(useWindowFold());
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const browsingPane = fold ? (fold.vertical ? { width: fold.x } : { flex: 0, height: fold.y }) : undefined;
   const playerMode = useAppSettings((s) => s.playerMode);
+  const miniBarHeight = useMiniBarHeight();
   // The native overlay (draws over other apps + home screen) takes over as the
   // controller when it's available and permitted; otherwise fall back to the
   // in-app JS bubble. Never show both.
@@ -86,6 +95,11 @@ function MusicApp({ remote }: { remote: boolean }) {
       <View style={[{ flex: 1, backgroundColor: colors.bgPrimary, paddingLeft: insets.left, paddingRight: fold?.vertical ? 0 : insets.right }, browsingPane]}>
       <PerfProfiler id="tabs"><MainTabs /></PerfProfiler>
       {playerMode === 'bubble' && !overlayActive && <PerfProfiler id="bubble"><PlayerBubble /></PerfProfiler>}
+      {remote && activeTab !== 'ChatTab' && activeTab !== 'RoomsTab' && (
+        <View style={{ position: 'absolute', right: 16, bottom: Math.max(insets.bottom, 8) + 68 + miniBarHeight }}>
+          <ChatBubble onPress={onOpenChat} />
+        </View>
+      )}
       {overlayActive && <OverlayProgressRing />}
       </View>
       <PerfProfiler id="overlay"><PlayerOverlay /></PerfProfiler>
@@ -95,6 +109,8 @@ function MusicApp({ remote }: { remote: boolean }) {
 }
 
 function AppContent() {
+  const navigationRef = useNavigationContainerRef<MainTabParamList>();
+  const [activeTab, setActiveTab] = useState<string | null>(null);
   // Selectors: this is the root of the tree, so a whole-store read here re-rendered everything
   // below it (NavigationContainer included) on any unrelated auth or settings write.
   const hydrationError = useAuthStore((s) => s.hydrationError);
@@ -162,8 +178,15 @@ function AppContent() {
   return (
     <>
       <StatusBar style={isDark ? 'light' : 'dark'} />
-      <NavigationContainer>
-        {mode === 'choose' ? <StartScreen /> : isAuthenticated || mode === 'local' ? <MusicApp remote={isAuthenticated} key={isAuthenticated ? `${serverUrl}:${sessionId}` : 'local'} /> : <AuthStack />}
+      <NavigationContainer
+        ref={navigationRef}
+        onReady={() => {
+          const state = navigationRef.getRootState();
+          setActiveTab(state?.routes[state.index]?.name ?? null);
+        }}
+        onStateChange={(state) => setActiveTab(state?.routes[state.index]?.name ?? null)}
+      >
+        {mode === 'choose' ? <StartScreen /> : isAuthenticated || mode === 'local' ? <MusicApp remote={isAuthenticated} activeTab={activeTab} onOpenChat={() => navigationRef.navigate('ChatTab', { screen: 'Chat' })} key={isAuthenticated ? `${serverUrl}:${sessionId}` : 'local'} /> : <AuthStack />}
       </NavigationContainer>
     </>
   );

@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { mobileModules } = require('./helpers.cjs');
 
 test('disabled message notifications stay silent; enabled alerts request sound on separate channels', async () => {
-  const scheduled = [], channels = [];
+  const scheduled = [], channels = [], badges = [];
   const settings = { privateMessage: false, roomMention: false, downloadsComplete: false };
   const mocks = {
     'src/lib/sessionScope.ts': { getSessionScope: () => 'account', sessionGuard: () => () => true },
@@ -14,8 +14,10 @@ test('disabled message notifications stay silent; enabled alerts request sound o
       setNotificationChannelAsync: async (id) => channels.push(id),
       getPermissionsAsync: async () => ({ status: 'granted' }),
       scheduleNotificationAsync: async (notification) => scheduled.push(notification),
+      setBadgeCountAsync: async (count) => { badges.push(count); return true; },
     },
     'src/store/appSettingsStore.ts': { useAppSettings: { getState: () => ({ notifications: settings }) } },
+    'src/store/conversationStore.ts': {},
   };
   for (const path of ['services/messagingSync', 'lib/serverConnection', 'api/application', 'store/auth', 'api/applicationHub', 'api/remoteLogger', 'store/roomStore', 'store/blockedUsersStore']) mocks[`src/${path}.ts`] = {};
   const service = mobileModules(mocks)('src/services/notificationService.ts');
@@ -31,6 +33,10 @@ test('disabled message notifications stay silent; enabled alerts request sound o
   assert.deepEqual(scheduled.map(n => n.content.sound), ['default', 'default', 'default']);
   assert.equal(new Set(scheduled.map(n => n.trigger.channelId)).size, 3);
   assert.ok(scheduled.every(n => channels.includes(n.trigger.channelId)));
+  await Promise.all([service.updateMessageBadge(1), service.updateMessageBadge(4)]);
+  assert.deepEqual(badges, [4]);
+  await service.updateMessageBadge(0);
+  assert.deepEqual(badges, [4, 0]);
 });
 
 test('reading a thread dismisses only its older delivered alerts', async () => {

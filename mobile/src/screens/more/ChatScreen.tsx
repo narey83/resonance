@@ -40,15 +40,19 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useDeferredFocusEffect } from '../../hooks/useDeferredEffect';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { useConversationStore } from '../../store/conversationStore';
+import { totalRoomUnread, useRoomStore } from '../../store/roomStore';
 import type { Conversation } from '../../api/chat';
+import type { Room } from '../../api/rooms';
 import { useTheme } from '../../context/ThemeContext';
-import type { ChatStackParamList } from '../../navigation/MainTabs';
+import type { ChatStackParamList, MainTabParamList } from '../../navigation/MainTabs';
 import BottomSheet from '../../components/BottomSheet';
 import UserAvatar from '../../components/UserAvatar';
 import { useUserInfoStore } from '../../store/userInfoStore';
 import UserActionSheet from '../../components/UserActionSheet';
 import { LIST_PERF_PROPS } from '../../lib/listPerf';
+import { messageCountLabel } from '../../lib/messageCount';
 
 type Props = NativeStackScreenProps<ChatStackParamList, 'Chat'>;
 
@@ -131,25 +135,34 @@ export default function ChatScreen({ navigation }: Props) {
   const s = useMemo(() => makeStyles(colors), [colors]);
 
   const { conversations, isLoading, loadConversations } = useConversationStore();
+  const privateUnread = useConversationStore((state) => state.totalUnread);
+  const { joined, unread: roomUnread, isLoadingJoined, loadJoined, loadUnread } = useRoomStore();
+  const roomsUnread = useRoomStore(totalRoomUnread);
+  const [section, setSection] = useState<'private' | 'rooms'>('private');
   const [composing, setComposing] = useState(false);
   const [newUsername, setNewUsername] = useState('');
   const [actionUser, setActionUser] = useState<string | null>(null);
+  const tabs = navigation.getParent<BottomTabNavigationProp<MainTabParamList>>();
+  const openRooms = useCallback(() => tabs?.navigate('RoomsTab', { screen: 'Rooms' }), [tabs]);
+  const openRoom = (roomName: string) => tabs?.navigate('RoomsTab', { screen: 'RoomDetail', params: { roomName } });
 
   useDeferredFocusEffect(
     useCallback(() => {
-      loadConversations();
-    }, [loadConversations])
+      void loadConversations();
+      void loadJoined();
+      void loadUnread().catch(() => {});
+    }, [loadConversations, loadJoined, loadUnread])
   );
 
   React.useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <Pressable onPress={() => setComposing(true)} hitSlop={8}>
-          <Ionicons color={colors.accent} name="create-outline" size={22} />
+        <Pressable accessibilityRole="button" accessibilityLabel={section === 'private' ? 'New private message' : 'Browse chatrooms'} onPress={() => section === 'private' ? setComposing(true) : openRooms()} hitSlop={8}>
+          <Ionicons color={colors.accent} name={section === 'private' ? 'create-outline' : 'add-circle-outline'} size={22} />
         </Pressable>
       ),
     });
-  }, [navigation, colors]);
+  }, [navigation, colors, section, openRooms]);
 
   const openConversation = (username: string) => {
     navigation.navigate('ChatConversation', { username });
@@ -180,12 +193,47 @@ export default function ChatScreen({ navigation }: Props) {
   // peer being offline, and that's exactly what a manual refresh is for.
   const refresh = () => {
     useUserInfoStore.getState().reset();
-    loadConversations();
+    void loadConversations();
+  };
+
+  const renderRoom = ({ item }: { item: Room }) => {
+    const unread = roomUnread[item.name] ?? 0;
+    return (
+      <Pressable accessibilityRole="button" accessibilityLabel={`${item.name}${unread ? `, ${unread} unread` : ''}`} onPress={() => openRoom(item.name)} style={({ pressed }) => [s.row, pressed && s.rowPressed]}>
+        <View style={s.roomIcon}><Ionicons color={colors.accent} name="chatbubbles-outline" size={22} /></View>
+        <View style={s.rowContent}>
+          <Text style={s.username} numberOfLines={1}>{item.name}</Text>
+          <Text style={s.preview} numberOfLines={1}>{item.messages.at(-1)?.message ?? 'Joined chatroom'}</Text>
+        </View>
+        {unread > 0 && <View style={s.badge}><Text style={s.badgeText}>{messageCountLabel(unread)}</Text></View>}
+        <Ionicons color={colors.textDim} name="chevron-forward" size={17} />
+      </Pressable>
+    );
   };
 
   return (
     <View style={s.container}>
-      {conversations.length === 0 && !isLoading ? (
+      <View style={s.sections}>
+        <Pressable accessibilityRole="tab" accessibilityState={{ selected: section === 'private' }} onPress={() => setSection('private')} style={[s.section, section === 'private' && s.sectionActive]}>
+          <Text style={[s.sectionText, section === 'private' && s.sectionTextActive]}>Private{privateUnread ? `  ${messageCountLabel(privateUnread)}` : ''}</Text>
+        </Pressable>
+        <Pressable accessibilityRole="tab" accessibilityState={{ selected: section === 'rooms' }} onPress={() => setSection('rooms')} style={[s.section, section === 'rooms' && s.sectionActive]}>
+          <Text style={[s.sectionText, section === 'rooms' && s.sectionTextActive]}>Chatrooms{roomsUnread ? `  ${messageCountLabel(roomsUnread)}` : ''}</Text>
+        </Pressable>
+      </View>
+      {section === 'rooms' ? (
+        <FlatList
+          {...LIST_PERF_PROPS}
+          data={joined}
+          keyExtractor={(item) => item.name}
+          onRefresh={() => { void loadJoined(); void loadUnread().catch(() => {}); }}
+          refreshing={isLoadingJoined}
+          renderItem={renderRoom}
+          ItemSeparatorComponent={() => <View style={s.separator} />}
+          ListEmptyComponent={!isLoadingJoined ? <View style={s.empty}><Ionicons color={colors.textMuted} name="chatbubbles-outline" size={40} /><Text style={s.emptyText}>No chatrooms joined</Text></View> : null}
+          ListFooterComponent={<Pressable accessibilityRole="button" onPress={openRooms} style={s.browseRooms}><Ionicons name="search" size={17} color={colors.accent} /><Text style={s.browseRoomsText}>Browse chatrooms</Text></Pressable>}
+        />
+      ) : conversations.length === 0 && !isLoading ? (
         <View style={s.empty}>
           <Ionicons color={colors.textMuted} name="chatbubble-outline" size={40} />
           <Text style={s.emptyText}>No conversations</Text>
@@ -253,6 +301,14 @@ export default function ChatScreen({ navigation }: Props) {
 function makeStyles(c: ThemeColors) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: c.bgPrimary },
+    sections: { flexDirection: 'row', padding: Spacing.sm, gap: Spacing.sm, borderBottomWidth: 1, borderBottomColor: c.border },
+    section: { flex: 1, alignItems: 'center', paddingVertical: Spacing.sm, borderRadius: Radius.md },
+    sectionActive: { backgroundColor: c.bgElevated },
+    sectionText: { color: c.textMuted, fontSize: Typography.base, fontWeight: '600' },
+    sectionTextActive: { color: c.accent },
+    roomIcon: { width: AVATAR, height: AVATAR, borderRadius: AVATAR / 2, backgroundColor: c.bgElevated, alignItems: 'center', justifyContent: 'center' },
+    browseRooms: { margin: Spacing.lg, padding: Spacing.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, borderWidth: 1, borderColor: c.border, borderRadius: Radius.md },
+    browseRoomsText: { color: c.accent, fontSize: Typography.base, fontWeight: '600' },
 
     row: {
       flexDirection: 'row',

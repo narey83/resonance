@@ -295,7 +295,7 @@ export default function MainTabs() {
         component={PerfChat}
         name="ChatTab"
         options={{
-          title: 'Chat',
+          title: 'Messages',
           headerShown: false,
           tabBarBadge: totalUnread > 0 ? (totalUnread > 99 ? '99+' : totalUnread) : undefined,
         }}
@@ -304,7 +304,7 @@ export default function MainTabs() {
       <Tab.Screen
         component={PerfMore}
         name="MoreTab"
-        options={{ title: 'More', headerShown: false, tabBarBadge: totalUnread + roomMentions || undefined }}
+        options={{ title: 'More', headerShown: false }}
       />
     </Tab.Navigator>
   );
