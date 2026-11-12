@@ -9,7 +9,17 @@ import { MemoryRouter } from 'react-router-dom';
 jest.mock('../../lib/api', () => ({ get: jest.fn(), post: jest.fn() }));
 jest.mock('../../lib/mixtapes', () => ({ create: jest.fn() }));
 jest.mock('../TrackAnalysis/UsbExportPanel', () => (props) => (
-  <div data-testid="export-panel">{JSON.stringify(props)}</div>
+  <>
+    <div data-testid="export-panel">{JSON.stringify(props)}</div>
+    <button
+      onClick={() =>
+        props.onJobChange({ status: 'completed', downloadAvailable: true })
+      }
+      type="button"
+    >
+      Simulate completed export
+    </button>
+  </>
 ));
 jest.mock('../TrackAnalysis/UsbExportInspector', () => () => (
   <div>Saved inspection</div>
@@ -91,6 +101,22 @@ describe('Export source choices', () => {
     expect(props.initialPaths).toEqual(selection.paths);
     expect(props.selectionId).toBe('selection');
     expect(props.initialPlaylistName).toBe('My playlist');
+  });
+  it('moves the finished export ahead of the source chooser', async () => {
+    expect.hasAssertions();
+    await mount();
+    act(() => {
+      Simulate.change(container.querySelector('select'), {
+        target: { value: 'mix' },
+      });
+    });
+    await act(async () => Simulate.click(button('Review export selection')));
+    act(() => Simulate.click(button('Simulate completed export')));
+    expect(container.querySelector('.export-source').hidden).toBe(true);
+    expect(container.querySelector('.export-source-context').hidden).toBe(true);
+    expect(
+      container.querySelector('[data-testid="export-panel"]'),
+    ).not.toBeNull();
   });
   it.each([
     {

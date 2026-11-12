@@ -31,6 +31,48 @@
 .usb-export-notes p {
   margin: 12px 0 0;
 }
+.usb-export-ready {
+  max-width: 720px;
+  padding: 20px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: var(--bg-primary);
+}
+.usb-export-ready > strong {
+  color: var(--text-primary);
+  font-size: 18px;
+}
+.usb-export-ready p {
+  margin: 6px 0 0;
+}
+.usb-export-ready-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 18px 0 12px;
+}
+.usb-export-start-over {
+  margin-top: 18px;
+}
+.usb-export-transfer-help {
+  max-width: 720px;
+  margin-top: 24px;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+.usb-export-transfer-help > summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+.usb-export-transfer-help .usb-export-notes {
+  margin-top: 16px;
+}
+@media (max-width: 600px) {
+  .usb-export-ready-actions button {
+    width: 100%;
+  }
+}
 .usb-export-panel button,
 .usb-export-panel select,
 .usb-export-panel input:not([type="checkbox"]) {

@@ -128,9 +128,14 @@ const ExportPage = () => {
       },
     },
   };
+  const finishedExport =
+    latestJob?.status === 'completed' && latestJob.downloadAvailable;
   return (
     <main className="export-page">
-      <section className="export-source">
+      <section
+        className="export-source"
+        hidden={finishedExport}
+      >
         <h2>Choose what to export</h2>
         <p className="export-source-intro">
           Take a saved set, a smart crate or a music folder to your players.
@@ -294,7 +299,10 @@ const ExportPage = () => {
         </div>
       </section>
       {selection && (
-        <section className="export-source-context">
+        <section
+          className="export-source-context"
+          hidden={finishedExport}
+        >
           <h2>{selection.source.name}</h2>
           <p>
             {selection.trackCount} tracks ·{' '}

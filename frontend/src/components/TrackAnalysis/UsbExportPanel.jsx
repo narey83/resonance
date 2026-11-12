@@ -351,6 +351,27 @@ const UsbExportPanel = ({
       job.error || '',
     );
   const locked = busy || libraryLoading || active(job);
+  const completedExport = job?.status === 'completed' && job.downloadAvailable;
+  const compatibilityNotes = (
+    <details className="usb-export-notes">
+      <summary>
+        Experimental export · compatibility and included features
+      </summary>
+      <p>
+        Experimental device-library export. Hardware verification is pending;
+        compatibility depends on the player and firmware.
+      </p>
+      <p>
+        Audio is exported as stereo 16-bit 44.1 kHz WAV for broad player
+        support. This creates new copies and does not change your music files.
+      </p>
+      <p>
+        Run full Track Analysis first. Beat grids and waveforms use Resonance’s
+        independent analysis. Cue/loop, artwork and device vocal/phrase export
+        are not included in this version.
+      </p>
+    </details>
+  );
   return (
     <section
       aria-label="USB export"
@@ -386,24 +407,7 @@ const UsbExportPanel = ({
             ][step]
           : 'Export for compatible DJ players'}
       </h3>
-      <details className="usb-export-notes">
-        <summary>
-          Experimental export · compatibility and included features
-        </summary>
-        <p>
-          Experimental device-library export. Hardware verification is pending;
-          compatibility depends on the player and firmware.
-        </p>
-        <p>
-          Audio is exported as stereo 16-bit 44.1 kHz WAV for broad player
-          support. This creates new copies and does not change your music files.
-        </p>
-        <p>
-          Run full Track Analysis first. Beat grids and waveforms use
-          Resonance’s independent analysis. Cue/loop, artwork and device
-          vocal/phrase export are not included in this version.
-        </p>
-      </details>
+      {(!wizard || step !== 3) && compatibilityNotes}
       {libraryLoading && <p role="status">Loading export tracks…</p>}
       {libraryLoaded && !enabled && (
         <p>USB export worker is not configured on this instance.</p>
@@ -512,7 +516,7 @@ const UsbExportPanel = ({
           />
         </>
       )}
-      {wizard && step >= 2 && (
+      {wizard && step >= 2 && !completedExport && (
         <div className="export-review">
           <h4>{step === 2 ? 'Review your export' : 'Download and transfer'}</h4>
           <p>
@@ -564,7 +568,39 @@ const UsbExportPanel = ({
           </button>
         </p>
       )}
-      {job && (
+      {completedExport && (
+        <div
+          className="usb-export-ready"
+          role="status"
+        >
+          <strong>USB export ready</strong>
+          <p>
+            {job.total} tracks · {exportPlaylistName} ·{' '}
+            {profile === 'dual'
+              ? 'OPUS-QUAD + legacy players'
+              : 'Legacy players'}
+          </p>
+          <div className="usb-export-ready-actions">
+            <button
+              className="usb-export-primary"
+              disabled={busy}
+              onClick={openHelper}
+              type="button"
+            >
+              Open in Resonance Bridge
+            </button>
+            <button
+              disabled={busy}
+              onClick={download}
+              type="button"
+            >
+              Download USB ZIP
+            </button>
+          </div>
+          <p>Choose your USB drive in Bridge to transfer the prepared files.</p>
+        </div>
+      )}
+      {job && !completedExport && (
         <div aria-live="polite">
           {active(job) ? (
             <div
@@ -709,6 +745,7 @@ const UsbExportPanel = ({
       )}
       {wizard && step === 3 && !active(job) && (
         <button
+          className="usb-export-start-over"
           disabled={busy}
           onClick={() => {
             setJob(null);
@@ -721,8 +758,9 @@ const UsbExportPanel = ({
         </button>
       )}
       {(!wizard || step === 3) && (
-        <>
-          <h4>Resonance Bridge</h4>
+        <details className="usb-export-transfer-help">
+          <summary>Bridge setup and other transfer options</summary>
+          {wizard && step === 3 && compatibilityNotes}
           <p>
             <a href={`${urlBase}/apps/bridge`}>
               All installers and Bridge setup
@@ -734,6 +772,15 @@ const UsbExportPanel = ({
             this export and lets you choose a USB drive. Confirm the destination
             in the helper to begin writing. The same installed helper now
             handles USB Export and Network Link.
+          </p>
+          <p>
+            <a
+              href="http://127.0.0.1:55460/"
+              rel="noopener noreferrer"
+              target="_blank"
+            >
+              Open Resonance helper
+            </a>
           </p>
           <p>
             <button
@@ -763,18 +810,15 @@ const UsbExportPanel = ({
               Download cross-platform source and build guide
             </button>
           </p>
-        </>
+          <p>
+            Extract the ZIP, then copy its device-library folders together to
+            the root of a compatible USB drive. Use an empty test drive and
+            safely eject it before testing on hardware.
+          </p>
+        </details>
       )}
       {showInspector && <UsbExportInspector latestJob={job} />}
       {error && <p role="alert">{error}</p>}
-      <p>
-        Extract the ZIP, then copy its generated device-library folders to the
-        root of a player-compatible USB drive. Keep these folders together. Use
-        an empty test drive and safely eject it before testing on hardware. The
-        Resonance Bridge for Windows, macOS or Linux writes the prepared export
-        to your drive. The browser prepares and downloads the ZIP; it cannot
-        write directly to USB devices.
-      </p>
     </section>
   );
 };

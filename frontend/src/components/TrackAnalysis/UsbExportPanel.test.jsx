@@ -326,6 +326,34 @@ describe('USB export selection and failures', () => {
       profile: 'dual',
     });
   });
+  it('keeps completed export actions clear and setup instructions collapsed', async () => {
+    expect.hasAssertions();
+    await act(async () => {
+      ReactDOM.render(
+        <UsbExportPanel
+          initialPaths={['/library/one.mp3']}
+          wizard
+        />,
+        container,
+      );
+    });
+    act(() => Simulate.click(button('Continue')));
+    act(() => Simulate.click(button('Continue')));
+    await act(async () => Simulate.click(button('Prepare USB export')));
+    expect(container.querySelector('.usb-export-ready').textContent).toContain(
+      'USB export ready',
+    );
+    expect(button('Open in Resonance Bridge')).toBeDefined();
+    expect(button('Download USB ZIP')).toBeDefined();
+    expect(
+      container.querySelectorAll('.usb-export-ready-actions button'),
+    ).toHaveLength(2);
+    expect(container.textContent).not.toContain('Export: completed');
+    expect(container.querySelector('.usb-export-transfer-help').open).toBe(
+      false,
+    );
+    expect(container.querySelectorAll('.usb-export-notes')).toHaveLength(1);
+  });
   it('preserves the Set Planner name and running order through the export wizard', async () => {
     expect.hasAssertions();
     await act(async () => {
