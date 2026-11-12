@@ -35,8 +35,10 @@ namespace resonance.Analysis.API
     using System.Security.Cryptography;
     using System.Text;
     using System.Text.Json;
+    using System.Threading.Tasks;
     using Asp.Versioning;
     using Microsoft.AspNetCore.Authorization;
+    using Microsoft.AspNetCore.Http;
     using Microsoft.AspNetCore.Mvc;
     using resonance.Analysis.UsbExport;
 
@@ -308,6 +310,62 @@ namespace resonance.Analysis.API
             catch (FileNotFoundException)
             {
                 return NotFound();
+            }
+        }
+
+        [AllowAnonymous]
+        [HttpPost("transfer/{id}/merge")]
+        [RequestSizeLimit(270000000)]
+        [RequestFormLimits(MultipartBodyLengthLimit = 270000000)]
+        public async Task<IActionResult> TransferMerge(string id, [FromForm] IFormFile classic, [FromForm] IFormFile oneLibrary)
+        {
+            try
+            {
+                if (!AuthorizedTransfer(id))
+                {
+                    return Unauthorized();
+                }
+
+                if (classic == null || oneLibrary == null)
+                {
+                    return BadRequest("Both existing player databases are required.");
+                }
+
+                await using var classicStream = classic.OpenReadStream();
+                await using var modernStream = oneLibrary.OpenReadStream();
+                var archive = await exports.MergePlayerDatabases(id, classicStream, classic.Length, modernStream, oneLibrary.Length, HttpContext.RequestAborted);
+                Response.OnCompleted(() =>
+                {
+                    try
+                    {
+                        Directory.Delete(Path.GetDirectoryName(archive), true);
+                    }
+                    catch (IOException)
+                    {
+                    }
+                    catch (UnauthorizedAccessException)
+                    {
+                    }
+
+                    return Task.CompletedTask;
+                });
+                return PhysicalFile(archive, "application/zip");
+            }
+            catch (FileNotFoundException)
+            {
+                return NotFound();
+            }
+            catch (ArgumentException exception)
+            {
+                return BadRequest(exception.Message);
+            }
+            catch (InvalidOperationException exception)
+            {
+                return Conflict(exception.Message);
+            }
+            catch (JsonException)
+            {
+                return Unauthorized();
             }
         }
 

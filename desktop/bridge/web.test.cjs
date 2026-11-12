@@ -40,6 +40,7 @@ function launch(t, page, options = {}) {
     startup = false;
   const state = {
     version: "0.3.2",
+    platform: options.platform || "darwin",
     paired: connected,
     sync: connected
       ? {
@@ -92,6 +93,10 @@ function launch(t, page, options = {}) {
         return { ok: false, json: async () => ({ error: options.ejectError }) };
       ejected = true;
       data = { ejected: true };
+    } else if (url === "/api/usb/format") {
+      data = { formatted: true, label: "RESONANCE", databaseBackup: "/private/backup" };
+    } else if (url === "/api/usb/recover") {
+      data = { recovered: true };
     } else if (url === "/api/usb/drives")
       data = ejected
         ? []
@@ -101,6 +106,7 @@ function launch(t, page, options = {}) {
               path: "/media/Test USB",
               label: "Test USB",
               filesystem: "exfat",
+              contents: options.driveContents || "empty",
             },
           ];
     else if (url === "/api/start") data = state;
@@ -238,6 +244,61 @@ test("USB Export uses the paired instance and requires destination confirmation"
   await until(() => !d.querySelector("#write").disabled);
 });
 
+test("USB Export identifies an existing player library and blocks the write", async (t) => {
+  const { document: d, calls } = launch(t, "/usb", {
+    driveContents: "dual-library",
+    transfer: { name: "Test set", tracks: 15, status: "ready" },
+  });
+  await until(() => d.querySelector("#drive").options.length === 2);
+  d.querySelector("#drive").value = "test-drive";
+  d.querySelector("#drive").dispatchEvent(new d.defaultView.Event("change"));
+  d.querySelector("#confirm").checked = true;
+  d.querySelector("#confirm").dispatchEvent(new d.defaultView.Event("change"));
+  assert.match(d.querySelector("#destination").textContent, /Existing classic and OneLibrary databases/);
+  assert.equal(d.querySelector("#write").disabled, true);
+  assert.equal(calls.some((c) => c.url === "/api/usb/write"), false);
+});
+
+test("USB Export allows a dual-library set to be added on Mac", async (t) => {
+  const { w, document: d } = launch(t, "/usb", {
+    driveContents: "dual-library",
+    transfer: { name: "New set", tracks: 2, status: "ready", profile: "dual" },
+  });
+  await until(() => d.querySelector("#drive").options.length === 2);
+  d.querySelector("#drive").value = "test-drive";
+  d.querySelector("#drive").dispatchEvent(new w.Event("change"));
+  d.querySelector("#confirm").checked = true;
+  d.querySelector("#confirm").dispatchEvent(new w.Event("change"));
+  assert.equal(d.querySelector("#write").disabled, false);
+  assert.match(d.querySelector("#confirmation").textContent, /add this set/);
+});
+
+test("USB formatting names the entire disk and requires a typed drive label", async (t) => {
+  const { w, document: d, calls } = launch(t, "/usb", {
+    driveContents: "dual-library",
+  });
+  await until(() => d.querySelector("#drive").options.length === 2);
+  d.querySelector("#drive").value = "test-drive";
+  d.querySelector("#drive").dispatchEvent(new w.Event("change"));
+  assert.equal(d.querySelector("#format-drive").hidden, false);
+  let promptText = "";
+  w.prompt = (text) => { promptText = text; return "ERASE Test USB"; };
+  d.querySelector("#format-drive").click();
+  await until(() => calls.some((call) => call.url === "/api/usb/format"));
+  assert.match(promptText, /erase the USB disk/);
+  assert.deepEqual(calls.find((call) => call.url === "/api/usb/format").body, {
+    id: "test-drive",
+    confirmation: "ERASE Test USB",
+  });
+  await until(() => d.querySelector("#feedback").textContent.includes("/private/backup"));
+});
+
+test("USB formatting is not offered on unsupported platforms", async (t) => {
+  const { document: d } = launch(t, "/usb", { platform: "linux" });
+  await until(() => d.querySelector("#drive").options.length === 2);
+  assert.equal(d.querySelector("#format-drive").hidden, true);
+});
+
 test("USB Export shows streamed download percentage and verified files", async (t) => {
   const { document: d } = launch(t, "/usb", {
     transfer: {
@@ -256,6 +317,15 @@ test("USB Export shows streamed download percentage and verified files", async (
   assert.equal(d.querySelector("#export-progress").max, 1000);
   assert.equal(d.querySelector("#export-progress").hidden, false);
   assert.match(d.querySelector("#transfer-progress").textContent, /50% downloaded to USB/);
+});
+
+test("USB Export shows the database backup phase before streaming", async (t) => {
+  const { document: d } = launch(t, "/usb", {
+    transfer: { name: "Test set", tracks: 2, status: "writing", phase: "backing-up", profile: "dual" },
+  });
+  await until(() => d.querySelector("#export-status").textContent.includes("Backing up"));
+  assert.match(d.querySelector("#transfer-progress").textContent, /before any new files are written/);
+  assert.equal(d.querySelector("#export-progress").hasAttribute("value"), false);
 });
 
 test("Appearance follows Resonance live and allows a persistent local override", async (t) => {

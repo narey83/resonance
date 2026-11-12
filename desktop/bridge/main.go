@@ -137,7 +137,7 @@ func (h *helper) snapshot() any {
 	if h.USB != nil {
 		usbStatus = h.USB.Status
 	}
-	return map[string]any{"paired": h.pairedLocked(), "usbStatus": usbStatus, "name": "Resonance Bridge", "version": helperVersion, "application": "resonance-bridge", "sync": syncView, "running": running, "bundle": h.Library, "adapter": a, "devices": peers, "error": h.Error, "experimental": true, "hardwareValidated": false}
+	return map[string]any{"paired": h.pairedLocked(), "usbStatus": usbStatus, "platform": runtime.GOOS, "name": "Resonance Bridge", "version": helperVersion, "application": "resonance-bridge", "sync": syncView, "running": running, "bundle": h.Library, "adapter": a, "devices": peers, "error": h.Error, "experimental": true, "hardwareValidated": false}
 }
 func (h *helper) stop() error {
 	h.mu.Lock()
@@ -486,7 +486,7 @@ func (h *helper) routes(address string) http.Handler {
 				return
 			}
 			switch r.URL.Path {
-			case "/api/start", "/api/interfaces", "/api/usb/drives", "/api/usb/write", "/api/usb/receive", "/api/usb/eject", "/api/usb/defer", "/api/usb/cancel-job":
+			case "/api/start", "/api/interfaces", "/api/usb/drives", "/api/usb/write", "/api/usb/receive", "/api/usb/eject", "/api/usb/format", "/api/usb/recover", "/api/usb/defer", "/api/usb/cancel-job":
 				jsonReply(w, 409, map[string]string{"error": "Pair Bridge in Settings before using Network Link or USB Export.", "settingsPath": "/settings"})
 				return
 			}

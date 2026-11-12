@@ -65,6 +65,31 @@ func TestUSBRefusesExistingFiles(t *testing.T) {
 	}
 }
 
+func TestUSBDriveContentsIdentifiesBothPlayerDatabases(t *testing.T) {
+	root := t.TempDir()
+	if got := inspectUSBContents(root); got != "empty" {
+		t.Fatal(got)
+	}
+	player := filepath.Join(root, "PIONEER", "rekordbox")
+	if err := os.MkdirAll(player, 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range []struct{ name, want string }{
+		{"export.pdb", "classic-library"},
+		{"exportLibrary.db", "dual-library"},
+	} {
+		if err := os.WriteFile(filepath.Join(player, item.name), []byte("fixture"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if got := inspectUSBContents(root); got != item.want {
+			t.Fatalf("%s: %s", item.name, got)
+		}
+		if err := destinationReady(root); err == nil {
+			t.Fatal("existing player database accepted as a new destination")
+		}
+	}
+}
+
 func TestUSBJobActionsReleaseOnlyAfterServerAccepts(t *testing.T) {
 	accepted := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

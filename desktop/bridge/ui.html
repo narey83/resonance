@@ -216,10 +216,16 @@
               <div class="safety-note">
                 <span class="icon" data-icon="shield"></span>
                 <p>
-                  Bridge never formats drives or overwrites an existing export.
-                  Use FAT32 for the broadest player compatibility.
+                  Existing player libraries are protected. Formatting erases the
+                  entire selected USB disk and creates a new FAT32 volume.
                 </p>
               </div>
+              <button id="format-drive" class="text-button" hidden>
+                Format selected USB disk…
+              </button>
+              <button id="recover-drive" class="text-button" hidden>
+                Recover interrupted export
+              </button>
               <label class="check-row"
                 ><input id="confirm" type="checkbox" /><span id="confirmation"
                   >I have checked the destination and want to copy this

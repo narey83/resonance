@@ -26,13 +26,15 @@ type usbVolume struct {
 	Path       string `json:"path"`
 	Label      string `json:"label"`
 	Filesystem string `json:"filesystem"`
+	Contents   string `json:"contents"`
 	Device     string `json:"-"`
 	UUID       string `json:"-"`
 }
 
 func normalizeVolume(v usbVolume) (usbVolume, bool) {
 	fs := strings.ToLower(v.Filesystem)
-	if fs != "msdos" && fs != "vfat" && fs != "fat32" && fs != "exfat" {
+	supported := fs == "msdos" || fs == "vfat" || fs == "fat32" || fs == "exfat"
+	if !supported && runtime.GOOS != "darwin" {
 		return v, false
 	}
 	if v.Path == "" || v.UUID == "" {
@@ -48,7 +50,58 @@ func normalizeVolume(v usbVolume) (usbVolume, bool) {
 	if v.Label == "" {
 		v.Label = filepath.Base(v.Path)
 	}
+	if supported {
+		v.Contents = inspectUSBContents(v.Path)
+	} else {
+		v.Contents = "unsupported"
+	}
 	return v, true
+}
+
+// Classify only the mounted volume root. Existing player libraries are never
+// interpreted as empty destinations, even if one database is missing or broken.
+func inspectUSBContents(root string) string {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return "unreadable"
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".resonance-rollback-") {
+			return "recovery-needed"
+		}
+	}
+	allowed := map[string]bool{".spotlight-v100": true, ".trashes": true, ".fseventsd": true, ".ds_store": true, "system volume information": true, "$recycle.bin": true, ".temporaryitems": true, ".volumeicon.icns": true}
+	occupied := false
+	for _, entry := range entries {
+		if !allowed[strings.ToLower(entry.Name())] {
+			occupied = true
+			break
+		}
+	}
+	if !occupied {
+		return "empty"
+	}
+	player := filepath.Join(root, "PIONEER", "rekordbox")
+	for _, path := range []string{filepath.Join(root, "PIONEER"), player} {
+		info, err := os.Lstat(path)
+		if err == nil && (!info.IsDir() || info.Mode()&os.ModeSymlink != 0) {
+			return "other"
+		}
+	}
+	classic, err := os.Lstat(filepath.Join(player, "export.pdb"))
+	hasClassic := err == nil && classic.Mode().IsRegular()
+	one, err := os.Lstat(filepath.Join(player, "exportLibrary.db"))
+	hasOne := err == nil && one.Mode().IsRegular()
+	switch {
+	case hasClassic && hasOne:
+		return "dual-library"
+	case hasClassic:
+		return "classic-library"
+	case hasOne:
+		return "one-library"
+	default:
+		return "other"
+	}
 }
 func plistValues(data []byte) map[string]string {
 	d := xml.NewDecoder(bytes.NewReader(data))

@@ -19,20 +19,23 @@ import (
 )
 
 type usbTransfer struct {
-	Done          chan struct{}      `json:"-"`
-	Status        string             `json:"status"`
-	Error         string             `json:"error"`
-	Name          string             `json:"name"`
-	Tracks        int                `json:"tracks"`
-	Destination   string             `json:"destination,omitempty"`
-	DestinationID string             `json:"destinationId,omitempty"`
-	Prepared      int                `json:"prepared"`
-	Total         int                `json:"total"`
-	Downloaded    int64              `json:"downloadedBytes"`
-	TotalBytes    int64              `json:"totalBytes"`
-	Export        *usbPrepared       `json:"-"`
-	Cancel        context.CancelFunc `json:"-"`
-	Connection    connection         `json:"-"`
+	Done           chan struct{}      `json:"-"`
+	Status         string             `json:"status"`
+	Error          string             `json:"error"`
+	Name           string             `json:"name"`
+	Tracks         int                `json:"tracks"`
+	Profile        string             `json:"profile,omitempty"`
+	Phase          string             `json:"phase,omitempty"`
+	DatabaseBackup string             `json:"databaseBackup,omitempty"`
+	Destination    string             `json:"destination,omitempty"`
+	DestinationID  string             `json:"destinationId,omitempty"`
+	Prepared       int                `json:"prepared"`
+	Total          int                `json:"total"`
+	Downloaded     int64              `json:"downloadedBytes"`
+	TotalBytes     int64              `json:"totalBytes"`
+	Export         *usbPrepared       `json:"-"`
+	Cancel         context.CancelFunc `json:"-"`
+	Connection     connection         `json:"-"`
 }
 
 type usbPrepared struct {
@@ -105,6 +108,7 @@ func (h *helper) receiveUSB(c connection) error {
 		h.Diagnostics.event("info", "usb.ready", map[string]any{"tracks": prepared.Manifest.TrackCount, "bytes": prepared.Bytes})
 		u.Name = prepared.Manifest.PlaylistName
 		u.Tracks = prepared.Manifest.TrackCount
+		u.Profile = prepared.Manifest.Profile
 		u.Total = len(prepared.Manifest.Files)
 		u.TotalBytes = prepared.Bytes
 		h.mu.Unlock()
@@ -322,20 +326,54 @@ func writeUSB(ctx context.Context, b *bundle, target string, verifyMount func() 
 }
 
 func writeUSBStream(ctx context.Context, prepared *usbPrepared, c connection, target string, verifyMount func() error, progress func(int64, int, int)) error {
+	return writeUSBStreamMode(ctx, prepared, c, target, verifyMount, progress, false, "", nil)
+}
+
+func writeUSBStreamMode(ctx context.Context, prepared *usbPrepared, c connection, target string, verifyMount func() error, progress func(int64, int, int), mergeExisting bool, backupRoot string, onBackup func(string)) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
 		return errors.New("export stream redirects are not allowed")
 	}}
-	return writeUSBFiles(ctx, prepared, target, verifyMount, progress, func(relative string) (io.ReadCloser, error) {
+	var backup *playerDatabaseBackup
+	if mergeExisting {
+		var err error
+		backup, err = backupPlayerDatabases(target, backupRoot, prepared.Manifest.JobID, verifyMount)
+		if err != nil {
+			return err
+		}
+		if onBackup != nil {
+			onBackup(backup.Path)
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+	}
+	return writeUSBFilesMode(ctx, prepared, target, verifyMount, progress, func(relative string) (io.ReadCloser, error) {
 		response, err := fetchSync(ctx, client, c, "/file?path="+url.QueryEscape(relative))
 		if err != nil {
 			return nil, err
 		}
 		return response.Body, nil
-	})
+	}, func(stage string) error {
+		if !mergeExisting {
+			return nil
+		}
+		return publishMergedUSB(ctx, client, c, prepared, stage, target, verifyMount, backup)
+	}, mergeExisting)
 }
 
 func writeUSBFiles(ctx context.Context, prepared *usbPrepared, target string, verifyMount func() error, progress func(int64, int, int), openFile func(string) (io.ReadCloser, error)) (err error) {
-	if e := destinationReady(target); e != nil {
+	return writeUSBFilesMode(ctx, prepared, target, verifyMount, progress, openFile, nil, false)
+}
+
+func writeUSBFilesMode(ctx context.Context, prepared *usbPrepared, target string, verifyMount func() error, progress func(int64, int, int), openFile func(string) (io.ReadCloser, error), merge func(string) error, existing bool) (err error) {
+	check := destinationReady
+	if existing {
+		check = existingLibraryReady
+	}
+	if e := check(target); e != nil {
 		return e
 	}
 	if verifyMount != nil {
@@ -485,6 +523,9 @@ func writeUSBFiles(ctx context.Context, prepared *usbPrepared, target string, ve
 			return e
 		}
 	}
+	if existing {
+		return merge(stage)
+	}
 	// Reserve each export root without replacing anything. Rollback only roots created here.
 	for _, name := range []string{"Contents", "PIONEER", "export-manifest.json"} {
 		dest := filepath.Join(target, name)
@@ -585,6 +626,46 @@ func (h *helper) usbRoutes(mux *http.ServeMux) {
 		}
 		jsonReply(w, 200, map[string]any{"ejected": true, "label": volume.Label})
 	})
+	mux.HandleFunc("POST /api/usb/format", func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			ID           string `json:"id"`
+			Confirmation string `json:"confirmation"`
+		}
+		if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&request) != nil || len(request.ID) != 64 {
+			jsonReply(w, 400, map[string]string{"error": "select a mounted USB drive to format"})
+			return
+		}
+		if _, err := hex.DecodeString(request.ID); err != nil {
+			jsonReply(w, 400, map[string]string{"error": "invalid USB drive selection"})
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+		defer cancel()
+		backupPath, err := h.formatUSB(ctx, request.ID, request.Confirmation)
+		if err != nil {
+			jsonReply(w, 409, map[string]string{"error": err.Error()})
+			return
+		}
+		jsonReply(w, 200, map[string]any{"formatted": true, "label": formattedUSBLabel, "databaseBackup": backupPath})
+	})
+	mux.HandleFunc("POST /api/usb/recover", func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			ID string `json:"id"`
+		}
+		if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&request) != nil || len(request.ID) != 64 {
+			jsonReply(w, 400, map[string]string{"error": "select an interrupted USB export to recover"})
+			return
+		}
+		if _, err := hex.DecodeString(request.ID); err != nil {
+			jsonReply(w, 400, map[string]string{"error": "invalid USB drive selection"})
+			return
+		}
+		if err := h.recoverInterruptedUSB(request.ID); err != nil {
+			jsonReply(w, 409, map[string]string{"error": err.Error()})
+			return
+		}
+		jsonReply(w, 200, map[string]bool{"recovered": true})
+	})
 	mux.HandleFunc("POST /api/usb/write", func(w http.ResponseWriter, r *http.Request) {
 		if !h.operation.TryLock() {
 			jsonReply(w, 409, map[string]string{"error": "another Bridge operation is in progress"})
@@ -604,7 +685,12 @@ func (h *helper) usbRoutes(mux *http.ServeMux) {
 			jsonReply(w, 409, map[string]string{"error": e.Error()})
 			return
 		}
-		if e = destinationReady(vol.Path); e != nil {
+		mergeExisting := vol.Contents == "dual-library" && runtime.GOOS == "darwin"
+		check := destinationReady
+		if mergeExisting {
+			check = existingLibraryReady
+		}
+		if e = check(vol.Path); e != nil {
 			jsonReply(w, 409, map[string]string{"error": e.Error()})
 			return
 		}
@@ -615,10 +701,20 @@ func (h *helper) usbRoutes(mux *http.ServeMux) {
 			jsonReply(w, 409, map[string]string{"error": "wait for the export manifest to load"})
 			return
 		}
+		if mergeExisting && u.Profile != "dual" {
+			h.mu.Unlock()
+			jsonReply(w, 409, map[string]string{"error": "prepare a dual-library export to add to this USB drive"})
+			return
+		}
 		ctx, cancel := context.WithCancel(context.Background())
 		u.Cancel = cancel
 		u.Done = make(chan struct{})
 		u.Status = "writing"
+		u.Phase = "streaming"
+		if mergeExisting {
+			u.Phase = "backing-up"
+		}
+		u.DatabaseBackup = ""
 		h.Diagnostics.event("info", "usb.writing", nil)
 		u.Error = ""
 		u.Destination = vol.Path
@@ -631,7 +727,7 @@ func (h *helper) usbRoutes(mux *http.ServeMux) {
 		go func() {
 			defer close(u.Done)
 			defer cancel()
-			e := writeUSBStream(ctx, u.Export, u.Connection, vol.Path, func() error {
+			e := writeUSBStreamMode(ctx, u.Export, u.Connection, vol.Path, func() error {
 				current, e := h.findUSBVolume(v.ID)
 				if e != nil {
 					return e
@@ -647,6 +743,11 @@ func (h *helper) usbRoutes(mux *http.ServeMux) {
 					u.Prepared = done
 				}
 				u.Total = total
+				h.mu.Unlock()
+			}, mergeExisting, h.Cache, func(path string) {
+				h.mu.Lock()
+				u.DatabaseBackup = path
+				u.Phase = "streaming"
 				h.mu.Unlock()
 			})
 			if e != nil {

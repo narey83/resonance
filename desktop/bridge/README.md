@@ -26,18 +26,31 @@ The app’s **Safely eject USB…** tray/menu shortcut and Resonance Export’s 
 The helper fetches only the export manifest before you choose a drive. After
 confirmation, it streams each file from Resonance directly into a temporary folder
 on the selected USB drive, showing downloaded bytes and verified-file progress.
-Track files are not stored in the Mac cache. The helper checks each file against
-the manifest, reads it back from the USB drive, refuses existing-file/export
-overwrites and never formats drives. Cancellation and failures remove the temporary
-USB files without publishing a partial export. Keep action files private while valid.
+The helper checks each file against the manifest and reads it back from the USB
+drive. Track files never enter the Mac cache. On an empty drive Bridge publishes
+a new library without replacing existing files. On macOS, a dual-library drive can receive another set: Bridge
+sends only the existing player databases to Resonance, which merges them with
+the new set while preserving old tracks and playlists. New audio and analysis
+still stream directly to the USB. Before creating any new file on the USB,
+Bridge saves and checksums both core databases, plus `exportExt.pdb` when present,
+in its private local backup directory. It keeps those metadata-only backups
+after the export. Bridge also
+keeps rollback copies of both databases on the USB during publication and offers
+recovery if publication is interrupted.
+Single-database drives and non-Mac platforms remain read-only for adding sets.
+Mac users can also format a selected single-partition external USB disk as FAT32 after typing its
+drive name. Bridge backs up any player `.db` and `.pdb` files before formatting;
+if the backup fails, formatting stops. Formatting erases every file on that disk. Keep action
+files private while valid.
 
 Folder selection chooses source tracks; it does not reproduce the source folder
 hierarchy on the USB. The prepared bundle supplies the player database layout.
 Manual ZIP transfer remains available on demand: extract it, then place its `Contents`
 and `PIONEER` folders together at the root of an empty, compatible test drive.
 
-USB writes have been tested in isolated local folders. Physical drive and player
-validation, including OPUS-QUAD and legacy models, remains required. The dual profile
+USB writes and merges have been tested in isolated local folders against a real
+rekordbox-created test library. Physical Bridge writes and player validation,
+including OPUS-QUAD and legacy models, remain required. The dual profile
 contains classic and OneLibrary databases; that does not establish support for every
 compatible USB-enabled DJ product.
 

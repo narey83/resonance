@@ -1,6 +1,6 @@
 """Stage a NEW dual-library USB export; no physical drive operations."""
 from pathlib import Path
-import argparse,hashlib,json,shutil,subprocess,sys
+import argparse,hashlib,json,re,shutil,subprocess,sys
 from anlz_writer import write_anlz,path_for_audio
 from onelibrary_writer import write_onelibrary,validate_onelibrary
 
@@ -69,7 +69,10 @@ def prepare(manifest,destination,profile,ffmpeg,ffprobe=None):
  root.parent.mkdir(parents=True,exist_ok=True)
  if shutil.disk_usage(root.parent).free<required*1.1:raise ValueError('Insufficient staging space for USB audio')
  root.mkdir()
- if profile!='network':(root/'Contents/Resonance').mkdir(parents=True)
+ job_id=str(manifest.get('jobId') or '')
+ if job_id and not re.fullmatch(r'[0-9a-f]{32}',job_id):raise ValueError('Invalid USB export job ID')
+ audio_folder=f'/Contents/Resonance/{job_id}' if job_id and profile!='network' else '/Contents/Resonance'
+ if profile!='network':(root/audio_folder.lstrip('/')).mkdir(parents=True)
  dbdir=root/'PIONEER/rekordbox';dbdir.mkdir(parents=True);here=Path(__file__).resolve().parent;ed=PdbEditor((here/'legacy-empty-template.pdb').read_bytes());normalized=[];analysis_checks=[];used=set()
  try:
   for t in manifest['tracks']:
@@ -77,7 +80,7 @@ def prepare(manifest,destination,profile,ffmpeg,ffprobe=None):
    while True:
     extension=Path(t['sourcePath']).suffix.lower()
     if profile=='network' and extension not in ['.mp3','.m4a','.aac','.flac','.wav','.aiff','.aif']:raise ValueError('Network Link source format is not supported by Pioneer players')
-    usb=f"/Contents/Resonance/{stem}{('-'+str(attempt)) if attempt else ''}{extension}";anlz=path_for_audio(usb)
+    usb=f"{audio_folder}/{stem}{('-'+str(attempt)) if attempt else ''}{extension}";anlz=path_for_audio(usb)
     if anlz not in used:used.add(anlz);break
     attempt+=1
     if attempt>100:raise ValueError('Analysis hash collision could not be resolved')
@@ -111,7 +114,7 @@ def prepare(manifest,destination,profile,ffmpeg,ffprobe=None):
   if profile=='dual':one=validate_onelibrary(write_onelibrary(root,normalized,manifest.get('playlistName') or 'Resonance'),normalized)
   files=[{'path':p.relative_to(root).as_posix(),'sha256':sha(p),'bytes':p.stat().st_size} for p in sorted(root.rglob('*')) if p.is_file()]
   streams=([{'path':t['usbPath'].lstrip('/'),'sourceKey':manifest['tracks'][i]['sourceKey'],'sha256':manifest['tracks'][i]['sourceSha256'],'bytes':t['fileBytes']} for i,t in enumerate(normalized)] if profile=='network' else [])
-  result={'schemaVersion':1,'source':manifest.get('source'),'profile':profile,'playerModel':manifest.get('playerModel'),'trackCount':len(ids),'playlistName':manifest.get('playlistName') or 'Resonance','sourceKeys':{str(t['id']):t.get('sourceKey','') for t in manifest['tracks']},'streams':streams,'hardwareValidated':False,'audioPolicy':('Authenticated range streaming from Resonance; no audio stored by Bridge' if profile=='network' else 'Original supported audio copied without transcoding'),'files':files,'validation':{'legacyTracks':len(parsed.tracks),'oneLibrary':one,'analysis':analysis_checks},'limitations':['Experimental independent device-library encoder; on-device playback and hot cues not yet verified','Automatically saved cues are exported as hot cues; manual bookmark and loop export remain pending','Independent vocal/phrase labels are not encoded as undocumented proprietary song-structure records','Artwork export is not yet included','FAT32 recommended for older players; exact model and firmware limits apply']}
+  result={'schemaVersion':1,'jobId':job_id,'source':manifest.get('source'),'profile':profile,'playerModel':manifest.get('playerModel'),'trackCount':len(ids),'playlistName':manifest.get('playlistName') or 'Resonance','sourceKeys':{str(t['id']):t.get('sourceKey','') for t in manifest['tracks']},'streams':streams,'hardwareValidated':False,'audioPolicy':('Authenticated range streaming from Resonance; no audio stored by Bridge' if profile=='network' else 'Original supported audio copied without transcoding'),'files':files,'validation':{'legacyTracks':len(parsed.tracks),'oneLibrary':one,'analysis':analysis_checks},'limitations':['Experimental independent device-library encoder; on-device playback and hot cues not yet verified','Automatically saved cues are exported as hot cues; manual bookmark and loop export remain pending','Independent vocal/phrase labels are not encoded as undocumented proprietary song-structure records','Artwork export is not yet included','FAT32 recommended for older players; exact model and firmware limits apply']}
   (root/'export-manifest.json').write_text(json.dumps(result,indent=2,ensure_ascii=False))
   from export_inspection import write_inspection
   write_inspection(root,root.parent/'inspection.json')

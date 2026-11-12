@@ -561,7 +561,7 @@ namespace resonance.Analysis.UsbExport
                 }
 
                 var manifest = Path.Combine(directory, "manifest.json");
-                await File.WriteAllTextAsync(manifest, JsonSerializer.Serialize(new { schemaVersion = 1, profile = job.Profile, playerModel = job.PlayerModel, playlistName = job.PlaylistName, source = jobSources.GetValueOrDefault(job.JobId), tracks = manifestTracks }, JsonOptions), ct);
+                await File.WriteAllTextAsync(manifest, JsonSerializer.Serialize(new { schemaVersion = 1, jobId = job.JobId, profile = job.Profile, playerModel = job.PlayerModel, playlistName = job.PlaylistName, source = jobSources.GetValueOrDefault(job.JobId), tracks = manifestTracks }, JsonOptions), ct);
                 var destination = Path.Combine(directory, "export");
                 var start = new ProcessStartInfo(python) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
                 foreach (var argument in new[] { worker, "--manifest", manifest, "--destination", destination, "--profile", job.Profile, "--ffmpeg", ffmpeg, "--ffprobe", ffprobe ?? Path.Combine(Path.GetDirectoryName(ffmpeg), OperatingSystem.IsWindows() ? "ffprobe.exe" : "ffprobe") })

@@ -26,6 +26,7 @@ type fileSpec struct {
 	SHA256 string `json:"sha256"`
 }
 type exportManifest struct {
+	JobID         string            `json:"jobId"`
 	SourceKeys    map[string]string `json:"sourceKeys"`
 	SchemaVersion int               `json:"schemaVersion"`
 	Profile       string            `json:"profile"`

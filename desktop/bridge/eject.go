@@ -20,12 +20,18 @@ import (
 type usbDeviceManager interface {
 	List() ([]usbVolume, error)
 	Eject(context.Context, usbVolume) error
+	Format(context.Context, usbVolume) error
 }
 type systemUSBDevices struct{}
 
 func (systemUSBDevices) List() ([]usbVolume, error) { return usbVolumes() }
 func (systemUSBDevices) Eject(ctx context.Context, volume usbVolume) error {
 	return ejectUSBOnPlatform(ctx, runtime.GOOS, volume, func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		return exec.CommandContext(ctx, name, args...).CombinedOutput()
+	})
+}
+func (systemUSBDevices) Format(ctx context.Context, volume usbVolume) error {
+	return formatUSBOnPlatform(ctx, runtime.GOOS, volume, func(ctx context.Context, name string, args ...string) ([]byte, error) {
 		return exec.CommandContext(ctx, name, args...).CombinedOutput()
 	})
 }
@@ -54,6 +60,18 @@ func onUSBVolume(volume, path string) bool {
 	relative, err := filepath.Rel(volume, path)
 	return err == nil && !filepath.IsAbs(relative) && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
 }
+func (h *helper) bridgeUsingUSBVolume(volume usbVolume) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	inUse := onUSBVolume(volume.Path, h.Cache)
+	if h.Session != nil && h.Session.DB != nil {
+		inUse = inUse || onUSBVolume(volume.Path, h.Session.DB.ExportRoot)
+	}
+	if h.Library != nil {
+		inUse = inUse || onUSBVolume(volume.Path, h.Library.Root)
+	}
+	return inUse
+}
 func (h *helper) ejectUSB(ctx context.Context, id string) (usbVolume, error) {
 	if !h.operation.TryLock() {
 		return usbVolume{}, errors.New("another Bridge operation is in progress")
@@ -69,16 +87,7 @@ func (h *helper) ejectUSB(ctx context.Context, id string) (usbVolume, error) {
 	if err != nil {
 		return usbVolume{}, err
 	}
-	h.mu.Lock()
-	inUse := onUSBVolume(volume.Path, h.Cache)
-	if h.Session != nil && h.Session.DB != nil {
-		inUse = inUse || onUSBVolume(volume.Path, h.Session.DB.ExportRoot)
-	}
-	if h.Library != nil {
-		inUse = inUse || onUSBVolume(volume.Path, h.Library.Root)
-	}
-	h.mu.Unlock()
-	if inUse {
+	if h.bridgeUsingUSBVolume(volume) {
 		return usbVolume{}, errors.New("Bridge is using files on this drive; use the operating system to eject it after closing Bridge")
 	}
 	if err = h.usbDeviceManager().Eject(ctx, volume); err != nil {

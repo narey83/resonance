@@ -196,7 +196,7 @@ async function action(operation, feedback) {
   try {
     await operation();
     await refresh();
-    if (feedback) message("#feedback", feedback);
+    if (feedback) message("#feedback", typeof feedback === "function" ? feedback() : feedback);
   } catch (failure) {
     error(failure);
   } finally {
@@ -370,6 +370,7 @@ function renderUSB() {
   const downloadPercent = transfer?.totalBytes
     ? Math.min(100, Math.floor((100 * (transfer.downloadedBytes || 0)) / transfer.totalBytes))
     : 0;
+  const drive = drives.find((item) => item.id === $("#drive").value);
   $("#export-empty").hidden = !!transfer;
   $("#export-summary").hidden = !transfer;
   const url = instanceURL();
@@ -382,16 +383,19 @@ function renderUSB() {
     const labels = {
       downloading: "Loading export details from Resonance…",
       ready: "Export ready. Choose a USB drive to stream your set directly from Resonance.",
-      writing: `Streaming to USB: ${downloadPercent}% downloaded · ${transfer.prepared || 0} / ${transfer.total || 0} files verified`,
-      completed:
-        "Transfer complete. Choose Safely eject USB before unplugging.",
+      writing: transfer.phase === "backing-up"
+        ? "Backing up and verifying the player databases before writing to USB…"
+        : `Streaming to USB: ${downloadPercent}% downloaded · ${transfer.prepared || 0} / ${transfer.total || 0} files verified`,
+      completed: transfer.databaseBackup
+        ? "Transfer complete. Original player databases backed up and verified. Safely eject USB before unplugging."
+        : "Transfer complete. Choose Safely eject USB before unplugging.",
       ejected: "USB safely ejected. You can unplug the drive.",
       failed: transfer.error || "The transfer could not finish.",
     };
     $("#export-status").textContent =
       labels[transfer.status] || transfer.status;
     $("#export-progress").hidden = !["downloading", "writing"].includes(transfer.status);
-    if (transfer.status === "downloading") {
+    if (transfer.status === "downloading" || transfer.phase === "backing-up") {
       $("#export-progress").removeAttribute("value");
     } else {
       $("#export-progress").max = Math.max(1, transfer.totalBytes || 0);
@@ -403,9 +407,15 @@ function renderUSB() {
     !paired() ||
     !transfer?.tracks ||
     !["ready", "completed", "failed", "ejected"].includes(transfer.status) ||
-    !$("#drive").value ||
+    !drive ||
+    !(drive.contents === "empty" ||
+      (drive.contents === "dual-library" && status?.platform === "darwin" && transfer.profile === "dual")) ||
     !$("#confirm").checked;
   $("#eject").disabled = busy || !paired() || !!active || !$("#drive").value;
+  $("#format-drive").hidden = status?.platform !== "darwin";
+  $("#format-drive").disabled = busy || !!active || !drive;
+  $("#recover-drive").hidden = drive?.contents !== "recovery-needed";
+  $("#recover-drive").disabled = busy || !!active || !drive;
   $("#cancel-transfer").hidden = !active;
   $("#cancel-transfer").disabled = busy;
   const saved = !!transfer && !active;
@@ -416,20 +426,31 @@ function renderUSB() {
   for (const id of ["drive", "refresh-drives", "confirm", "handoff"])
     $("#" + id).disabled = busy || !!active;
   $("#receive").disabled = busy || !!active || !$("#handoff").files.length;
-  const drive = drives.find((item) => item.id === $("#drive").value);
+  const contents = {
+    empty: "Empty drive, ready for a new export.",
+    "classic-library": "Existing classic rekordbox library detected. Adding to a single-database drive is not yet supported.",
+    "one-library": "Existing OneLibrary detected. Adding to a single-database drive is not yet supported.",
+    "dual-library": status?.platform === "darwin" ? "Existing classic and OneLibrary databases detected. Bridge can add this dual-library set while preserving existing tracks and playlists." : "Existing classic and OneLibrary databases detected. Adding to them is currently available on Mac.",
+    "recovery-needed": "An earlier export was interrupted. Recover the existing player databases before writing another set.",
+    unsupported: "This USB filesystem cannot be used by Bridge. On Mac, format the disk as FAT32 to prepare it for export.",
+    other: "Existing files detected. Bridge will not replace them.",
+    unreadable: "Drive contents could not be checked. Writing is blocked.",
+  };
   $("#destination").textContent = drive
-    ? drive.path + " · " + drive.filesystem
+    ? drive.path + " · " + drive.filesystem + " · " + (contents[drive.contents] || contents.unreadable)
     : "Mounted FAT32 and exFAT drives appear here.";
   $("#confirmation").textContent = drive
     ? "I have checked " +
       drive.label +
       " at " +
       drive.path +
-      " and want to copy this export."
+      (drive.contents === "dual-library" ? " and want to add this set to its player libraries." : " and want to copy this export.")
     : "I have checked the destination and want to copy this export.";
   $("#transfer-progress").textContent =
     transfer?.status === "writing"
-      ? `${downloadPercent}% downloaded to USB · ${transfer.prepared || 0} / ${transfer.total || 0} files verified`
+      ? transfer.phase === "backing-up"
+        ? "The player databases are being copied off the USB and verified before any new files are written."
+        : `${downloadPercent}% downloaded to USB · ${transfer.prepared || 0} / ${transfer.total || 0} files verified`
       : transfer?.status === "ejected"
         ? "USB safely ejected. You can unplug the drive."
         : "After verification, safely eject the selected USB drive before unplugging it.";
@@ -504,6 +525,30 @@ $("#drive").onchange = () => {
 };
 $("#confirm").onchange = renderUSB;
 $("#refresh-drives").onclick = () => action(refreshDrives);
+$("#format-drive").onclick = async () => {
+  const drive = drives.find((item) => item.id === $("#drive").value);
+  if (!drive) return;
+  const phrase = "ERASE " + drive.label;
+  const confirmation = window.prompt(
+    "This will erase the USB disk containing “" + drive.label +
+      "”. Bridge requires one partition and backs up player databases before erasing. Type " + phrase +
+      " to confirm:",
+  );
+  if (confirmation === null) return;
+  let databaseBackup = "";
+  await action(async () => {
+    const result = await request("usb/format", { id: drive.id, confirmation });
+    databaseBackup = result.databaseBackup || "";
+    await refreshDrives();
+  }, () => databaseBackup
+    ? "USB disk formatted as FAT32. Player database backup: " + databaseBackup
+    : "USB disk formatted as FAT32. Choose the new volume to export.");
+};
+$("#recover-drive").onclick = () =>
+  action(async () => {
+    await request("usb/recover", { id: $("#drive").value });
+    await refreshDrives();
+  }, "Existing player databases recovered. Refresh and review the USB before exporting again.");
 $("#handoff").onchange = () => {
   $("#handoff-name").textContent =
     $("#handoff").files[0]?.name || "Choose export file";

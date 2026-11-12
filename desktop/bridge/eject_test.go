@@ -22,7 +22,9 @@ type fakeUSBDevices struct {
 	mu      sync.Mutex
 	volumes []usbVolume
 	eject   func(context.Context, usbVolume) error
+	format  func(context.Context, usbVolume) error
 	calls   int
+	formats int
 }
 
 func (f *fakeUSBDevices) List() ([]usbVolume, error) {
@@ -42,6 +44,15 @@ func (f *fakeUSBDevices) Eject(ctx context.Context, v usbVolume) error {
 	f.mu.Lock()
 	f.volumes = nil
 	f.mu.Unlock()
+	return nil
+}
+func (f *fakeUSBDevices) Format(ctx context.Context, v usbVolume) error {
+	f.mu.Lock()
+	f.formats++
+	f.mu.Unlock()
+	if f.format != nil {
+		return f.format(ctx, v)
+	}
 	return nil
 }
 func ejectFixture(t *testing.T) (*helper, *fakeUSBDevices, usbVolume) {
