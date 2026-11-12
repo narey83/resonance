@@ -15,6 +15,9 @@
 .export-page :is(button, input, select) { font: inherit; color: var(--text-primary); }
 .export-page :where(button, select, input:not([type="radio"]):not([type="checkbox"])) { padding: 10px 12px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg-primary); }
 .export-page :is(input, select) { min-width: 0; max-width: 100%; }
+.export-page select { color-scheme: light; }
+:root:is(.dark, .dim, .amoled, .midnight, .violet, .ember) .export-page select { color-scheme: dark; }
+.export-page select option { background-color: var(--bg-surface); color: var(--text-primary); }
 .export-page input:is([type="radio"], [type="checkbox"]) { accent-color: var(--accent); }
 .export-page button { cursor: pointer; }
 .export-page button:disabled { cursor: default; opacity: .55; }
