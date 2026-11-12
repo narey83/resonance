@@ -2,8 +2,10 @@
 package main
 
 import (
+	"archive/zip"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -144,6 +146,53 @@ func TestRecoverInterruptedUSBEditRestoresBothDatabasesAndFiles(t *testing.T) {
 	}
 	if got := inspectUSBContents(root); got != "dual-library" {
 		t.Fatal(got)
+	}
+}
+
+func TestExtractEditedDatabasesAcceptsLargePlaylistPlan(t *testing.T) {
+	stage := t.TempDir()
+	archive := filepath.Join(stage, "edited.zip")
+	output, err := os.Create(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer := zip.NewWriter(output)
+	for _, name := range []string{"export.pdb", "exportLibrary.db"} {
+		part, err := writer.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := part.Write([]byte(strings.Repeat("database", 128))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	plan := usbEditPlan{Kind: "playlist", TargetID: 1}
+	for index := range 12000 {
+		plan.RemovedFiles = append(plan.RemovedFiles, "/Contents/"+strings.Repeat("a", 180)+"/"+fmt.Sprint(index)+".wav")
+	}
+	data, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) <= 2<<20 {
+		t.Fatal("fixture did not exceed the old plan limit")
+	}
+	part, err := writer.Create("plan.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := output.Close(); err != nil {
+		t.Fatal(err)
+	}
+	got, err := extractEditedDatabases(archive, stage)
+	if err != nil || len(got.RemovedFiles) != len(plan.RemovedFiles) {
+		t.Fatalf("large playlist plan was rejected: %v", err)
 	}
 }
 

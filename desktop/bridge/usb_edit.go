@@ -44,6 +44,8 @@ type usbEditRecovery struct {
 	RemovedFiles []string `json:"removedFiles"`
 }
 
+const maxUSBEditPlanBytes = 16 << 20
+
 func (h *helper) editUSB(request usbEditRequest) (*usbEditPlan, string, error) {
 	if runtime.GOOS != "darwin" {
 		return nil, "", errors.New("USB library editing is currently available on Mac")
@@ -181,7 +183,7 @@ func requestEditedDatabases(ctx context.Context, client *http.Client, connection
 	if err != nil {
 		return "", err
 	}
-	limit := 2*maxPlayerDatabaseBytes + (2 << 20)
+	limit := 2*maxPlayerDatabaseBytes + maxUSBEditPlanBytes
 	n, copyErr := io.Copy(output, io.LimitReader(response.Body, limit+1))
 	if copyErr == nil {
 		copyErr = output.Sync()
@@ -212,7 +214,7 @@ func extractEditedDatabases(archive, stage string) (*usbEditPlan, error) {
 	for _, file := range reader.File {
 		limit := maxPlayerDatabaseBytes
 		if file.Name == "plan.json" {
-			limit = 2 << 20
+			limit = maxUSBEditPlanBytes
 		} else if file.Name != "export.pdb" && file.Name != "exportLibrary.db" {
 			return nil, errors.New("USB edit response has an unexpected path")
 		}
@@ -537,7 +539,7 @@ func rollbackUSBEdit(root, working, id string) error {
 		return err
 	}
 	data, err := os.ReadFile(filepath.Join(working, "manifest.json"))
-	if err != nil || len(data) > 2<<20 {
+	if err != nil || len(data) > maxUSBEditPlanBytes {
 		return errors.New("USB edit recovery manifest is unavailable")
 	}
 	var manifest usbEditRecovery
