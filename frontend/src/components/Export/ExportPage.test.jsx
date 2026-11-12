@@ -47,6 +47,21 @@ describe('Export source choices', () => {
     [...container.querySelectorAll('button')].find(
       (item) => item.textContent === text,
     );
+  const chooseSource = (text) => {
+    act(() => {
+      Simulate.click(
+        container.querySelector('[aria-label="Export source item"]'),
+      );
+    });
+    act(() => {
+      Simulate.click(
+        [...container.querySelectorAll('[role="option"]')].find(
+          (item) => item.textContent === text,
+        ),
+      );
+    });
+  };
+
   beforeEach(() => {
     container = document.createElement('div');
     document.body.append(container);
@@ -80,14 +95,34 @@ describe('Export source choices', () => {
     expect(container.querySelector('[data-testid="export-panel"]')).toBeNull();
     expect(container.textContent).toContain('Quick folder export');
   });
+  it('opens an accessible source list and selects with the keyboard', async () => {
+    expect.hasAssertions();
+    await mount();
+    const trigger = container.querySelector(
+      '[aria-label="Export source item"]',
+    );
+    act(() => Simulate.keyDown(trigger, { key: 'ArrowDown' }));
+    const items = container.querySelectorAll('[role="option"]');
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect(items).toHaveLength(2);
+    act(() => Simulate.keyDown(items[0], { key: 'ArrowDown' }));
+    expect(document.activeElement).toBe(items[1]);
+    act(() => Simulate.keyDown(items[1], { key: 'Enter' }));
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    expect(trigger.textContent).toContain('My playlist · 2 tracks');
+    expect(button('Review export selection').disabled).toBe(false);
+    act(() => Simulate.click(trigger));
+    act(() =>
+      Simulate.keyDown(container.querySelector('[role="option"]'), {
+        key: 'Escape',
+      }),
+    );
+    expect(container.querySelector('[role="listbox"]')).toBeNull();
+  });
   it('preserves the server-resolved playlist order and snapshot when reviewing', async () => {
     expect.hasAssertions();
     await mount();
-    act(() => {
-      Simulate.change(container.querySelector('select'), {
-        target: { value: 'mix' },
-      });
-    });
+    chooseSource('My playlist · 2 tracks');
     await act(async () => {
       Simulate.click(button('Review export selection'));
     });
@@ -105,11 +140,7 @@ describe('Export source choices', () => {
   it('moves the finished export ahead of the source chooser', async () => {
     expect.hasAssertions();
     await mount();
-    act(() => {
-      Simulate.change(container.querySelector('select'), {
-        target: { value: 'mix' },
-      });
-    });
+    chooseSource('My playlist · 2 tracks');
     await act(async () => Simulate.click(button('Review export selection')));
     act(() => Simulate.click(button('Simulate completed export')));
     expect(container.querySelector('.export-source').hidden).toBe(true);
@@ -121,27 +152,23 @@ describe('Export source choices', () => {
   it.each([
     {
       kind: 'smart-crate',
-      id: 'crate',
+      label: 'My crate',
       request: { kind: 'smart-crate', id: 'crate' },
     },
     {
       kind: 'folder',
-      id: 'Album',
+      label: 'Album',
       request: { kind: 'folder', folder: 'Album' },
     },
   ])(
     'resolves $kind using its distinct source contract',
-    async ({ id, kind, request }) => {
+    async ({ kind, label, request }) => {
       expect.hasAssertions();
       await mount();
       act(() => {
         Simulate.change(container.querySelector(`input[value="${kind}"]`));
       });
-      act(() => {
-        Simulate.change(container.querySelector('select'), {
-          target: { value: id },
-        });
-      });
+      chooseSource(label);
       await act(async () => {
         Simulate.click(button('Review export selection'));
       });
@@ -175,11 +202,7 @@ describe('Export source choices', () => {
     expect.hasAssertions();
     await mount();
     api.post.mockRejectedValue({ response: { data: 'No matching tracks' } });
-    act(() => {
-      Simulate.change(container.querySelector('select'), {
-        target: { value: 'mix' },
-      });
-    });
+    chooseSource('My playlist · 2 tracks');
     await act(async () => {
       Simulate.click(button('Review export selection'));
     });

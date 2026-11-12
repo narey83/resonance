@@ -4,6 +4,7 @@ import api from '../../lib/api';
 import * as mixtapes from '../../lib/mixtapes';
 import UsbExportInspector from '../TrackAnalysis/UsbExportInspector';
 import UsbExportPanel from '../TrackAnalysis/UsbExportPanel';
+import ExportSourcePicker from './ExportSourcePicker';
 import { FolderOpen, Layers3, ListMusic, Plus } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { Link, useHistory } from 'react-router-dom';
@@ -218,42 +219,23 @@ const ExportPage = () => {
             </>
           ) : (
             <>
-              <label>
-                {kind === 'playlist'
-                  ? 'Saved playlist'
-                  : kind === 'smart-crate'
-                    ? 'Smart crate'
-                    : 'Music folder'}
-                <select
-                  aria-label="Export source item"
-                  disabled={loading || busy}
-                  onChange={(event) => {
-                    setSourceId(event.target.value);
-                    setSelection(null);
-                  }}
-                  value={sourceId}
-                >
-                  <option value="">
-                    Choose{' '}
-                    {kind === 'playlist'
-                      ? 'a playlist'
-                      : kind === 'smart-crate'
-                        ? 'a smart crate'
-                        : 'a folder'}
-                  </option>
-                  {options.map((item) => (
-                    <option
-                      key={item.id || item.path}
-                      value={item.id || item.path}
-                    >
-                      {kind === 'folder' ? item.path : item.name}
-                      {kind !== 'folder' && typeof item.trackCount === 'number'
-                        ? ` · ${item.trackCount} tracks`
-                        : ''}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <ExportSourcePicker
+                disabled={loading || busy}
+                kind={kind}
+                label={
+                  kind === 'playlist'
+                    ? 'Saved playlist'
+                    : kind === 'smart-crate'
+                      ? 'Smart crate'
+                      : 'Music folder'
+                }
+                onChange={(value) => {
+                  setSourceId(value);
+                  setSelection(null);
+                }}
+                options={options}
+                value={sourceId}
+              />
               {kind === 'smart-crate' && (
                 <p>
                   Membership is resolved now and saved as a fixed selection for
