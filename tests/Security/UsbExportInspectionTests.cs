@@ -44,7 +44,13 @@ public class UsbExportInspectionTests : IDisposable
         Assert.True(Assert.IsType<OkObjectResult>(controller.Defer(id)).Value is UsbExportJob { Deferred: true });
         Assert.True(exports.Read(id).Deferred);
         Assert.True(Assert.Single(exports.History()).Deferred);
+        using (var reopened = new UsbExportService(null!, null!))
+        {
+            Assert.True(reopened.Read(id).Deferred);
+        }
         Assert.IsType<UnauthorizedResult>(controller.TransferState(id));
+        Assert.IsType<UnauthorizedResult>(controller.TransferDefer(id));
+        Assert.IsType<UnauthorizedResult>(controller.TransferCancel(id));
         var handoff = Assert.IsType<FileContentResult>(controller.Transfer(id));
         using var ticket = JsonDocument.Parse(handoff.FileContents);
         controller.Request.Headers["X-Resonance-Link-Token"] = ticket.RootElement.GetProperty("token").GetString();
