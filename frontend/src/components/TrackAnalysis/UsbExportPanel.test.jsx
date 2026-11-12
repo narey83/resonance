@@ -350,7 +350,7 @@ describe('USB export selection and failures', () => {
     expect(
       container.querySelectorAll('.usb-export-ready-actions button'),
     ).toHaveLength(4);
-    expect(button('Defer export')).toBeDefined();
+    expect(button('Save for later')).toBeDefined();
     expect(button('Cancel export')).toBeDefined();
     expect(container.textContent).not.toContain('Export: completed');
     expect(container.querySelector('.usb-export-transfer-help').open).toBe(
@@ -422,11 +422,11 @@ describe('USB export selection and failures', () => {
     act(() => Simulate.click(button('Continue')));
     act(() => Simulate.click(button('Continue')));
     await act(async () => Simulate.click(button('Prepare USB export')));
-    await act(async () => Simulate.click(button('Defer export')));
+    await act(async () => Simulate.click(button('Save for later')));
     expect(api.post).toHaveBeenCalledWith('/analysis/usb-export/job/defer');
     expect(container.textContent).toContain('USB export saved for later');
     expect(button('Open in Resonance Bridge')).toBeDefined();
-    expect(button('Defer export')).toBeUndefined();
+    expect(button('Save for later')).toBeUndefined();
   });
   it('preserves the Set Planner name and running order through the export wizard', async () => {
     expect.hasAssertions();

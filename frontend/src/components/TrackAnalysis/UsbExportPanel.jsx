@@ -696,7 +696,7 @@ const UsbExportPanel = ({
                 onClick={deferExport}
                 type="button"
               >
-                Defer export
+                Save for later
               </button>
             )}
             <button

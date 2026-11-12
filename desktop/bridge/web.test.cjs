@@ -215,6 +215,7 @@ test("USB Export uses the paired instance and requires destination confirmation"
     transfer: { name: "Test set", tracks: 15, status: "ready" },
   });
   await until(() => d.querySelector("#drive").options.length === 2);
+  assert.equal(d.querySelector("#defer-export").textContent, "Save for later");
   assert.equal(
     d.querySelector("#open-resonance").href,
     "https://music.example.test/resonance/export",

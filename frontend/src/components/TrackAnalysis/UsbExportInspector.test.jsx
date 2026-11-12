@@ -117,7 +117,7 @@ describe('Saved export database inspection', () => {
       }),
     );
     const defer = [...container.querySelectorAll('button')].find(
-      (button) => button.textContent === 'Defer export',
+      (button) => button.textContent === 'Save for later',
     );
     await act(async () => Simulate.click(defer));
     expect(api.post).toHaveBeenCalledWith(

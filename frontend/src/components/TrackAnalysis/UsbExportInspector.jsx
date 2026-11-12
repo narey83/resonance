@@ -105,7 +105,7 @@ const UsbExportInspector = ({ latestJob, onSavedListChange }) => {
         current.map((job) => (job.jobId === selected ? data : job)),
       );
     } catch (error_) {
-      setError(error_?.message || 'Could not defer this export.');
+      setError(error_?.message || 'Could not save this export for later.');
     } finally {
       setLoading(false);
     }
@@ -198,7 +198,7 @@ const UsbExportInspector = ({ latestJob, onSavedListChange }) => {
                   onClick={deferSaved}
                   type="button"
                 >
-                  Defer export
+                  Save for later
                 </button>
               )}
               <button
