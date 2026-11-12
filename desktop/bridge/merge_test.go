@@ -73,6 +73,26 @@ func TestRemoveStagedAppleDouble(t *testing.T) {
 	}
 }
 
+func TestRemoveCreatedAppleDoubleOnlyTouchesCreatedPaths(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{"P000", "._P000", "._P001"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(name), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := removeCreatedAppleDouble([]string{filepath.Join(root, "P000")}); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"P000", "._P001"} {
+		if _, err := os.Stat(filepath.Join(root, name)); err != nil {
+			t.Fatal("unrelated file was removed", name, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, "._P000")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("created path sidecar remains", err)
+	}
+}
+
 func TestUSBPreflightChecksExistingAudioBeforeStaging(t *testing.T) {
 	for _, scenario := range []string{"present", "present-with-extended", "extended-changed", "missing", "duplicate-playlist"} {
 		t.Run(scenario, func(t *testing.T) {

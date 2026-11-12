@@ -665,6 +665,26 @@ func removeStagedAppleDouble(root string) error {
 	})
 }
 
+func removeCreatedAppleDouble(created []string) error {
+	for _, path := range created {
+		sidecar := filepath.Join(filepath.Dir(path), "._"+filepath.Base(path))
+		info, err := os.Lstat(sidecar)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			return errors.New("unexpected USB metadata sidecar")
+		}
+		if err := os.Remove(sidecar); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func newDirectory(path string, created *[]string) error {
 	if err := os.Mkdir(path, 0700); err == nil {
 		*created = append(*created, path)
@@ -879,6 +899,9 @@ func commitMergedUSB(ctx context.Context, stage, target, id string, oldDigests m
 		return err
 	}
 	created = append(created, record)
+	if err = removeCreatedAppleDouble(created); err != nil {
+		return err
+	}
 	if err = os.WriteFile(filepath.Join(backup, "complete"), []byte(id), 0600); err != nil {
 		return err
 	}
