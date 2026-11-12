@@ -373,6 +373,18 @@ function renderUSB() {
     ? Math.min(100, Math.floor((100 * (transfer.downloadedBytes || 0)) / transfer.totalBytes))
     : 0;
   const drive = drives.find((item) => item.id === $("#drive").value);
+  const failed = transfer?.status === "failed";
+  const beforeWrite = failed && transfer.phase === "checking" && !transfer.prepared;
+  const failureReason = transfer?.error || "The transfer could not finish.";
+  const failureMessage = failed
+    ? "Export failed: " + failureReason + (/[.!?]$/.test(failureReason) ? " " : ". ") +
+      (beforeWrite
+        ? "No tracks from this export were written to the USB."
+        : "Check the USB report before retrying; the transfer may be incomplete.")
+    : "";
+  message("#export-warning", failureMessage);
+  message("#report-warning", driveReport && failed &&
+    transfer.destinationId === driveReport.driveId ? failureMessage : "");
   $("#export-empty").hidden = !!transfer;
   $("#export-summary").hidden = !transfer;
   const url = instanceURL();
@@ -394,7 +406,7 @@ function renderUSB() {
         ? "Transfer complete. Original player databases backed up and verified. Safely eject USB before unplugging."
         : "Transfer complete. Choose Safely eject USB before unplugging.",
       ejected: "USB safely ejected. You can unplug the drive.",
-      failed: transfer.error || "The transfer could not finish.",
+      failed: "Export failed. The USB was not verified as complete.",
     };
     $("#export-status").textContent =
       labels[transfer.status] || transfer.status;
@@ -543,6 +555,7 @@ function renderDriveReport() {
   const report = driveReport;
   $("#usb-report").hidden = !report;
   if (!report) return;
+  renderUSB();
   $("#report-title").textContent = report.label + " · USB library report";
   $("#report-subtitle").textContent =
     report.filesystem + " · Read from attached USB at " +

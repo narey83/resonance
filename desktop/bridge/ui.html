@@ -164,6 +164,7 @@
                   </div>
                 </div>
                 <p id="export-status" role="status"></p>
+                <div class="alert error" id="export-warning" role="alert" hidden></div>
                 <div class="actions">
                   <button id="defer-export" hidden>Save for later</button>
                   <button id="cancel-export" hidden>Cancel export</button>
@@ -273,6 +274,8 @@
               </div>
             </div>
             <p id="report-summary" role="status"></p>
+            <p class="field-hint">This count is read from the attached USB, not from a prepared export. A failed transfer may be incomplete.</p>
+            <div class="alert error" id="report-warning" role="status" hidden></div>
             <div id="report-databases"></div>
             <div id="report-notes"></div>
             <h3>Playlists</h3>

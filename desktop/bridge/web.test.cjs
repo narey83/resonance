@@ -331,6 +331,27 @@ test("USB report reads the selected drive, filters tracks and clears on selectio
   assert.equal(d.querySelector("#usb-report").hidden, true);
 });
 
+test("failed USB export warns that the report counts only written tracks", async (t) => {
+  const { document: d } = launch(t, "/usb", {
+    driveContents: "dual-library",
+    transfer: {
+      name: "Jobby", tracks: 15, status: "failed", phase: "checking",
+      prepared: 0, destinationId: "test-drive",
+      error: "player database files changed during the export",
+    },
+  });
+  await until(() => d.querySelector("#drive").options.length === 2);
+  assert.match(d.querySelector("#export-warning").textContent, /Export failed: player database files changed/);
+  assert.match(d.querySelector("#export-warning").textContent, /No tracks from this export were written/);
+  assert.equal(d.querySelector("#export-warning").hidden, false);
+  d.querySelector("#inspect-drive").click();
+  await until(() => !d.querySelector("#usb-report").hidden);
+  assert.match(d.querySelector("#report-summary").textContent, /1 track/);
+  assert.match(d.querySelector("#usb-report").textContent, /not from a prepared export/);
+  assert.match(d.querySelector("#report-warning").textContent, /Export failed/);
+  assert.equal(d.querySelector("#report-warning").hidden, false);
+});
+
 test("USB report action stays visible when drive choice is required or unavailable", async (t) => {
   const first = launch(t, "/usb", {
     drives: [
