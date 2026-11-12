@@ -32,8 +32,8 @@ import { useServerProfiles } from '../store/serverProfilesStore';
 import { tokenUsername } from '../lib/jwt';
 import StudioController from '../components/StudioController';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import React, { useEffect, useState } from 'react';
-import { View, ActivityIndicator, Pressable } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, ActivityIndicator, Linking, Pressable } from 'react-native';
 import { NavigationContainer, useNavigationContainerRef } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import TrackPlayer from 'react-native-track-player';
@@ -45,6 +45,7 @@ import { useLibraryActivityHub } from '../store/libraryActivityStore';
 import { enableRemoteLogging, disableRemoteLogging } from '../api/remoteLogger';
 import { ThemeProvider, useTheme } from '../context/ThemeContext';
 import { initNotifications, refreshMessageBadge, useMessageBadge, useNotificationHub } from '../services/notificationService';
+import { useBackgroundChat } from '../services/backgroundChat';
 import { useConnectionMonitor } from '../services/connectionMonitor';
 import { OverlayProgressRing, useFloatingOverlay } from '../hooks/useFloatingOverlay';
 import { PerfProfiler, usePerfProbe } from '../lib/perfProbe';
@@ -71,6 +72,7 @@ function RemoteServices() {
   useMixtapesHub();
   useLibraryActivityHub();
   useNotificationHub();
+  useBackgroundChat();
   useMessageBadge();
   useConnectionMonitor();
   return <ConnectionBanner />;
@@ -110,6 +112,7 @@ function MusicApp({ remote, activeTab, onOpenChat }: { remote: boolean; activeTa
 
 function AppContent() {
   const navigationRef = useNavigationContainerRef<MainTabParamList>();
+  const pendingChatLink = useRef(false);
   const [activeTab, setActiveTab] = useState<string | null>(null);
   // Selectors: this is the root of the tree, so a whole-store read here re-rendered everything
   // below it (NavigationContainer included) on any unrelated auth or settings write.
@@ -141,6 +144,18 @@ function AppContent() {
   }, [isReady, modeLoaded, mode, hydrationError, accessToken]);
 
   const isAuthenticated = mode === 'remote' && !!accessToken && !!serverUrl;
+  useEffect(() => {
+    const openChatLink = (url: string | null) => {
+      if (!url || !isAuthenticated || !sessionId || !url.startsWith('resonance://chat?')) return;
+      const match = /[?&]sid=([^&#]+)/.exec(url);
+      if (!match || match[1] !== sessionId) return;
+      if (navigationRef.isReady()) navigationRef.navigate('ChatTab', { screen: 'Chat' });
+      else pendingChatLink.current = true;
+    };
+    void Linking.getInitialURL().then(openChatLink).catch(() => {});
+    const subscription = Linking.addEventListener('url', ({ url }) => openChatLink(url));
+    return () => subscription.remove();
+  }, [isAuthenticated, sessionId, navigationRef]);
   useEffect(() => {
     if (!isAuthenticated || !serverUrl) return;
     const current = useAuthStore.getState();
@@ -183,6 +198,10 @@ function AppContent() {
         onReady={() => {
           const state = navigationRef.getRootState();
           setActiveTab(state?.routes[state.index]?.name ?? null);
+          if (pendingChatLink.current) {
+            pendingChatLink.current = false;
+            navigationRef.navigate('ChatTab', { screen: 'Chat' });
+          }
         }}
         onStateChange={(state) => setActiveTab(state?.routes[state.index]?.name ?? null)}
       >

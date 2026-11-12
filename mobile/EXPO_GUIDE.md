@@ -35,6 +35,8 @@ The native `android/` and `ios/` directories are generated and ignored by Git. C
 
 The app connects directly to your Resonance server over HTTP and SignalR. No Firebase project, Google services configuration, or push-service secret is required. SignalR delivers live updates while connected; returning to the app checks the server for changes missed while suspended. Local notifications remain available for events received by the app. A closed or suspended app cannot promise immediate alerts without an operating-system push service.
 
+On Android, the optional **Background chat alerts** switch starts a first-party foreground service. It checks the server's PM and room-mention feed every 15 seconds over HTTPS and shows a persistent system notification while active. This does not use Firebase, Pushbullet or an external push provider. Android can stop a foreground service under resource pressure, and force-stop or reboot ends it until the app is opened again. The feed uses the signed-in device's current refresh credential, stops after revocation or absolute expiry, and never stores that credential in native preferences. iOS still has no closed-app delivery path.
+
 Google Cast's Android SDK is pinned to **22.3.1** through `androidPlayServicesCastFrameworkVersion` in `app.json`. The plugin defaults to `+`, which now resolves Cast 23 and a media-router dependency requiring Android 37 / AGP 9.1; Expo SDK 57 uses Android 36 / AGP 8.12. Keep this pin when regenerating native projects, and review the complete native toolchain before upgrading Cast. A first build needs network access to download uncached Maven artifacts; offline mode works only after those dependencies have been cached.
 
 ## Normal development

@@ -4,8 +4,10 @@ const { mobileModules } = require('./helpers.cjs');
 
 test('disabled message notifications stay silent; enabled alerts request sound on separate channels', async () => {
   const scheduled = [], channels = [], badges = [];
-  const settings = { privateMessage: false, roomMention: false, downloadsComplete: false };
+  const settings = { privateMessage: false, roomMention: false, backgroundChat: false, downloadsComplete: false };
+  const appState = { currentState: 'active' };
   const mocks = {
+    'react-native': { AppState: appState, Platform: { OS: 'android' }, NativeModules: { BackgroundChat: { isRunning: async () => true } } },
     'src/lib/sessionScope.ts': { getSessionScope: () => 'account', sessionGuard: () => () => true },
     expo: { requireOptionalNativeModule: () => ({}) },
     'expo-notifications': {
@@ -33,6 +35,11 @@ test('disabled message notifications stay silent; enabled alerts request sound o
   assert.deepEqual(scheduled.map(n => n.content.sound), ['default', 'default', 'default']);
   assert.equal(new Set(scheduled.map(n => n.trigger.channelId)).size, 3);
   assert.ok(scheduled.every(n => channels.includes(n.trigger.channelId)));
+  settings.backgroundChat = true;
+  appState.currentState = 'background';
+  await service.notifyPrivateMessage('peer', 'background');
+  await service.notifyRoomMention('room', 'peer', 'background');
+  assert.equal(scheduled.length, 3, 'native service owns background chat alerts');
   await Promise.all([service.updateMessageBadge(1), service.updateMessageBadge(4)]);
   assert.deepEqual(badges, [4]);
   await service.updateMessageBadge(0);

@@ -31,7 +31,7 @@ import { Text } from '../../components/Typography';
 import { Editorial, Spacing, ThemeColors, Typography } from '../../theme';
 
 import React, { useMemo } from 'react';
-import { ScrollView, StyleSheet, Switch, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { useAppSettings } from '../../store/appSettingsStore';
 import { useTheme } from '../../context/ThemeContext';
 
@@ -108,6 +108,19 @@ export default function NotificationsScreen() {
             value={notifications.roomMention}
           />
         </SettingRow>
+        {Platform.OS === 'android' && <SettingRow
+          label="Background chat alerts"
+          subtitle="Keep a connection active on Android for PMs and mentions while the app is closed. Shows a persistent notification and uses more battery."
+          colors={colors}
+        >
+          <Switch
+            disabled={!loaded}
+            onValueChange={(v) => setNotification('backgroundChat', v)}
+            thumbColor={colors.textPrimary}
+            trackColor={{ false: colors.bgElevated, true: colors.accent }}
+            value={notifications.backgroundChat}
+          />
+        </SettingRow>}
         <SettingRow
           label="Blocked-user alerts"
           subtitle="Alert when a user is auto-blocked for ban evasion"

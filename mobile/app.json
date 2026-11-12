@@ -2,6 +2,7 @@
   "expo": {
     "name": "Resonance",
     "slug": "resonance-mobile",
+    "scheme": "resonance",
     "version": "0.1.0",
     "orientation": "default",
     "icon": "./assets/icon.png",
@@ -45,6 +46,7 @@
       "./plugins/withAndroidAuto",
       "./plugins/withCarPlay",
       "./plugins/withFloatingOverlay",
+      "./plugins/withBackgroundChat",
       "./plugins/withAdaptiveWindow",
       "./plugins/withGradleProperties",
       "./plugins/withLocalNetworkAccess",

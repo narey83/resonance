@@ -345,6 +345,41 @@ public sealed class SessionService : IDisposable
     }
 
     /// <summary>
+    ///     Validates the current refresh credential for the device's read-only background alert feed.
+    ///     An active poll extends the idle clock, but not the refresh credential's absolute expiry.
+    /// </summary>
+    /// <returns>The current account role, or null if the credential is inactive.</returns>
+    public string? GetCurrentRefreshTokenRole(string refreshToken)
+    {
+        if (string.IsNullOrWhiteSpace(refreshToken) || refreshToken.Length > 512)
+        {
+            return null;
+        }
+
+        var now = DateTime.UtcNow;
+        var hash = HashToken(refreshToken);
+        var idleCutoff = now.AddMilliseconds(-Options.Web.Authentication.Jwt.IdleTimeout);
+        using var db = ContextFactory.CreateDbContext();
+        var record = (from session in db.Sessions
+                      join user in db.Users on session.Username equals user.Username
+                      where session.RefreshTokenHash == hash && !session.IsRevoked &&
+                          session.ExpiresAt > now && session.LastUsedAt > idleCutoff
+                      select new { Session = session, user.Role }).FirstOrDefault();
+        if (record is null)
+        {
+            return null;
+        }
+
+        if (record.Session.LastUsedAt < now.AddMinutes(-5))
+        {
+            record.Session.LastUsedAt = now;
+            db.SaveChanges();
+        }
+
+        return record.Role.ToString();
+    }
+
+    /// <summary>
     ///     Deletes all expired, revoked, and idle sessions from the database.
     ///     Called once on startup to keep the table lean.
     /// </summary>

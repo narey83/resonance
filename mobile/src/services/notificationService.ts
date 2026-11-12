@@ -41,6 +41,7 @@ import { maintainServerConnection } from '../lib/serverConnection';
 import { getApplicationState } from '../api/application';
 import { sessionGuard } from '../lib/sessionScope';
 import { useEffect } from 'react';
+import { AppState, NativeModules, Platform } from 'react-native';
 import { useAppSettings } from '../store/appSettingsStore';
 import { useAuthStore } from '../store/auth';
 import { createApplicationHubConnection } from '../api/applicationHub';
@@ -146,13 +147,24 @@ export async function notifyShareScanComplete() {
 export async function notifyPrivateMessage(username: string, message: string) {
   const { notifications } = useAppSettings.getState();
   if (!notifications.privateMessage) return;
+  if (await nativeBackgroundChatOwnsAlerts(notifications.backgroundChat)) return;
   await send(`Message from ${username}`, message, 'private-messages-v2', messageAlertData('pm', username));
 }
 
 export async function notifyRoomMention(roomName: string, username: string, message: string) {
   const { notifications } = useAppSettings.getState();
   if (!notifications.roomMention) return;
+  if (await nativeBackgroundChatOwnsAlerts(notifications.backgroundChat)) return;
   await send(`Mentioned in ${roomName}`, `${username}: ${message}`, 'room-mentions-v2', messageAlertData('room', roomName));
+}
+
+async function nativeBackgroundChatOwnsAlerts(enabled: boolean): Promise<boolean> {
+  if (!enabled || Platform.OS !== 'android' || AppState.currentState === 'active') return false;
+  try {
+    return await (NativeModules.BackgroundChat as { isRunning: () => Promise<boolean> } | undefined)?.isRunning() === true;
+  } catch {
+    return false;
+  }
 }
 
 // Restart alerts are only shown to administrators.

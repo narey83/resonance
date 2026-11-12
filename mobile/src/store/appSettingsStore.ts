@@ -40,6 +40,7 @@ export interface NotificationPrefs {
   shareScanComplete: boolean;
   privateMessage:    boolean;
   roomMention:       boolean;
+  backgroundChat:    boolean;
   userBlocked:       boolean;
   restartRequired:   boolean;
 }
@@ -87,6 +88,7 @@ const DEFAULT_NOTIFICATIONS: NotificationPrefs = {
   shareScanComplete: false,
   privateMessage:    true,
   roomMention:       true,
+  backgroundChat:    false,
   userBlocked:       false,
   // On by default: only administrators are sent this, and a config change sitting
   // unapplied is exactly the kind of thing that goes unnoticed otherwise.

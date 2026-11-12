@@ -64,7 +64,7 @@ Discovery and synced preparation require a server built from the matching source
 | Car integration | Android Auto browse/playback and iOS CarPlay audio templates are implemented | CarPlay needs Apple entitlement approval; vehicle UI testing is still required |
 | Floating player | In-app bubble, plus an optional native overlay over other apps when permission is granted | In-app bubble; no Android-style overlay over other apps |
 | In-app APK installation | Android package update flow, subject to OS installation permission | Not applicable; iOS uses Apple's signing and distribution mechanisms |
-| Push delivery | Requires a configured native build, push service and notification permission | Requires a configured native build, push service and notification permission |
+| Closed-app chat alerts | Optional first-party foreground service polls the Resonance server every 15 seconds over HTTPS; requires notification permission and shows a persistent status notification | Requires a separate OS push service; not configured |
 
 Copying audio files to a folder is separate from the desktop **Pioneer USB export**. It does not build a Rekordbox database, player analysis files or a Pioneer Network Link service. The desktop set planner, full-set rehearsal, detailed beat/phrase overlays and processing controls should not be read as mobile feature-parity claims.
 
