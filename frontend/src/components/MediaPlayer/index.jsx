@@ -1318,7 +1318,10 @@ const MediaPlayer = () => {
       </div>
       {/* ── Main bar ─────────────────────────────────────────── */}
       <div className="media-player-bar">
-        <div className="media-player-left">
+        <section
+          aria-label="Now playing"
+          className="media-player-left mp-player-section mp-track-section"
+        >
           <div className="media-player-art">
             <AlbumArt
               hasArtwork={track.hasArtwork}
@@ -1333,7 +1336,7 @@ const MediaPlayer = () => {
 
           <div className="media-player-info">
             <div className="mp-deck-caption">
-              PREVIEW DECK{' '}
+              NOW PLAYING{' '}
               <span>
                 {googleCast.connected
                   ? `CASTING · ${googleCast.deviceName}`
@@ -1354,6 +1357,33 @@ const MediaPlayer = () => {
               >
                 {displayTitle}
               </div>
+              {track.path && (
+                <button
+                  aria-label={
+                    activity?.lovedPaths?.has(track.path)
+                      ? 'Remove from loved'
+                      : 'Love this track'
+                  }
+                  className={`media-player-btn media-player-love-btn hover-fx${activity?.lovedPaths?.has(track.path) ? ' jb-love-btn--loved' : ''}`}
+                  onClick={() => activity?.toggleLove(track.path)}
+                  title={
+                    activity?.lovedPaths?.has(track.path)
+                      ? 'Remove from loved'
+                      : 'Love this track'
+                  }
+                  type="button"
+                >
+                  <Heart
+                    fill={
+                      activity?.lovedPaths?.has(track.path)
+                        ? 'currentColor'
+                        : 'none'
+                    }
+                    size={18}
+                    strokeWidth={1.75}
+                  />
+                </button>
+              )}
             </div>
             {artistMeta && (
               <div
@@ -1403,19 +1433,23 @@ const MediaPlayer = () => {
                 </span>
               </div>
             )}
-            {displayDuration > 0 && (
-              <div className="media-player-time-display">
-                {formatSeconds(effectiveTime)}
-                {' / '}
-                {formatSeconds(displayDuration)}
-              </div>
-            )}
           </div>
-        </div>
-        {/* end media-player-left */}
+        </section>
 
         {/* ── Controls ── */}
-        <div className="media-player-center">
+        <section
+          aria-label="Playback controls"
+          className="media-player-center mp-player-section mp-transport-section"
+        >
+          <div className="mp-section-heading">
+            <span>PLAYBACK</span>
+            {displayDuration > 0 && (
+              <span className="media-player-time-display">
+                {formatSeconds(effectiveTime)}
+                <span> / {formatSeconds(displayDuration)}</span>
+              </span>
+            )}
+          </div>
           <div className="media-player-buttons">
             <button
               className={
@@ -1481,151 +1515,144 @@ const MediaPlayer = () => {
             >
               <Repeat size={18} />
             </button>
-
-            {track.path && (
-              <button
-                className={`media-player-btn media-player-ctrl-btn media-player-love-btn hover-fx${activity?.lovedPaths?.has(track.path) ? ' jb-love-btn--loved' : ''}`}
-                onClick={() => activity?.toggleLove(track.path)}
-                title={
-                  activity?.lovedPaths?.has(track.path)
-                    ? 'Remove from loved'
-                    : 'Love this track'
-                }
-                type="button"
-              >
-                <Heart
-                  fill={
-                    activity?.lovedPaths?.has(track.path)
-                      ? 'currentColor'
-                      : 'none'
-                  }
-                  size={18}
-                  strokeWidth={1.75}
-                />
-              </button>
-            )}
           </div>
 
           {error && <div className="media-player-error">{error}</div>}
           {!error && statusMessage && (
             <div className="media-player-status">{statusMessage}</div>
           )}
-        </div>
+        </section>
 
         {/* ── Right controls ── */}
-        <div className="media-player-right">
-          <button
-            className={
-              queuePanelOpen
-                ? 'media-player-btn media-player-ctrl-btn--active hover-fx'
-                : 'media-player-btn hover-fx'
-            }
-            onClick={toggleQueuePanel}
-            title={queuePanelOpen ? 'Hide queue' : 'Show queue'}
-            type="button"
-          >
-            <ListMusic size={18} />
-          </button>
-
-          <button
-            aria-controls="player-cast-panel"
-            aria-expanded={showCast}
-            aria-haspopup="dialog"
-            aria-label={
-              googleCast.connected
-                ? `Output: ${googleCast.deviceName}`
-                : 'Choose audio output'
-            }
-            className={
-              showCast || googleCast.connected
-                ? 'media-player-btn media-player-output media-player-ctrl-btn--active hover-fx'
-                : 'media-player-btn media-player-output hover-fx'
-            }
-            onClick={handleOpenCast}
-            ref={castButtonRef}
-            title={
-              googleCast.connected
-                ? `Casting to ${googleCast.deviceName}`
-                : 'Cast to device'
-            }
-            type="button"
-          >
-            <Cast size={18} />
-            <span>
-              {googleCast.connected ? googleCast.deviceName : 'Output'}
-            </span>
-          </button>
-
-          <button
-            aria-keyshortcuts="M"
-            className="media-player-btn hover-fx"
-            onClick={toggleMute}
-            title={
-              googleCast.connected
-                ? googleCast.castIsMuted
-                  ? 'Unmute cast'
-                  : 'Mute cast'
-                : muted
-                  ? 'Unmute'
-                  : 'Mute'
-            }
-            type="button"
-          >
-            {(googleCast.connected ? googleCast.castIsMuted : muted) ? (
-              <VolumeX size={18} />
-            ) : (
-              <Volume2 size={18} />
-            )}
-          </button>
-          <input
-            className="media-player-volume"
-            max="1"
-            min="0"
-            onChange={handleVolumeChange}
-            step="0.05"
-            title={googleCast.connected ? 'Cast volume' : 'Volume'}
-            type="range"
-            value={
-              googleCast.connected
-                ? googleCast.castIsMuted
-                  ? 0
-                  : googleCast.castVolumeLevel
-                : muted
-                  ? 0
-                  : volume
-            }
-          />
-
-          {!googleCast.connected && track && (
-            <LoudnessMeter
-              audioRef={audioRef}
-              loudness={trackLoudness}
-            />
-          )}
-
-          {!googleCast.connected && track && (
-            <AudioProcessing
-              audioRef={audioRef}
-              targetLufs={trackLoudness?.integratedLufs ?? null}
+        <section
+          aria-label="Output and sound"
+          className="media-player-right mp-player-section mp-listening-section"
+        >
+          <div className="mp-section-heading">
+            <span>OUTPUT &amp; SOUND</span>
+            <button
+              aria-label="Close player"
+              className="media-player-btn media-player-close-btn hover-fx"
+              onClick={handleClose}
+              title="Close player"
+              type="button"
             >
-              <PlaybackSyncMonitor
-                audioRef={audioRef}
-                compensated={syncCompensated}
-                onCompensated={setSyncCompensated}
-                remote={googleCast.connected}
-              />
-            </AudioProcessing>
-          )}
+              <X size={18} />
+            </button>
+          </div>
+          <div className="mp-listening-controls">
+            <div className="mp-route-controls">
+              <button
+                className={
+                  queuePanelOpen
+                    ? 'media-player-btn media-player-ctrl-btn--active hover-fx'
+                    : 'media-player-btn hover-fx'
+                }
+                onClick={toggleQueuePanel}
+                title={queuePanelOpen ? 'Hide queue' : 'Show queue'}
+                type="button"
+              >
+                <ListMusic size={18} />
+                <span>Queue</span>
+              </button>
 
-          <button
-            className="media-player-btn media-player-close-btn hover-fx"
-            onClick={handleClose}
-            title="Close player"
-            type="button"
-          >
-            <X size={18} />
-          </button>
-        </div>
+              <button
+                aria-controls="player-cast-panel"
+                aria-expanded={showCast}
+                aria-haspopup="dialog"
+                aria-label={
+                  googleCast.connected
+                    ? `Output: ${googleCast.deviceName}`
+                    : 'Choose audio output'
+                }
+                className={
+                  showCast || googleCast.connected
+                    ? 'media-player-btn media-player-output media-player-ctrl-btn--active hover-fx'
+                    : 'media-player-btn media-player-output hover-fx'
+                }
+                onClick={handleOpenCast}
+                ref={castButtonRef}
+                title={
+                  googleCast.connected
+                    ? `Casting to ${googleCast.deviceName}`
+                    : 'Cast to device'
+                }
+                type="button"
+              >
+                <Cast size={18} />
+                <span>
+                  {googleCast.connected ? googleCast.deviceName : 'Output'}
+                </span>
+              </button>
+            </div>
+
+            <div className="mp-sound-controls">
+              <button
+                aria-keyshortcuts="M"
+                className="media-player-btn hover-fx"
+                onClick={toggleMute}
+                title={
+                  googleCast.connected
+                    ? googleCast.castIsMuted
+                      ? 'Unmute cast'
+                      : 'Mute cast'
+                    : muted
+                      ? 'Unmute'
+                      : 'Mute'
+                }
+                type="button"
+              >
+                {(googleCast.connected ? googleCast.castIsMuted : muted) ? (
+                  <VolumeX size={18} />
+                ) : (
+                  <Volume2 size={18} />
+                )}
+              </button>
+              <div className="mp-volume-stack">
+                <input
+                  aria-label={googleCast.connected ? 'Cast volume' : 'Volume'}
+                  className="media-player-volume"
+                  max="1"
+                  min="0"
+                  onChange={handleVolumeChange}
+                  step="0.05"
+                  title={googleCast.connected ? 'Cast volume' : 'Volume'}
+                  type="range"
+                  value={
+                    googleCast.connected
+                      ? googleCast.castIsMuted
+                        ? 0
+                        : googleCast.castVolumeLevel
+                      : muted
+                        ? 0
+                        : volume
+                  }
+                />
+
+                {!googleCast.connected && track && (
+                  <LoudnessMeter
+                    audioRef={audioRef}
+                    loudness={trackLoudness}
+                  />
+                )}
+              </div>
+
+              {!googleCast.connected && track && (
+                <AudioProcessing
+                  audioRef={audioRef}
+                  targetLufs={trackLoudness?.integratedLufs ?? null}
+                >
+                  <PlaybackSyncMonitor
+                    audioRef={audioRef}
+                    compensated={syncCompensated}
+                    onCompensated={setSyncCompensated}
+                    remote={googleCast.connected}
+                  />
+                </AudioProcessing>
+              )}
+            </div>
+          </div>
+        </section>
       </div>
     </div>
   );
