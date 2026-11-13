@@ -26,6 +26,7 @@ export default function usePlayerMetadata(track, analysisActive = false) {
     bpm: record?.bpm ?? track?.bpm,
     key: record?.key || track?.key,
     hasWaveform: record?.hasWaveform ?? track?.hasWaveform,
+    hasBeatGrid: record?.hasBeatGrid ?? track?.hasBeatGrid,
     lufs: record?.lufs ?? track?.lufs,
     djSummary: record?.djSummary ?? track?.djSummary,
   };

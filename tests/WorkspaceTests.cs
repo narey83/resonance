@@ -50,6 +50,7 @@ public class WorkspaceTests : IDisposable
         var paths = Enumerable.Range(0, 201).Select(index => $"missing-{index}.mp3").Append(selected.Path).Append(selected.Path).ToArray();
         var status = analysisStore.GetStatusMap(paths);
         Assert.True(Assert.Single(status).Value.HasWaveform);
+        Assert.False(status[selected.Path].HasBeatGrid);
         Assert.Equal(-9, status[selected.Path].Lufs);
         var tags = Assert.Single(analysisStore.GetDetectedTags(paths)).Value;
         Assert.Equal(128u, tags.Bpm);
@@ -68,8 +69,8 @@ public class WorkspaceTests : IDisposable
         db.Execute("UPDATE " + (postgres ? "music.tracks" : "tracks") + " SET key_sig = NULL WHERE path <> @path", new { path = tagged.Path });
         foreach (var track in new[] { tagged, fallback, stale })
         {
-            db.Execute($"INSERT INTO {CacheTable} (masked_filename,file_size,analysed_at,overall_peaks,lufs,dj_summary) VALUES(@path,@size,0,@peaks,-9,@summary)",
-                new { path = track.Path, size = track == stale ? 99 : 100, peaks = new byte[] { 1 }, summary = "{\"bpm\":128,\"key\":\"Am\"}" });
+            db.Execute($"INSERT INTO {CacheTable} (masked_filename,file_size,analysed_at,overall_peaks,beats,lufs,dj_summary) VALUES(@path,@size,0,@peaks,@beats,-9,@summary)",
+                new { path = track.Path, size = track == stale ? 99 : 100, peaks = new byte[] { 1 }, beats = new byte[8], summary = "{\"bpm\":128,\"key\":\"Am\"}" });
         }
         var stats = repository.GetAnalysisStats();
         Assert.Equal(3, stats.Total);
@@ -80,6 +81,27 @@ public class WorkspaceTests : IDisposable
         Assert.Equal(1, repository.GetFolders(analysis: "incomplete").Sum(folder => folder.TrackCount));
         var rows = repository.Query(null!, null!, null!, null!, null!, null!, false, false, false, false, false, 10, 0, analysis: "incomplete");
         Assert.Equal(MusicPath.ToAbsolute(stale.Path), Assert.Single(rows.Tracks).Path);
+    }
+
+    [Fact]
+    public void TaggedTempoAndWaveformWithoutBeatsAreStillIncomplete()
+    {
+        var track = Add("coverage/no-beats.mp3", bpm: 138);
+        using var db = Db();
+        db.Execute($"INSERT INTO {CacheTable} (masked_filename,file_size,analysed_at,overall_peaks,lufs) VALUES(@path,100,0,@peaks,-8)",
+            new { path = track.Path, peaks = new byte[] { 1 } });
+
+        var before = Assert.Single(repository.Query(null!, null!, null!, null!, null!, null!, false, false, false, false, false, 10, 0).Tracks);
+        Assert.False(before.HasBeatGrid);
+        Assert.False(PreparationPolicy.BasicComplete(before));
+        Assert.Equal(0, repository.GetAnalysisStats().Complete);
+        Assert.Empty(repository.Query(null!, null!, null!, null!, null!, null!, false, false, false, false, false, 10, 0, analysis: "complete").Tracks);
+
+        db.Execute($"UPDATE {CacheTable} SET beats=@beats WHERE masked_filename=@path", new { path = track.Path, beats = new byte[8] });
+        var after = Assert.Single(repository.Query(null!, null!, null!, null!, null!, null!, false, false, false, false, false, 10, 0, analysis: "complete").Tracks);
+        Assert.True(after.HasBeatGrid);
+        Assert.True(PreparationPolicy.BasicComplete(after));
+        Assert.Equal(1, repository.GetAnalysisStats().Complete);
     }
 
     [Fact]
@@ -161,7 +183,7 @@ public class WorkspaceTests : IDisposable
     private void Complete(string path, bool enhanced=true)
     {
         using var db=Db();
-        db.Execute($"INSERT INTO {CacheTable} (masked_filename,file_size,overall_peaks,lufs,analysed_at,dj_summary) VALUES (@path,100,@peaks,-8,@now,@summary) ON CONFLICT(masked_filename) DO UPDATE SET overall_peaks=excluded.overall_peaks,lufs=excluded.lufs,dj_summary=excluded.dj_summary",new { path,peaks=new byte[]{1,2,3},now=Now,summary=enhanced?"{\"complete\":true,\"vocals\":false,\"genre\":\"Trance\",\"energy\":0.2}":null });
+        db.Execute($"INSERT INTO {CacheTable} (masked_filename,file_size,overall_peaks,beats,lufs,analysed_at,dj_summary) VALUES (@path,100,@peaks,@beats,-8,@now,@summary) ON CONFLICT(masked_filename) DO UPDATE SET overall_peaks=excluded.overall_peaks,beats=excluded.beats,lufs=excluded.lufs,dj_summary=excluded.dj_summary",new { path,peaks=new byte[]{1,2,3},beats=new byte[8],now=Now,summary=enhanced?"{\"complete\":true,\"vocals\":false,\"genre\":\"Trance\",\"energy\":0.2}":null });
     }
     [Fact] public void DiscoveryNotesPersistPerAccountAndRejectStaleEdits()
     {
@@ -457,8 +479,8 @@ public class WorkspaceTests : IDisposable
         {
             var path = MusicPath.ToRelative(analysis.LastRequest!.OnlyPaths![0]);
             using var db = Db();
-            db.Execute($"INSERT INTO {CacheTable} (masked_filename,file_size,overall_peaks,lufs,analysed_at,dj_summary) VALUES (@path,100,@peaks,-8,@now,@summary) ON CONFLICT(masked_filename) DO UPDATE SET overall_peaks=excluded.overall_peaks,lufs=excluded.lufs,dj_summary=excluded.dj_summary",
-                new { path, peaks = new byte[] { 1, 2, 3 }, now = Now, summary = "{\"availableFeatures\":[\"beats\",\"genre\",\"cues\"]}" });
+            db.Execute($"INSERT INTO {CacheTable} (masked_filename,file_size,overall_peaks,beats,lufs,analysed_at,dj_summary) VALUES (@path,100,@peaks,@beats,-8,@now,@summary) ON CONFLICT(masked_filename) DO UPDATE SET overall_peaks=excluded.overall_peaks,beats=excluded.beats,lufs=excluded.lufs,dj_summary=excluded.dj_summary",
+                new { path, peaks = new byte[] { 1, 2, 3 }, beats = new byte[8], now = Now, summary = "{\"availableFeatures\":[\"beats\",\"genre\",\"cues\"]}" });
         };
         await service.ProcessNext(default);
         Assert.Single(analysis.LastRequest!.OnlyPaths!);

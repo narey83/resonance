@@ -35,7 +35,7 @@ public sealed class AnalysisResultPersistenceTests : IDisposable
         store = new AnalysisStore(connection, usePostgres: false);
         IndexTrack();
         track = new TrackAnalysisInfo("library\\track #1.flac", MusicPath.ToRelative(path), root, Path.GetFileName(path), "flac", null,
-            string.Empty, false, null, "Artist", "Track", "Album");
+            string.Empty, false, false, null, "Artist", "Track", "Album");
         shares = DispatchProxy.Create<IShareService, ShareProxy>();
         proxy = (ShareProxy)(object)shares;
         proxy.Call = (method, args) =>
@@ -55,7 +55,19 @@ public sealed class AnalysisResultPersistenceTests : IDisposable
 
     private static AnalysisResult Result() => new(
         Bpm: 128, Key: "Am", Waveform: new WaveformData([0.25f], [0.2f], [0.1f], [0.05f], 1),
-        Loudness: new LoudnessData(-9, -1, 4));
+        Loudness: new LoudnessData(-9, -1, 4), BeatOffsetSeconds: 0, Beats: [0, 0.46875f]);
+
+    [Fact]
+    public void TaggedTempoWithoutSavedBeatsStillRequestsBeatDetection()
+    {
+        var monitor = DispatchProxy.Create<IOptionsMonitor<global::resonance.Options>, ShareProxy>();
+        ((ShareProxy)(object)monitor).Call = (_, _) => new global::resonance.Options();
+        var scan = new AnalysisService(shares, monitor, null!, store);
+        var tagged = track with { Bpm = 138, Key = "Gm", HasWaveform = true, Lufs = -7.3 };
+
+        Assert.Equal(AnalysisMetrics.Bpm, scan.MissingMetrics(tagged, AnalysisMetrics.All));
+        Assert.Equal(AnalysisMetrics.None, scan.MissingMetrics(tagged with { HasBeatGrid = true }, AnalysisMetrics.All));
+    }
 
     [Fact]
     public void ActiveReaderDoesNotDiscardAnyCompletedAnalysisOrModifyTheAudioFile()
@@ -183,6 +195,7 @@ public sealed class AnalysisResultPersistenceTests : IDisposable
         Assert.Equal((uint?)128, cached.Value.Bpm);
         Assert.Equal("Am", cached.Value.Key);
         Assert.NotNull(store.GetWaveform(path));
+        Assert.True(store.GetStatusMap([path])[MusicPath.ToRelative(path)].HasBeatGrid);
         Assert.Equal(-9, store.GetLoudness(path).IntegratedLufs);
     }
 

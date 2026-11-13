@@ -835,7 +835,8 @@ namespace resonance.MusicLibrary
                        (SELECT a.lufs FROM {CacheSource("a")}
                         WHERE a.masked_filename = {T}.path
                           AND a.file_size = {T}.file_size) AS lufs,
-                       {$"(SELECT c.dj_summary FROM {CacheSource("c")} WHERE {CacheMatch("c")})"} AS dj_summary
+                       {$"(SELECT c.dj_summary FROM {CacheSource("c")} WHERE {CacheMatch("c")})"} AS dj_summary,
+                       EXISTS (SELECT 1 FROM {CacheSource("a")} WHERE {CacheMatch("a")} AND {HasBeatGrid("a")}) AS has_beat_grid
                 FROM {T} {where}
                 ORDER BY {orderBy}
                 LIMIT @limit OFFSET @offset";
@@ -895,6 +896,7 @@ namespace resonance.MusicLibrary
                     HasWaveform = !reader.IsDBNull(hasWaveformOrdinal) && Convert.ToBoolean(reader.GetValue(hasWaveformOrdinal)),
                     Lufs = reader.IsDBNull(lufsOrdinal) ? null : reader.GetDouble(lufsOrdinal),
                     DjSummary = reader.IsDBNull(26) ? null : reader.GetString(26),
+                    HasBeatGrid = !reader.IsDBNull(27) && Convert.ToBoolean(reader.GetValue(27)),
                 });
             }
 
@@ -1112,7 +1114,7 @@ namespace resonance.MusicLibrary
                        SUM(CASE WHEN {hasWaveform} THEN 1 ELSE 0 END),
                        SUM(CASE WHEN a.lufs IS NOT NULL THEN 1 ELSE 0 END),
                        SUM(CASE WHEN {key} IS NOT NULL AND {key} <> '' AND {bpm} IS NOT NULL
-                           AND {hasWaveform} AND a.lufs IS NOT NULL THEN 1 ELSE 0 END)
+                           AND {hasWaveform} AND {HasBeatGrid("a")} AND a.lufs IS NOT NULL THEN 1 ELSE 0 END)
                 FROM {T}
                 LEFT JOIN {cacheTable} ON {CacheMatch("a")}";
 
@@ -1523,7 +1525,8 @@ namespace resonance.MusicLibrary
                        genre, {CachedBpm}, {CachedKey}, comment, has_artwork, tag_types, bit_rate, sample_rate, bit_depth,
                        EXISTS (SELECT 1 FROM {CacheSource("a")} WHERE {CacheMatch("a")} AND {HasWaveform("a")}),
                        (SELECT a.lufs FROM {CacheSource("a")} WHERE {CacheMatch("a")}),
-                       (SELECT c.dj_summary FROM {CacheSource("c")} WHERE {CacheMatch("c")})
+                       (SELECT c.dj_summary FROM {CacheSource("c")} WHERE {CacheMatch("c")}),
+                       EXISTS (SELECT 1 FROM {CacheSource("a")} WHERE {CacheMatch("a")} AND {HasBeatGrid("a")})
                 FROM {T} {(afterPath == null ? string.Empty : "WHERE path > @after")}
                 ORDER BY path LIMIT @limit";
             if (afterPath != null)
@@ -1541,6 +1544,7 @@ namespace resonance.MusicLibrary
                     HasWaveform = !reader.IsDBNull(24) && Convert.ToBoolean(reader.GetValue(24)),
                     Lufs = reader.IsDBNull(25) ? null : reader.GetDouble(25),
                     DjSummary = reader.IsDBNull(26) ? null : reader.GetString(26),
+                    HasBeatGrid = !reader.IsDBNull(27) && Convert.ToBoolean(reader.GetValue(27)),
                 });
             }
 
@@ -1609,10 +1613,14 @@ namespace resonance.MusicLibrary
             ? $"{cache}.overall_peaks IS NOT NULL"
             : $"({cache}.overall_peaks IS NOT NULL) = 1";
 
+        private string HasBeatGrid(string cache) => UsePostgres
+            ? $"octet_length({cache}.beats) >= 8"
+            : $"length({cache}.beats) >= 8";
+
         // See FullyAnalysedExists. `cache` names an analysis row already matched by CacheMatch.
         private string FullyAnalysed(string cache) =>
             $"({CachedKey} IS NOT NULL AND {CachedKey} <> '' AND {CachedBpm} IS NOT NULL "
-            + $"AND {HasWaveform(cache)} AND {cache}.lufs IS NOT NULL)";
+            + $"AND {HasWaveform(cache)} AND {HasBeatGrid(cache)} AND {cache}.lufs IS NOT NULL)";
 
         // Case-insensitive equality (used in WHERE)
         private string IEq(string col) => UsePostgres ? $"{col} ILIKE" : $"{col} =";

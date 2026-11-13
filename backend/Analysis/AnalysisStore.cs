@@ -201,22 +201,24 @@ namespace resonance.Analysis
         ///     needs this for every row at once.
         /// </summary>
         /// <param name="paths">Optional library paths; an empty selection reads no rows.</param>
-        /// <returns>A map of masked filename to its cached waveform and loudness state.</returns>
-        public Dictionary<string, (bool HasWaveform, double? Lufs)> GetStatusMap(IEnumerable<string> paths = null)
+        /// <returns>A map of masked filename to its cached waveform, beat grid and loudness state.</returns>
+        public Dictionary<string, (bool HasWaveform, bool HasBeatGrid, double? Lufs)> GetStatusMap(IEnumerable<string> paths = null)
         {
-            var map = new Dictionary<string, (bool, double?)>(StringComparer.OrdinalIgnoreCase);
+            var map = new Dictionary<string, (bool, bool, double?)>(StringComparer.OrdinalIgnoreCase);
             using var conn = OpenConnection();
             foreach (var batch in paths?.Select(Key).Distinct(StringComparer.OrdinalIgnoreCase).Chunk(200) ?? new string[][] { null })
             {
                 using var cmd = conn.CreateCommand();
-                cmd.CommandText = $"SELECT masked_filename, num_bars IS NOT NULL, lufs FROM {Table}{MetadataIndex}";
+                var beatBytes = UsePostgres ? "octet_length(beats)" : "length(beats)";
+                cmd.CommandText = $"SELECT masked_filename, num_bars IS NOT NULL, {beatBytes} >= 8, lufs FROM {Table}{MetadataIndex}";
                 RestrictPaths(cmd, "masked_filename", batch);
                 using var reader = cmd.ExecuteReader();
                 while (reader.Read())
                 {
                     map[reader.GetString(0)] = (
                         reader.GetBoolean(1),
-                        reader.IsDBNull(2) ? null : reader.GetDouble(2));
+                        !reader.IsDBNull(2) && reader.GetBoolean(2),
+                        reader.IsDBNull(3) ? null : reader.GetDouble(3));
                 }
             }
 

@@ -24,14 +24,24 @@ export const analysisStatus = (track, active = false, reviewed = false) => {
       kind: 'working',
       detail: 'Analysis is running for this track',
     };
-  if (djSummary(track).complete && djSummary(track).automaticArrangement)
+  const basicReady =
+    track.hasWaveform === true &&
+    track.hasBeatGrid === true &&
+    Number(track.bpm) > 0 &&
+    Boolean(track.key) &&
+    track.lufs != null;
+  if (
+    basicReady &&
+    djSummary(track).complete &&
+    djSummary(track).automaticArrangement
+  )
     return {
       label: reviewed ? 'Reviewed' : 'Enhanced Analysis',
       kind: 'ready',
       detail:
         'Automatic analysis complete. Uncertain DJ sections use neutral labels.',
     };
-  if (djSummary(track).complete)
+  if (basicReady && djSummary(track).complete)
     return {
       label: reviewed ? 'Reviewed' : 'Review suggested',
       kind: reviewed ? 'ready' : 'review',
@@ -39,11 +49,12 @@ export const analysisStatus = (track, active = false, reviewed = false) => {
         ? 'Marked reviewed by you'
         : 'Enhanced analysis available. Independent predictions; audition beatgrid and phrase labels.',
     };
-  if (track.hasWaveform && track.bpm && track.key)
+  if (basicReady)
     return {
       label: 'Basic Analysis',
       kind: 'partial',
-      detail: 'Waveform, tempo and key available; enhanced analysis is pending',
+      detail:
+        'Waveform, beat grid, tempo, key and loudness available; enhanced analysis is pending',
     };
   return {
     label: 'Pending',

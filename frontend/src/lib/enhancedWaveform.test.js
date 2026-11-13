@@ -271,6 +271,49 @@ describe('enhanced waveform timeline', () => {
     );
   });
 
+  it('replaces an Enhanced downbeat line with its phrase marker', () => {
+    const painted = [];
+    const ctx = {
+      fillRect: jest.fn((...args) =>
+        painted.push({ args, colour: ctx.fillStyle }),
+      ),
+      restore: jest.fn(),
+      save: jest.fn(),
+    };
+    drawEnhanced(
+      ctx,
+      {
+        available: true,
+        downbeats: Array.from({ length: 66 }, (_, index) => index * 2),
+        djPhrases: [
+          { start_seconds: 0, end_seconds: 64 },
+          { start_seconds: 64, end_seconds: 128 },
+          { start_seconds: 128, end_seconds: 132 },
+        ],
+      },
+      {
+        start: 62,
+        end: 66,
+        width: 400,
+        height: 60,
+        grid: true,
+        gridColour: 'grid',
+        phrases: 'off',
+        vocals: false,
+        barMarkerColours: { 1: 'amber', 2: 'violet' },
+      },
+    );
+    expect(painted).toContainEqual({
+      args: [198.5, 14, 3, 46],
+      colour: 'violet',
+    });
+    expect(painted).not.toContainEqual({
+      args: [200, 14, 1, 38],
+      colour: 'grid',
+    });
+    expect(painted).toContainEqual({ args: [0, 14, 1, 38], colour: 'grid' });
+  });
+
   it('clips spanning vocal regions to the zoom window', () => {
     expect(
       visibleSpans([{ startSeconds: 5, endSeconds: 15 }], 10, 20, 100),

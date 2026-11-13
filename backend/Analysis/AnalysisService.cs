@@ -182,15 +182,16 @@ namespace resonance.Analysis
             return files
                 .Select(f =>
                 {
-                    var (hasWaveform, lufs) = status.TryGetValue(MusicPath.ToRelative(f.OriginalFilename), out var s)
+                    var (hasWaveform, hasBeatGrid, lufs) = status.TryGetValue(MusicPath.ToRelative(f.OriginalFilename), out var s)
                         ? s
-                        : (false, (double?)null);
+                        : (false, false, (double?)null);
 
                     return new TrackAnalysisInfo(
                         f.MaskedFilename, f.OriginalFilename, f.Directory, f.Filename, f.Extension,
                         Bpm(f.OriginalFilename, f.Tags?.Bpm),
                         Key(f.OriginalFilename, f.Tags?.Key),
                         hasWaveform,
+                        hasBeatGrid,
                         lufs,
                         f.Tags?.Artist, f.Tags?.Title, f.Tags?.Album);
                 })
@@ -205,19 +206,20 @@ namespace resonance.Analysis
             uint? Bpm(string path, uint? tag) => tag.HasValue && tag.Value > 0 ? tag : detected.GetValueOrDefault(MusicPath.ToRelative(path)).Bpm;
             string Key(string path, string tag) => !string.IsNullOrEmpty(tag) ? tag : detected.GetValueOrDefault(MusicPath.ToRelative(path)).Key;
 
-            (bool HasWaveform, double? Lufs) Cached(string original) =>
-                status.TryGetValue(MusicPath.ToRelative(original), out var s) ? s : (false, null);
+            (bool HasWaveform, bool HasBeatGrid, double? Lufs) Cached(string original) =>
+                status.TryGetValue(MusicPath.ToRelative(original), out var s) ? s : (false, false, null);
 
             var tagged = ShareService.GetTaggedFiles()
                 .Where(f => AudioExtensions.Contains(f.Extension))
                 .Select(f =>
                 {
-                    var (hasWaveform, lufs) = Cached(f.OriginalFilename);
+                    var (hasWaveform, hasBeatGrid, lufs) = Cached(f.OriginalFilename);
                     return new TrackAnalysisInfo(
                         f.MaskedFilename, f.OriginalFilename, f.Directory, f.Filename, f.Extension,
                         Bpm(f.OriginalFilename, f.Tags?.Bpm),
                         Key(f.OriginalFilename, f.Tags?.Key),
                         hasWaveform,
+                        hasBeatGrid,
                         lufs,
                         f.Tags.Artist, f.Tags.Title, f.Tags.Album);
                 });
@@ -226,10 +228,10 @@ namespace resonance.Analysis
                 .Where(f => AudioExtensions.Contains(f.Extension))
                 .Select(f =>
                 {
-                    var (hasWaveform, lufs) = Cached(f.OriginalFilename);
+                    var (hasWaveform, hasBeatGrid, lufs) = Cached(f.OriginalFilename);
                     return new TrackAnalysisInfo(
                         f.MaskedFilename, f.OriginalFilename, f.Directory, f.Filename, f.Extension,
-                        Bpm(f.OriginalFilename, null), Key(f.OriginalFilename, null), hasWaveform, lufs, null, null, null);
+                        Bpm(f.OriginalFilename, null), Key(f.OriginalFilename, null), hasWaveform, hasBeatGrid, lufs, null, null, null);
                 });
 
             return tagged
@@ -391,6 +393,37 @@ namespace resonance.Analysis
             return produced;
         }
 
+        /// <summary>Finds requested metrics that are not yet saved for this track.</summary>
+        /// <param name="track">The track and its saved metric state.</param>
+        /// <param name="requested">Metrics requested by the scan.</param>
+        /// <returns>The metrics still requiring analysis.</returns>
+        internal AnalysisMetrics MissingMetrics(TrackAnalysisInfo track, AnalysisMetrics requested)
+        {
+            var missing = AnalysisMetrics.None;
+
+            if (requested.HasFlag(AnalysisMetrics.Bpm) && (!HasReliableBpm(track) || !track.HasBeatGrid))
+            {
+                missing |= AnalysisMetrics.Bpm;
+            }
+
+            if (requested.HasFlag(AnalysisMetrics.Key) && !track.HasKey)
+            {
+                missing |= AnalysisMetrics.Key;
+            }
+
+            if (requested.HasFlag(AnalysisMetrics.Waveform) && !track.HasWaveform)
+            {
+                missing |= AnalysisMetrics.Waveform;
+            }
+
+            if (requested.HasFlag(AnalysisMetrics.Loudness) && !track.HasLoudness)
+            {
+                missing |= AnalysisMetrics.Loudness;
+            }
+
+            return missing;
+        }
+
         // ── Scan loop ─────────────────────────────────────────────────────────
         private void UpdateTags(string maskedFilename, Func<FileTags, FileTags> update)
         {
@@ -452,37 +485,6 @@ namespace resonance.Analysis
             }
 
             return (request.OnlyFilenames ?? []).Concat(resolved).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-        }
-
-        /// <summary>
-        ///     Narrows the requested metrics to those this track is actually missing, so a rescan
-        ///     of a mostly-analysed library only pays for the gaps.
-        /// </summary>
-        private AnalysisMetrics MissingMetrics(TrackAnalysisInfo track, AnalysisMetrics requested)
-        {
-            var missing = AnalysisMetrics.None;
-
-            if (requested.HasFlag(AnalysisMetrics.Bpm) && !HasReliableBpm(track))
-            {
-                missing |= AnalysisMetrics.Bpm;
-            }
-
-            if (requested.HasFlag(AnalysisMetrics.Key) && !track.HasKey)
-            {
-                missing |= AnalysisMetrics.Key;
-            }
-
-            if (requested.HasFlag(AnalysisMetrics.Waveform) && !track.HasWaveform)
-            {
-                missing |= AnalysisMetrics.Waveform;
-            }
-
-            if (requested.HasFlag(AnalysisMetrics.Loudness) && !track.HasLoudness)
-            {
-                missing |= AnalysisMetrics.Loudness;
-            }
-
-            return missing;
         }
 
         private async Task RunScanAsync(AnalysisScanRequest request, CancellationToken ct, AnalysisScanControl controls)
@@ -717,8 +719,8 @@ namespace resonance.Analysis
                             if (produced)
                             {
                                 Log.Information(
-                                    "Analysis saved for '{File}': BPM={Bpm}, Key={Key}, Waveform={HasWaveform}, LUFS={Lufs}; measured {Metrics}",
-                                    track.OriginalFilename, result.Bpm ?? track.Bpm, result.Key ?? track.Key,
+                                    "Analysis saved for '{File}': BPM={Bpm}, beats={BeatCount}, Key={Key}, Waveform={HasWaveform}, LUFS={Lufs}; measured {Metrics}",
+                                    track.OriginalFilename, result.Bpm ?? track.Bpm, result.Beats?.Length, result.Key ?? track.Key,
                                     result.Waveform != null || track.HasWaveform, result.Loudness?.IntegratedLufs ?? track.Lufs, metrics);
                                 Interlocked.Increment(ref analysed);
                             }

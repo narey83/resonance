@@ -7,16 +7,26 @@ import {
 } from './libraryWorkbench';
 
 describe('collection preparation semantics', () => {
-  it('does not mistake tags and waveform for enhanced analysis', () => {
+  it('requires measured beats as well as the other Basic metrics', () => {
     expect.hasAssertions();
     expect(
-      analysisStatus({ hasWaveform: true, bpm: 128, key: 'Am' }).label,
-    ).toBe('Basic Analysis');
-    expect(analysisStatus({ djSummary: '{"complete":true}' }).kind).toBe(
-      'review',
-    );
+      analysisStatus({ hasWaveform: true, bpm: 128, key: 'Am', lufs: -9 })
+        .label,
+    ).toBe('Pending');
+    const basic = {
+      hasWaveform: true,
+      hasBeatGrid: true,
+      bpm: 128,
+      key: 'Am',
+      lufs: -9,
+    };
+    expect(analysisStatus(basic).label).toBe('Basic Analysis');
     expect(
-      analysisStatus({ djSummary: '{"complete":true}' }, false, true).kind,
+      analysisStatus({ ...basic, djSummary: '{"complete":true}' }).kind,
+    ).toBe('review');
+    expect(
+      analysisStatus({ ...basic, djSummary: '{"complete":true}' }, false, true)
+        .kind,
     ).toBe('ready');
     expect(analysisStatus({}, 'queued').label).toBe('Queued');
     expect(analysisStatus({}, true).label).toBe('Analysing');
@@ -24,6 +34,11 @@ describe('collection preparation semantics', () => {
   it('makes automatic arrangement usable without manual review', () => {
     expect.hasAssertions();
     const status = analysisStatus({
+      hasWaveform: true,
+      hasBeatGrid: true,
+      bpm: 128,
+      key: 'Am',
+      lufs: -9,
       djSummary: { complete: true, automaticArrangement: true },
     });
     expect(status.kind).toBe('ready');

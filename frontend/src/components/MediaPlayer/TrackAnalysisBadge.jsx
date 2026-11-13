@@ -5,6 +5,7 @@ import React from 'react';
 export const playerAnalysisLevel = (metadata) => {
   const basicReady =
     metadata.hasWaveform === true &&
+    metadata.hasBeatGrid === true &&
     Number(metadata.bpm) > 0 &&
     Boolean(metadata.key) &&
     metadata.lufs != null;

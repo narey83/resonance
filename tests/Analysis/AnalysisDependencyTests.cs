@@ -86,9 +86,12 @@ public sealed class AnalysisDependencyTests
         var partial = new AnalysisResult(Waveform: new([1], [1], [1], [1], 1), Loudness: new(-7.5, -1, 2));
         Assert.Equal(AnalysisMetrics.Bpm | AnalysisMetrics.Key, partial.MissingMetrics(AnalysisMetrics.All));
         Assert.Equal(AnalysisMetrics.None, partial.MissingMetrics(AnalysisMetrics.Waveform | AnalysisMetrics.Loudness));
-        Assert.Equal(AnalysisMetrics.None, (partial with { Bpm = 140, Key = "G#" }).MissingMetrics(AnalysisMetrics.All));
+        Assert.Equal(AnalysisMetrics.Bpm, (partial with { Bpm = 140, Key = "G#" }).MissingMetrics(AnalysisMetrics.All));
+        Assert.Equal(AnalysisMetrics.None, (partial with { Bpm = 140, Beats = [0.1f, 0.53f], Key = "G#" }).MissingMetrics(AnalysisMetrics.All));
+        Assert.Equal(AnalysisMetrics.Bpm, (partial with { Bpm = 140, Beats = [0.53f, 0.1f], Key = "G#" }).MissingMetrics(AnalysisMetrics.All));
+        Assert.Equal(AnalysisMetrics.Bpm, (partial with { Bpm = 140, Beats = [0.1f, float.NaN], Key = "G#" }).MissingMetrics(AnalysisMetrics.All));
         Assert.Equal(AnalysisMetrics.Bpm | AnalysisMetrics.Key, (partial with { Bpm = 0, Key = " " }).MissingMetrics(AnalysisMetrics.All));
-        Assert.False(new TrackAnalysisInfo("x", "x", "", "x", "mp3", 140, " ", true, -7.5, "", "", "").HasKey);
+        Assert.False(new TrackAnalysisInfo("x", "x", "", "x", "mp3", 140, " ", true, false, -7.5, "", "", "").HasKey);
     }
 
     [Fact]

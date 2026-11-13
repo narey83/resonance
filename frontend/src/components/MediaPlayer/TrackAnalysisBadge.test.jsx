@@ -7,6 +7,7 @@ describe('player track analysis badge', () => {
   const track = { localRelativePath: '/music/song.flac' };
   const basic = {
     hasWaveform: true,
+    hasBeatGrid: true,
     bpm: 128,
     key: 'Am',
     lufs: -9,
@@ -52,6 +53,9 @@ describe('player track analysis badge', () => {
     expect(render({ ...enhanced, lufs: null }).getAttribute('aria-label')).toBe(
       'Track analysis: Pending',
     );
+    expect(
+      render({ ...enhanced, hasBeatGrid: false }).getAttribute('aria-label'),
+    ).toBe('Track analysis: Pending');
   });
 
   it('does not claim local analysis for a remote preview', () => {

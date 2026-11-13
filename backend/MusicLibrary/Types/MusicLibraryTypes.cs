@@ -103,6 +103,10 @@ namespace resonance.MusicLibrary
         // and each of those costs two stat() calls on the music mount.
         public bool? HasWaveform { get; init; }
 
+        // A measured beat timeline saved for this indexed file. A BPM file tag alone does not
+        // provide the beat phase needed to draw a grid.
+        public bool? HasBeatGrid { get; init; }
+
         // Integrated loudness in LUFS, joined from analysis.track_analysis the same way as
         // HasWaveform. Null until the track has been analysed.
         public double? Lufs { get; init; }

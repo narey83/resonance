@@ -113,7 +113,7 @@ public record PreparationSettings(string Mode, string[] Features = null, bool Wr
 public static class PreparationPolicy
 {
     public const int MaxAttempts = 3;
-    public static bool BasicComplete(MusicTrack track) => track.HasWaveform == true && track.Bpm is > 0
+    public static bool BasicComplete(MusicTrack track) => track.HasWaveform == true && track.HasBeatGrid == true && track.Bpm is > 0
         && !string.IsNullOrWhiteSpace(track.Key) && track.Lufs.HasValue;
     public static bool EnhancedComplete(MusicTrack track)
     {

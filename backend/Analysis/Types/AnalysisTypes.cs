@@ -193,12 +193,35 @@ namespace resonance.Analysis
         double? DownbeatOffsetSeconds = null,
         double? DownbeatConfidence = null)
     {
+        // A tempo without a measured timeline cannot produce a Basic beat grid.
+        // Reject empty, non-finite and unordered detector output before saving it.
+        public bool HasBeatGrid
+        {
+            get
+            {
+                if (Beats is not { Length: >= 2 } || Beats[0] < 0 || !float.IsFinite(Beats[0]))
+                {
+                    return false;
+                }
+
+                for (var i = 1; i < Beats.Length; i++)
+                {
+                    if (!float.IsFinite(Beats[i]) || Beats[i] <= Beats[i - 1])
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            }
+        }
+
         /// <summary>Returns requested measurements that this result did not produce.</summary>
         /// <returns>The missing requested metrics, or <see cref="AnalysisMetrics.None"/>.</returns>
         public AnalysisMetrics MissingMetrics(AnalysisMetrics requested)
         {
             var missing = AnalysisMetrics.None;
-            if (requested.HasFlag(AnalysisMetrics.Bpm) && Bpm is not > 0)
+            if (requested.HasFlag(AnalysisMetrics.Bpm) && (Bpm is not > 0 || !HasBeatGrid))
             {
                 missing |= AnalysisMetrics.Bpm;
             }
@@ -266,6 +289,7 @@ namespace resonance.Analysis
         uint? Bpm,
         string Key,
         bool HasWaveform,
+        bool HasBeatGrid,
         double? Lufs,
         string Artist,
         string Title,

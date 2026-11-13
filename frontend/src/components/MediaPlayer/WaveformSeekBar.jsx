@@ -38,7 +38,7 @@ import {
   timeToPixel,
 } from '../../lib/analysisTimeline';
 import api from '../../lib/api';
-import { drawEnhanced } from '../../lib/enhancedWaveform';
+import { drawEnhanced, phraseBarMarkers } from '../../lib/enhancedWaveform';
 import { formatSeconds } from '../../lib/util';
 import {
   beatGridSeconds,
@@ -591,8 +591,25 @@ const WaveformSeekBar = ({
 
       context.save();
       const detailGrid = zoom > 1 && !sampledBasic;
+      const markers = independent
+        ? phraseBarMarkers(independent, phraseMode).map((marker) => ({
+            seconds: marker.time,
+            level: marker.level,
+          }))
+        : peaks.barMarkers;
       context.globalAlpha = sampledBasic ? 0.32 : 1;
       for (const time of times) {
+        // A phrase marker replaces the beat line at that position. Drawing both
+        // makes a dark edge behind the coloured marker, especially when zoomed.
+        if (
+          markers.some(
+            (marker) =>
+              Math.abs(time - marker.seconds) * pixelsPerSecond <=
+              ((marker.level === 2 ? 1.5 : 0.5) + (detailGrid ? 1.5 : 0.5)) *
+                dprScale,
+          )
+        )
+          continue;
         // Whole-pixel snapping only where the view is static — under a
         // scrolling sub-pixel offset it would make the grid jitter against
         // the bars it is supposed to line up with.

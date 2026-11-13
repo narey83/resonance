@@ -106,6 +106,7 @@ const toRow = (t) => ({
   hasKey: Boolean(t.key),
   hasLoudness: t.lufs != null,
   hasWaveform: Boolean(t.hasWaveform),
+  hasBeatGrid: Boolean(t.hasBeatGrid),
   key: t.key,
   lufs: t.lufs,
   path: t.path,
@@ -469,7 +470,11 @@ const TrackRow = ({
   const [keyInput, setKeyInput] = useState(track.key ?? '');
   const summary = djSummary(track) || {};
   const basicReady =
-    track.hasBpm && track.hasKey && track.hasWaveform && track.hasLoudness;
+    track.hasBpm &&
+    track.hasKey &&
+    track.hasWaveform &&
+    track.hasBeatGrid &&
+    track.hasLoudness;
   const wasUpdated = recentlyUpdated?.has(track.path) ?? false;
   const { play, track: currentTrack } = usePlayer();
   const isPlaying = currentTrack?.localRelativePath === track.path;
@@ -477,6 +482,7 @@ const TrackRow = ({
     play({
       filename: track.filename,
       hasWaveform: track.hasWaveform,
+      hasBeatGrid: track.hasBeatGrid,
       bpm: track.bpm,
       key: track.key,
       username: null,

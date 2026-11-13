@@ -508,6 +508,60 @@ describe('WaveformSeekBar waveform loading', () => {
     );
   });
 
+  it('replaces the beat line with a Basic marker at the same position', async () => {
+    expect.hasAssertions();
+    const context = Object.fromEntries(
+      [
+        'beginPath',
+        'clearRect',
+        'clip',
+        'fillRect',
+        'fillText',
+        'lineTo',
+        'moveTo',
+        'rect',
+        'restore',
+        'save',
+        'setTransform',
+        'stroke',
+        'translate',
+      ].map((name) => [name, jest.fn()]),
+    );
+    const painted = [];
+    context.fillRect.mockImplementation((...args) =>
+      painted.push({ args, colour: context.fillStyle }),
+    );
+    jest
+      .spyOn(HTMLCanvasElement.prototype, 'getContext')
+      .mockReturnValue(context);
+    const beats = Array.from({ length: 65 }, (_, index) => 0.2 + index * 0.5);
+    analysisApi.getWaveform.mockResolvedValue({
+      ...response,
+      analysisDuration: 33,
+      beats,
+      basicGridBeats: beats,
+    });
+    await render(
+      { path: '/music/basic-marker.flac', bpm: 120 },
+      {
+        getCurrentTime: () => 8.7,
+        zoom: 16,
+      },
+    );
+    const canvas = container.querySelector('canvas');
+    Object.defineProperty(canvas, 'clientWidth', { value: 800 });
+    Object.defineProperty(canvas, 'clientHeight', { value: 40 });
+    act(() => window.requestAnimationFrame.mock.calls.at(-1)[0]());
+
+    const marker = painted.find(({ colour }) => colour === '#a25b00');
+    expect(marker).toBeDefined();
+    const markerX = marker.args[0] + marker.args[2] / 2;
+    expect(
+      context.moveTo.mock.calls.map(([x, y]) => [Math.abs(x - markerX) < 2, y]),
+    ).not.toContainEqual([true, 0]);
+    expect(context.moveTo.mock.calls.length).toBeGreaterThan(0);
+  });
+
   it('shows measured-beat 16/32 estimates on Basic regardless of bar phase', async () => {
     expect.hasAssertions();
     const context = Object.fromEntries(
@@ -797,7 +851,8 @@ describe('WaveformSeekBar waveform loading', () => {
       strokeAlphas.splice(0);
       act(() => window.requestAnimationFrame.mock.calls.at(-1)[0]());
       const guideXs = context.moveTo.mock.calls.slice(0, -1).map(([x]) => x);
-      expect(guideXs.length).toBeGreaterThan(10);
+      // Coloured phrase markers replace nearby guide strokes at narrow widths.
+      expect(guideXs.length).toBeGreaterThan(5);
       expect(strokeAlphas[0]).toBe(0.32);
       for (const x of guideXs)
         expect(

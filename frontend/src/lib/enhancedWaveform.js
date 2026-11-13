@@ -293,11 +293,22 @@ export const drawEnhanced = (ctx, data, options) => {
         ctx.fillRect(span.x, y, span.width, 3 * scale);
     }
 
+  const markers = grid ? phraseBarMarkers(data, phrases) : [];
   let previous = Number.NEGATIVE_INFINITY;
   for (const time of (grid ? data.downbeats : []) || []) {
     const x = ((time - start) / (end - start)) * width;
     if (x < 0 || x > width || x - previous < 8 * scale) continue;
     previous = x;
+    // The phrase marker is the accent at this downbeat, so do not paint a
+    // second grid line underneath it.
+    if (
+      markers.some(
+        (marker) =>
+          Math.abs(((marker.time - start) / (end - start)) * width - x) <=
+          ((marker.level === 2 ? 1.5 : 0.5) + (detailGrid ? 2 : 0.5)) * scale,
+      )
+    )
+      continue;
     const lineHeight = Math.max(0, height - 22 * scale);
     if (detailGrid && gridOutline) {
       ctx.fillStyle = gridOutline;
@@ -315,7 +326,7 @@ export const drawEnhanced = (ctx, data, options) => {
   if (grid) {
     const lineHeight = Math.max(0, height - 14 * scale);
     ctx.save();
-    for (const marker of phraseBarMarkers(data, phrases)) {
+    for (const marker of markers) {
       const x = ((marker.time - start) / (end - start)) * width;
       if (x < 0 || x > width) continue;
       const lineWidth = (marker.level === 2 ? 3 : 1) * scale;
