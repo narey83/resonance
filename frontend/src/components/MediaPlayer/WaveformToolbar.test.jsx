@@ -160,9 +160,7 @@ describe('Waveform toolbar', () => {
     expect(container.querySelector('[role="status"]').textContent).toBe(
       'Estimated 16/32 bars from first beat · phase uncertain',
     );
-    expect(container.querySelector('.mp-waveform-marker-key').textContent).toBe(
-      '16 bars32 bars',
-    );
+    expect(container.querySelector('.mp-waveform-marker-key')).toBeNull();
     render(
       {
         beatCount: 733,
@@ -179,7 +177,7 @@ describe('Waveform toolbar', () => {
     expect(container.querySelector('[role="status"]')).toBeNull();
     expect(container.querySelector('.mp-waveform-marker-key')).toBeNull();
     render({ beatCount: 732, barPhaseStatus: 'supported', markerCount: 12 });
-    expect(container.querySelector('.mp-waveform-marker-key')).not.toBeNull();
+    expect(container.querySelector('.mp-waveform-marker-key')).toBeNull();
     act(() => {
       ReactDOM.render(
         <WaveformToolbar

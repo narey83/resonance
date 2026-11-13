@@ -66,6 +66,7 @@ const BASIC_REFRESH_MS = 15_000;
 // Falls back to nothing (caller renders the plain bar) when no peak data exists.
 const WaveformSeekBar = ({
   duration,
+  enhancedAvailable = false,
   getCurrentTime,
   height = 40,
   onAnalysing,
@@ -845,6 +846,18 @@ const WaveformSeekBar = ({
           )}
         </div>
       )}
+      {showGrid &&
+        !enhancedAvailable &&
+        peaksRef.current?.barMarkers?.length > 0 && (
+          <span
+            aria-label="Beat grid marker legend"
+            className="mp-waveform-marker-key"
+            role="group"
+          >
+            <span className="mp-waveform-marker-key--16">16 bars</span>
+            <span className="mp-waveform-marker-key--32">32 bars</span>
+          </span>
+        )}
       <canvas
         aria-label="Seek"
         aria-valuemax={waveformDuration}

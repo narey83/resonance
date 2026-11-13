@@ -1297,6 +1297,7 @@ const MediaPlayer = () => {
               />
               <WaveformSeekBar
                 duration={displayDuration}
+                enhancedAvailable={enhancedAvailable}
                 getCurrentTime={getCurrentTime}
                 height={seekerHeight}
                 onAnalysing={setMiniWaveformAnalysing}

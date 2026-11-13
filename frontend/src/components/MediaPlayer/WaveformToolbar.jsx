@@ -41,12 +41,6 @@ const WaveformToolbar = ({
             ? 'Beat timing only · bar phase uncertain'
             : null
       : null;
-  const showMarkerKey =
-    enabled &&
-    grid &&
-    !enhancedAvailable &&
-    (basicGridState?.markerCount > 0 ||
-      basicGridState?.estimatedMarkerCount > 0);
   return (
     <div
       aria-label="Waveform controls"
@@ -131,12 +125,6 @@ const WaveformToolbar = ({
               role="status"
             >
               {basicGridStatus}
-            </span>
-          )}
-          {showMarkerKey && (
-            <span className="mp-waveform-marker-key">
-              <span className="mp-waveform-marker-key--16">16 bars</span>
-              <span className="mp-waveform-marker-key--32">32 bars</span>
             </span>
           )}
           <button

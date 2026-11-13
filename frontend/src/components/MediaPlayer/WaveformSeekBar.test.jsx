@@ -557,11 +557,16 @@ describe('WaveformSeekBar waveform loading', () => {
         estimatedFromBar: false,
       }),
     );
+    expect(
+      container.querySelector('.mp-waveform-seeker .mp-waveform-marker-key')
+        .textContent,
+    ).toBe('16 bars32 bars');
 
     painted.splice(0);
     await render(track, { onBasicGridState, showGrid: false });
     act(() => window.requestAnimationFrame.mock.calls.at(-1)[0]());
     expect(recordedMarkerPaints(painted)).toEqual([]);
+    expect(container.querySelector('.mp-waveform-marker-key')).toBeNull();
 
     analysisApi.getWaveform.mockResolvedValueOnce({
       ...unresolved,
@@ -580,6 +585,10 @@ describe('WaveformSeekBar waveform loading', () => {
     expect(onBasicGridState).toHaveBeenLastCalledWith(
       expect.objectContaining({ estimatedMarkerCount: 0 }),
     );
+    expect(container.querySelector('.mp-waveform-marker-key')).not.toBeNull();
+
+    await render(track, { enhancedAvailable: true, onBasicGridState });
+    expect(container.querySelector('.mp-waveform-marker-key')).toBeNull();
   });
 
   it('draws observed beats but no coarse bar phase when Basic markers are absent', async () => {
@@ -614,6 +623,7 @@ describe('WaveformSeekBar waveform loading', () => {
     });
     const track = { bpm: 120, path: '/music/no-bar-phase.flac' };
     await render(track);
+    expect(container.querySelector('.mp-waveform-marker-key')).toBeNull();
     const canvas = container.querySelector('canvas');
     Object.defineProperty(canvas, 'clientWidth', { value: 800 });
     Object.defineProperty(canvas, 'clientHeight', { value: 40 });
