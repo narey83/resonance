@@ -1440,6 +1440,7 @@ fieldset.mp-processing-modal-body { border: 0; margin: 0; padding: 0; min-width:
   gap: 7px;
   padding: 7px 10px;
   border: 1px solid var(--player-border, var(--border));
+  color: var(--player-text, var(--text-primary));
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
