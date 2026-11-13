@@ -2242,9 +2242,10 @@ Evidence and private queue/scan manifests are retained in the isolated snapshot.
 
 ## Mobile chat navigation in Expo development — 13 November 2026
 
-Added a back arrow on the top-level Chat screen to return to More and one on
-the top-level Rooms screen to return to Chat. The existing native-stack arrows
-on private conversations and room details remain in place. Removed the Rooms
+Added a back arrow on the top-level Chat screen to return to the last visible
+tab that opened it and one on the top-level Rooms screen to return to Chat.
+The existing native-stack arrows on private conversations and room details
+remain in place. Removed the Rooms
 and Private conversations entries from More; Browse shares remains there. The
 floating chat button is the entry point to PMs and joined chatrooms.
 
@@ -2255,11 +2256,12 @@ Its running Metro server on dev-laptop port 8083 served the update to the Pixel'
 separate port-8082 Metro instance and installed `com.resonance.mobile` app were
 left alone. No backend, native project, production APK, or private state changed.
 
-Dev-laptop verification: TypeScript and changed-file ESLint passed; all 241 mobile
-tests passed after updating the Rooms test fixture for the new navigation calls.
-The Pixel showed Chat → More, Rooms → Chat, the existing PM conversation back
-arrow, and a More screen with Browse shares but no duplicate chat links. The
-dependency audit still reports one pre-existing moderate `node-forge` advisory
+Dev-laptop verification: TypeScript and changed-file ESLint passed; all 244 mobile
+tests passed, including the Rooms test fixture for the new navigation calls.
+The Pixel showed Library → Chat → Rooms → Chat → Library and More → Chat → More,
+the existing PM conversation back arrow, and a More screen with Browse shares
+but no duplicate chat links. More stays unhighlighted while Chat or Rooms is
+open. The dependency audit still reports one pre-existing moderate `node-forge` advisory
 in Expo tooling. An initially started production-variant Gradle command was
 stopped after the user clarified that delivery should be Expo-only; no APK was
 installed from it.

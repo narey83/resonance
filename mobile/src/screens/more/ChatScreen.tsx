@@ -47,6 +47,7 @@ import type { Conversation } from '../../api/chat';
 import type { Room } from '../../api/rooms';
 import { useTheme } from '../../context/ThemeContext';
 import type { ChatStackParamList, MainTabParamList } from '../../navigation/MainTabs';
+import { useChatReturnTab } from '../../navigation/chatReturn';
 import BottomSheet from '../../components/BottomSheet';
 import UserAvatar from '../../components/UserAvatar';
 import { useUserInfoStore } from '../../store/userInfoStore';
@@ -133,6 +134,7 @@ function ConversationRow({
 export default function ChatScreen({ navigation }: Props) {
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
+  const chatReturnTab = useChatReturnTab();
 
   const { conversations, isLoading, loadConversations } = useConversationStore();
   const privateUnread = useConversationStore((state) => state.totalUnread);
@@ -157,7 +159,7 @@ export default function ChatScreen({ navigation }: Props) {
   React.useLayoutEffect(() => {
     navigation.setOptions({
       headerLeft: () => (
-        <Pressable accessibilityRole="button" accessibilityLabel="Back to More" onPress={() => tabs?.navigate('MoreTab')} hitSlop={8} style={{ marginRight: Spacing.sm }}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Back to previous screen" onPress={() => tabs?.navigate(chatReturnTab())} hitSlop={8} style={{ marginRight: Spacing.sm }}>
           <Ionicons color={colors.textPrimary} name="arrow-back" size={24} />
         </Pressable>
       ),
@@ -167,7 +169,7 @@ export default function ChatScreen({ navigation }: Props) {
         </Pressable>
       ),
     });
-  }, [navigation, colors, section, openRooms, tabs]);
+  }, [navigation, colors, section, openRooms, tabs, chatReturnTab]);
 
   const openConversation = (username: string) => {
     navigation.navigate('ChatConversation', { username });

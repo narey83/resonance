@@ -61,7 +61,7 @@ export function FloatingTabBar({ state, descriptors, navigation, insets }: Botto
         {state.routes.filter(route => !['BrowseTab', 'RoomsTab', 'ChatTab'].includes(route.name)).map((route) => {
           const index = state.routes.findIndex(item => item.key === route.key);
           const { options } = descriptors[route.key];
-          const focused = state.index === index || (route.name === 'MoreTab' && ['BrowseTab', 'RoomsTab', 'ChatTab'].includes(state.routes[state.index].name));
+          const focused = state.index === index || (route.name === 'MoreTab' && state.routes[state.index].name === 'BrowseTab');
           const icons = TAB_ICONS[route.name];
           const label = typeof options.title === 'string' ? options.title : route.name;
           const badge = options.tabBarBadge;

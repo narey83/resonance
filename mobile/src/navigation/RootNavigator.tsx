@@ -59,6 +59,8 @@ import ConnectionBanner from '../components/ConnectionBanner';
 import AuthStack from './AuthStack';
 import MainTabs from './MainTabs';
 import type { MainTabParamList } from './MainTabs';
+import { ChatReturnContext } from './chatReturn';
+import type { ChatReturnTab } from './chatReturn';
 import StartScreen from '../screens/auth/StartScreen';
 import { useAppMode } from '../store/appModeStore';
 import { useLibrarySettings } from '../store/librarySettingsStore';
@@ -114,6 +116,8 @@ function MusicApp({ remote, activeTab, onOpenChat }: { remote: boolean; activeTa
 function AppContent() {
   const navigationRef = useNavigationContainerRef<MainTabParamList>();
   const pendingChatLink = useRef(false);
+  const lastNonChatTab = useRef<ChatReturnTab>('DiscoverTab');
+  const chatReturnTab = React.useCallback(() => lastNonChatTab.current, []);
   const [activeTab, setActiveTab] = useState<string | null>(null);
   // Selectors: this is the root of the tree, so a whole-store read here re-rendered everything
   // below it (NavigationContainer included) on any unrelated auth or settings write.
@@ -201,15 +205,34 @@ function AppContent() {
         ref={navigationRef}
         onReady={() => {
           const state = navigationRef.getRootState();
-          setActiveTab(state?.routes[state.index]?.name ?? null);
+          const name = state?.routes[state.index]?.name ?? null;
+          setActiveTab(name);
+          if (name && name !== 'ChatTab' && name !== 'RoomsTab') lastNonChatTab.current = name as ChatReturnTab;
           if (pendingChatLink.current) {
             pendingChatLink.current = false;
             navigationRef.navigate('ChatTab', { screen: 'Chat' });
           }
         }}
-        onStateChange={(state) => setActiveTab(state?.routes[state.index]?.name ?? null)}
+        onStateChange={(state) => {
+          const name = state?.routes[state.index]?.name ?? null;
+          setActiveTab(name);
+          if (name && name !== 'ChatTab' && name !== 'RoomsTab') lastNonChatTab.current = name as ChatReturnTab;
+        }}
       >
-        {mode === 'choose' ? <StartScreen /> : isAuthenticated || mode === 'local' ? <MusicApp remote={isAuthenticated} activeTab={activeTab} onOpenChat={() => navigationRef.navigate('ChatTab', { screen: 'Chat' })} key={isAuthenticated ? `${serverUrl}:${sessionId}` : 'local'} /> : <AuthStack />}
+        {mode === 'choose' ? (
+          <StartScreen />
+        ) : isAuthenticated || mode === 'local' ? (
+          <ChatReturnContext.Provider value={chatReturnTab}>
+            <MusicApp
+              remote={isAuthenticated}
+              activeTab={activeTab}
+              onOpenChat={() => navigationRef.navigate('ChatTab', { screen: 'Chat' })}
+              key={isAuthenticated ? `${serverUrl}:${sessionId}` : 'local'}
+            />
+          </ChatReturnContext.Provider>
+        ) : (
+          <AuthStack />
+        )}
       </NavigationContainer>
     </>
   );
