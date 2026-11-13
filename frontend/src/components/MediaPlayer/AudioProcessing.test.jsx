@@ -65,10 +65,10 @@ describe('Studio in the player', () => {
     expect(dialog.textContent).not.toContain('Audio Processing');
     expect(
       launcherTarget.querySelector('button').getAttribute('aria-label'),
-    ).toBe('Studio: Off');
+    ).toBe('Open Resonance Studio');
     expect(
       launcherTarget
-        .querySelector('button')
+        .querySelector('[role="group"]')
         .classList.contains('mp-processing-btn--off'),
     ).toBe(true);
     await act(async () =>
@@ -88,11 +88,13 @@ describe('Studio in the player', () => {
       expect.objectContaining({ enabled: true }),
     );
     expect(
-      launcherTarget.querySelector('button').getAttribute('aria-label'),
-    ).toBe('Studio: On');
+      launcherTarget
+        .querySelector('.mp-processing-power')
+        .getAttribute('aria-label'),
+    ).toBe('Turn Studio off');
     expect(
       launcherTarget
-        .querySelector('button')
+        .querySelector('[role="group"]')
         .classList.contains('mp-processing-btn--on'),
     ).toBe(true);
     expect(prefs.set).toHaveBeenCalledWith(
@@ -104,6 +106,41 @@ describe('Studio in the player', () => {
     expect(
       dialog.querySelector('[aria-label="Studio processing rack"]').checked,
     ).toBe(true);
+  });
+
+  it('opens settings separately from the power switch and preserves the profile', async () => {
+    expect.hasAssertions();
+    await render();
+    const dialog = modalTarget.querySelector('[role="dialog"]');
+    const openButton = launcherTarget.querySelector('.mp-processing-btn');
+    const powerButton = launcherTarget.querySelector('.mp-processing-power');
+    const rack = dialog.querySelector('[aria-label="Studio processing rack"]');
+
+    act(() => Simulate.click(powerButton));
+    expect(rack.checked).toBe(true);
+    expect(dialog.classList.contains('mp-processing-overlay--hidden')).toBe(
+      true,
+    );
+    expect(powerButton.getAttribute('aria-pressed')).toBe('true');
+    expect(graph.studio.configure).toHaveBeenLastCalledWith(
+      expect.objectContaining({ enabled: true }),
+    );
+
+    await act(async () => Simulate.click(openButton));
+    expect(rack.checked).toBe(true);
+    expect(dialog.classList.contains('mp-processing-overlay--hidden')).toBe(
+      false,
+    );
+
+    act(() => Simulate.click(powerButton));
+    expect(rack.checked).toBe(false);
+    expect(dialog.classList.contains('mp-processing-overlay--hidden')).toBe(
+      false,
+    );
+    expect(powerButton.getAttribute('aria-pressed')).toBe('false');
+    expect(graph.studio.configure).toHaveBeenLastCalledWith(
+      expect.objectContaining({ enabled: false }),
+    );
   });
 
   it('changes output profiles and keeps their rack values separate', async () => {
@@ -159,11 +196,11 @@ describe('Studio in the player', () => {
       expect.objectContaining({ bypass: true }),
     );
     expect(
-      launcherTarget.querySelector('button').getAttribute('aria-label'),
-    ).toBe('Studio: Bypassed');
+      launcherTarget.querySelector('.mp-processing-power').textContent,
+    ).toBe('Bypassed');
     expect(
       launcherTarget
-        .querySelector('button')
+        .querySelector('[role="group"]')
         .classList.contains('mp-processing-btn--bypassed'),
     ).toBe(true);
     act(() => Simulate.click(button('Push it')));
@@ -213,5 +250,24 @@ describe('Studio in the player', () => {
     expect(
       dialog.querySelector('[aria-label="Studio processing rack"]'),
     ).not.toBeNull();
+  });
+
+  it('returns the rack to Off if the power switch cannot start Studio', async () => {
+    expect.hasAssertions();
+    graph.studio.setMode.mockRejectedValue(new Error('Worklet unavailable'));
+    await render();
+    await act(async () =>
+      Simulate.click(launcherTarget.querySelector('.mp-processing-power')),
+    );
+    const dialog = modalTarget.querySelector('[role="dialog"]');
+    expect(dialog.classList.contains('mp-processing-overlay--hidden')).toBe(
+      false,
+    );
+    expect(dialog.querySelector('[role="alert"]').textContent).toBe(
+      'Worklet unavailable',
+    );
+    expect(
+      dialog.querySelector('[aria-label="Studio processing rack"]').checked,
+    ).toBe(false);
   });
 });

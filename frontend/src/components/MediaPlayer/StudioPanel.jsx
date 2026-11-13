@@ -4,7 +4,6 @@ import {
   MODULES,
   PRESETS,
   readProfile,
-  readStudio,
 } from '../../lib/dsp/studioConfig';
 import { getMediaAudioGraph } from '../../lib/mediaAudioGraph';
 import * as prefs from '../../lib/prefs';
@@ -17,18 +16,19 @@ const groupNames = {
   creative: 'Creative',
 };
 
-const StudioPanel = ({ active, audioRef, onStatusChange }) => {
-  const [studio, setStudio] = useState(() => readStudio(prefs.get(KEY, null)));
+const StudioPanel = ({
+  active,
+  audioRef,
+  bypass,
+  setBypass,
+  setStudio,
+  studio,
+}) => {
   const [section, setSection] = useState('tone');
   const [pushed, setPushed] = useState(false);
   const [pushConfirm, setPushConfirm] = useState(false);
-  const [bypass, setBypass] = useState(false);
   const [name, setName] = useState('');
   const profile = studio.profiles[studio.output];
-
-  useEffect(() => {
-    onStatusChange?.({ enabled: profile.enabled, bypass });
-  }, [bypass, onStatusChange, profile.enabled]);
 
   useEffect(() => {
     if (!active || !audioRef.current) return;

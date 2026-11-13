@@ -3,7 +3,7 @@ import { readStudio } from '../../lib/dsp/studioConfig';
 import { getMediaAudioGraph } from '../../lib/mediaAudioGraph';
 import * as prefs from '../../lib/prefs';
 import StudioPanel from './StudioPanel';
-import { SlidersHorizontal, X } from 'lucide-react';
+import { Power, SlidersHorizontal, X } from 'lucide-react';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -15,15 +15,13 @@ const AudioProcessing = ({
 }) => {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState('');
-  const [rackState, setRackState] = useState(() => {
-    const saved = readStudio(prefs.get('mediaPlayer.studio.v1', null));
-    return { enabled: saved.profiles[saved.output].enabled, bypass: false };
-  });
-  const state = !rackState.enabled
-    ? 'off'
-    : rackState.bypass
-      ? 'bypassed'
-      : 'on';
+  const [studio, setStudio] = useState(() =>
+    readStudio(prefs.get('mediaPlayer.studio.v1', null)),
+  );
+  const [bypass, setBypass] = useState(false);
+  const powerRequest = useRef(0);
+  const profile = studio.profiles[studio.output];
+  const state = !profile.enabled ? 'off' : bypass ? 'bypassed' : 'on';
   const stateLabel =
     state === 'on' ? 'On' : state === 'off' ? 'Off' : 'Bypassed';
   const modalHostRef = useRef(null);
@@ -51,28 +49,78 @@ const AudioProcessing = ({
     return () => modalDocument.removeEventListener('keydown', onKeyDown);
   }, [modalHost, open]);
 
+  const startStudio = async () => {
+    if (!audioRef.current) return;
+    await getMediaAudioGraph(audioRef.current).studio.setMode(true);
+    setError('');
+  };
+
+  const setRackEnabled = (enabled) => {
+    setStudio((previous) => {
+      const output = previous.output;
+      const next = {
+        ...previous,
+        profiles: {
+          ...previous.profiles,
+          [output]: { ...previous.profiles[output], enabled },
+        },
+      };
+      prefs.set('mediaPlayer.studio.v1', next);
+      return next;
+    });
+  };
+
   const showStudio = () => {
     setOpen(true);
-    if (!audioRef.current) return;
-    void getMediaAudioGraph(audioRef.current)
-      .studio.setMode(true)
-      .then(() => setError(''))
-      .catch((error_) => setError(error_.message || 'Studio could not start.'));
+    void startStudio().catch((error_) =>
+      setError(error_.message || 'Studio could not start.'),
+    );
+  };
+
+  const togglePower = () => {
+    const enabling = !profile.enabled;
+    const request = ++powerRequest.current;
+    setBypass(false);
+    setRackEnabled(enabling);
+    if (enabling)
+      void startStudio().catch((error_) => {
+        if (request !== powerRequest.current) return;
+        setRackEnabled(false);
+        setError(error_.message || 'Studio could not start.');
+        setOpen(true);
+      });
   };
 
   const launcher = (
-    <button
-      aria-expanded={open}
-      aria-label={`Studio: ${stateLabel}`}
-      className={`media-player-btn hover-fx mp-processing-btn mp-processing-btn--${state}`}
-      onClick={showStudio}
-      title={`Resonance Studio · ${stateLabel}`}
-      type="button"
+    <div
+      aria-label="Resonance Studio controls"
+      className={`mp-processing-control mp-processing-btn--${state}`}
+      role="group"
     >
-      <SlidersHorizontal size={18} />
-      <span>Studio</span>
-      <span className="mp-processing-btn-state">{stateLabel}</span>
-    </button>
+      <button
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        aria-label="Open Resonance Studio"
+        className="media-player-btn hover-fx mp-processing-btn"
+        onClick={showStudio}
+        title="Open Resonance Studio"
+        type="button"
+      >
+        <SlidersHorizontal size={18} />
+        <span>Studio</span>
+      </button>
+      <button
+        aria-label={profile.enabled ? 'Turn Studio off' : 'Turn Studio on'}
+        aria-pressed={profile.enabled}
+        className="media-player-btn hover-fx mp-processing-power"
+        onClick={togglePower}
+        title={`Turn Studio ${profile.enabled ? 'off' : 'on'} · ${stateLabel}`}
+        type="button"
+      >
+        <Power size={14} />
+        <span>{stateLabel}</span>
+      </button>
+    </div>
   );
 
   return (
@@ -114,7 +162,10 @@ const AudioProcessing = ({
               <StudioPanel
                 active
                 audioRef={audioRef}
-                onStatusChange={setRackState}
+                bypass={bypass}
+                setBypass={setBypass}
+                setStudio={setStudio}
+                studio={studio}
               />
             </div>
             {open && children}
