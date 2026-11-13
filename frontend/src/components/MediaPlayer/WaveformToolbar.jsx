@@ -36,7 +36,7 @@ const WaveformToolbar = ({
       ? basicGridState.beatCount === 0
         ? 'No detected beat timing yet'
         : basicGridState.estimatedMarkerCount > 0
-          ? `Estimated 16/32 bars from ${basicGridState.estimatedFromBar ? 'first bar' : 'first beat'} · phase uncertain`
+          ? '16/32 beat count from first measured beat · estimated'
           : basicGridState.barPhaseStatus === 'unresolved' && zoom === 1
             ? 'Beat timing only · bar phase uncertain'
             : null

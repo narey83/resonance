@@ -129,12 +129,15 @@ describe('WaveformSeekBar waveform loading', () => {
   it('refreshes Basic markers after analysis updates and retains them while a refresh is pending or fails', async () => {
     expect.hasAssertions();
     const paintedMarkers = observeBasicMarkers();
+    const beats = Array.from({ length: 65 }, (_, index) => 0.7 + index * 0.5);
     const first = {
       ...response,
+      basicGridBeats: beats,
       basicBarMarkers: [{ seconds: 0.7, level: 2 }],
     };
     const corrected = {
       ...response,
+      basicGridBeats: beats.map((beat) => beat - 0.5),
       basicBarMarkers: [{ seconds: 0.2, level: 2 }],
     };
     const onReady = jest.fn();
@@ -142,7 +145,7 @@ describe('WaveformSeekBar waveform loading', () => {
     analysisApi.getWaveform.mockResolvedValueOnce(first);
     await render(track, { onReady });
     const originalMarkers = paintedMarkers();
-    expect(originalMarkers).toHaveLength(1);
+    expect(originalMarkers).toHaveLength(2);
     onReady.mockClear();
 
     let fail;
@@ -164,7 +167,7 @@ describe('WaveformSeekBar waveform loading', () => {
     bumpRevision();
     await render(track, { onReady });
     expect(paintedMarkers()).not.toEqual(originalMarkers);
-    expect(paintedMarkers()).toHaveLength(1);
+    expect(paintedMarkers()).toHaveLength(2);
     expect(waveformPreview.primeWaveformCache).toHaveBeenLastCalledWith(
       track.path,
       corrected,
@@ -427,7 +430,7 @@ describe('WaveformSeekBar waveform loading', () => {
     expect(container.querySelector('.mp-vocal-legend')).not.toBeNull();
   });
 
-  it('draws backend Basic bar markers only while the grid is enabled', async () => {
+  it('draws counted Basic beat markers only while the grid is enabled', async () => {
     expect.hasAssertions();
     const context = Object.fromEntries(
       [
@@ -455,6 +458,10 @@ describe('WaveformSeekBar waveform loading', () => {
       .mockReturnValue(context);
     analysisApi.getWaveform.mockResolvedValue({
       ...response,
+      basicGridBeats: Array.from(
+        { length: 65 },
+        (_, index) => 0.2 + index * 0.5,
+      ),
       basicBarMarkers: [
         { seconds: 0.2, level: 2 },
         { seconds: 30, level: 1 },
@@ -501,7 +508,7 @@ describe('WaveformSeekBar waveform loading', () => {
     );
   });
 
-  it('shows measured-beat 16/32 estimates only for unresolved Basic phase', async () => {
+  it('shows measured-beat 16/32 estimates on Basic regardless of bar phase', async () => {
     expect.hasAssertions();
     const context = Object.fromEntries(
       [
@@ -546,21 +553,21 @@ describe('WaveformSeekBar waveform loading', () => {
     Object.defineProperty(canvas, 'clientWidth', { value: 800 });
     Object.defineProperty(canvas, 'clientHeight', { value: 40 });
     act(() => window.requestAnimationFrame.mock.calls.at(-1)[0]());
-    expect(recordedMarkerPaints(painted)).toEqual([
-      { x: expect.any(Number), width: 3, colour: '#6948ad' },
+    expect(recordedMarkerPaints(painted)).toHaveLength(8);
+    expect(recordedMarkerPaints(painted).slice(0, 2)).toEqual([
       { x: expect.any(Number), width: 1, colour: '#a25b00' },
       { x: expect.any(Number), width: 3, colour: '#6948ad' },
     ]);
     expect(onBasicGridState).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        estimatedMarkerCount: 3,
+        estimatedMarkerCount: 8,
         estimatedFromBar: false,
       }),
     );
     expect(
       container.querySelector('.mp-waveform-seeker .mp-waveform-marker-key')
         .textContent,
-    ).toBe('16 bars32 bars');
+    ).toBe('16 beats32 beats');
 
     painted.splice(0);
     await render(track, { onBasicGridState, showGrid: false });
@@ -579,11 +586,9 @@ describe('WaveformSeekBar waveform loading', () => {
     await render(track, { onBasicGridState, showGrid: true });
     painted.splice(0);
     act(() => window.requestAnimationFrame.mock.calls.at(-1)[0]());
-    expect(recordedMarkerPaints(painted)).toEqual([
-      { x: expect.any(Number), width: 3, colour: '#6948ad' },
-    ]);
+    expect(recordedMarkerPaints(painted)).toHaveLength(8);
     expect(onBasicGridState).toHaveBeenLastCalledWith(
-      expect.objectContaining({ estimatedMarkerCount: 0 }),
+      expect.objectContaining({ estimatedMarkerCount: 8 }),
     );
     expect(container.querySelector('.mp-waveform-marker-key')).not.toBeNull();
 
@@ -778,7 +783,7 @@ describe('WaveformSeekBar waveform loading', () => {
         path: track.path,
         beatCount: basicGridBeats.length,
         barPhaseStatus: 'unresolved',
-        estimatedMarkerCount: 0,
+        estimatedMarkerCount: 45,
       }),
     );
     const canvas = container.querySelector('canvas');

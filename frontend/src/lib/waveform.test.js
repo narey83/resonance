@@ -31,7 +31,7 @@ import {
   beatGridPhase,
   beatGridSeconds,
   compareBeats,
-  estimatedPhraseBarMarkers,
+  countedBeatMarkers,
   expectedBeats,
   firstGridLineAt,
   resamplePeaks,
@@ -47,139 +47,49 @@ import {
 const BEAT = 60 / 128;
 const measured = (count, start = 0.09) =>
   Array.from({ length: count }, (_, index) => start + index * 0.5);
-const halfTimeMeasured = (count, from, to) =>
-  measured(count).filter(
-    (_, index) => index < from || index > to || index % 2 === 0,
-  );
-
-describe('estimatedPhraseBarMarkers', () => {
-  it('counts 16 and 32 bars from measured beats with distinct levels', () => {
-    expect(estimatedPhraseBarMarkers(measured(129), 65)).toEqual([
-      { seconds: 0.09, level: 2 },
-      { seconds: 32.09, level: 1 },
-      { seconds: 64.09, level: 2 },
+describe('countedBeatMarkers', () => {
+  it('counts 16 observed beats for thin markers and 32 for thick markers', () => {
+    expect(countedBeatMarkers(measured(65), 33)).toEqual([
+      { seconds: 8.09, level: 1 },
+      { seconds: 16.09, level: 2 },
+      { seconds: 24.09, level: 1 },
+      { seconds: 32.09, level: 2 },
     ]);
   });
 
-  it('keeps the count after a missed beat and omits a missed boundary', () => {
-    const skippedBeforeBoundary = measured(129).filter(
-      (_, index) => index !== 61,
-    );
-    expect(estimatedPhraseBarMarkers(skippedBeforeBoundary, 65)[1]).toEqual({
-      seconds: 32.09,
+  it('counts a missed tick without moving later measured boundaries', () => {
+    const beats = measured(65).filter((_, index) => index !== 13);
+    expect(countedBeatMarkers(beats, 33)[0]).toEqual({
+      seconds: 8.09,
       level: 1,
     });
-
-    const skippedBoundary = measured(129).filter((_, index) => index !== 64);
-    expect(estimatedPhraseBarMarkers(skippedBoundary, 65)).toEqual([
-      { seconds: 0.09, level: 2 },
-      { seconds: 64.09, level: 2 },
-    ]);
-  });
-
-  it('keeps the count when a detector misses a tick repeatedly', () => {
-    const repeatedMisses = measured(160).filter((_, index) => index % 8 !== 7);
-    expect(estimatedPhraseBarMarkers(repeatedMisses, 80)).toEqual([
-      { seconds: 0.09, level: 2 },
-      { seconds: 32.09, level: 1 },
-      { seconds: 64.09, level: 2 },
-    ]);
-  });
-
-  it('never extrapolates before a delayed start or beyond an unknown silent gap', () => {
-    const late = measured(129, 12.09);
-    expect(estimatedPhraseBarMarkers(late, 77.5)[0].seconds).toBe(12.09);
-
-    const gap = [...measured(80), ...measured(80, 48.09)];
-    expect(estimatedPhraseBarMarkers(gap, 90)).toEqual([
-      { seconds: 0.09, level: 2 },
-      { seconds: 32.09, level: 1 },
-    ]);
-  });
-
-  it('resumes the original count after measured half-time beats reconnect to the pulse', () => {
-    const beats = halfTimeMeasured(520, 320, 400);
-    const markers = estimatedPhraseBarMarkers(beats, 260);
-    expect(
-      markers
-        .filter((marker) => marker.level === 2)
-        .map((marker) => marker.seconds),
-    ).toEqual([0.09, 64.09, 128.09, 192.09, 256.09]);
-    expect(
-      markers.every(
-        (marker) =>
-          Math.abs(
-            (marker.seconds - 0.09) / 32 -
-              Math.round((marker.seconds - 0.09) / 32),
-          ) < 1e-6,
-      ),
-    ).toBe(true);
-  });
-
-  it('does not restart or rejoin across a silent break or a changed beat phase', () => {
-    const before = measured(160);
-    const afterSilence = measured(160, 100.09);
-    expect(
-      estimatedPhraseBarMarkers([...before, ...afterSilence], 180),
-    ).toEqual([
-      { seconds: 0.09, level: 2 },
-      { seconds: 32.09, level: 1 },
-      { seconds: 64.09, level: 2 },
-    ]);
-    const changedPhase = [...before, ...measured(160, 80.34)];
-    expect(estimatedPhraseBarMarkers(changedPhase, 161)).toEqual([
-      { seconds: 0.09, level: 2 },
-      { seconds: 32.09, level: 1 },
-      { seconds: 64.09, level: 2 },
-    ]);
-  });
-
-  it('uses a supported bar origin after a pickup and clips at analysis duration', () => {
-    expect(estimatedPhraseBarMarkers(measured(130), 64.5, 0.59)).toEqual([
-      { seconds: 0.59, level: 2 },
-      { seconds: 32.59, level: 1 },
-    ]);
-    expect(estimatedPhraseBarMarkers(measured(129), 64)).toEqual([
-      { seconds: 0.09, level: 2 },
-      { seconds: 32.09, level: 1 },
-    ]);
-  });
-
-  it('omits a lone opening marker and rejects invalid beat timelines', () => {
-    expect(estimatedPhraseBarMarkers(measured(20), 20)).toEqual([]);
-    expect(estimatedPhraseBarMarkers([0.1, 0.1, 0.6], 10)).toEqual([]);
-    expect(estimatedPhraseBarMarkers(measured(129), 65, 5)).toEqual([]);
-  });
-
-  it('aligns a provisional 32-bar guide to a measured sustained low-end section rise', () => {
-    const overallPeaks = Array.from({ length: 6_500 }).fill(0.3);
-    const lowPeaks = Array.from({ length: 6_500 }).fill(0.15);
-    overallPeaks.fill(0.8, 6_385);
-    lowPeaks.fill(0.65, 6_385);
-    const markers = estimatedPhraseBarMarkers(measured(129), 65, null, {
-      overallPeaks,
-      lowPeaks,
+    const missingBoundary = measured(65).filter((_, index) => index !== 16);
+    expect(countedBeatMarkers(missingBoundary, 33)[0]).toEqual({
+      seconds: 16.09,
+      level: 2,
     });
-
-    expect(markers[1]).toEqual({ seconds: 32.09, level: 1 });
-    expect(markers[2].level).toBe(2);
-    expect(markers[2].seconds).toBeCloseTo(63.85, 1);
   });
 
-  it('does not move phrase guides for an isolated kick accent or missing low band', () => {
-    const overallPeaks = Array.from({ length: 6_500 }).fill(0.3);
-    const lowPeaks = Array.from({ length: 6_500 }).fill(0.15);
-    overallPeaks.fill(0.9, 6_385, 6_390);
-    lowPeaks.fill(0.8, 6_385, 6_390);
-    expect(
-      estimatedPhraseBarMarkers(measured(129), 65, null, {
-        overallPeaks,
-        lowPeaks,
-      })[2],
-    ).toEqual({ seconds: 64.09, level: 2 });
-    expect(
-      estimatedPhraseBarMarkers(measured(129), 65, null, { overallPeaks })[2],
-    ).toEqual({ seconds: 64.09, level: 2 });
+  it('stops across silent gaps instead of inventing beats', () => {
+    const before = measured(40);
+    expect(countedBeatMarkers([...before, ...measured(40, 40.09)], 61)).toEqual(
+      [
+        { seconds: 8.09, level: 1 },
+        { seconds: 16.09, level: 2 },
+      ],
+    );
+  });
+
+  it('uses the first measured beat even with a delayed opening', () => {
+    expect(countedBeatMarkers(measured(33, 12.09), 29)).toEqual([
+      { seconds: 20.09, level: 1 },
+      { seconds: 28.09, level: 2 },
+    ]);
+  });
+
+  it('rejects invalid timelines and never draws beyond duration', () => {
+    expect(countedBeatMarkers([0.1, 0.1, 0.6], 10)).toEqual([]);
+    expect(countedBeatMarkers(measured(33), 8)).toEqual([]);
   });
 });
 

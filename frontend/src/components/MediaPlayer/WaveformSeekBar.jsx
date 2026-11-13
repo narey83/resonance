@@ -42,7 +42,7 @@ import { drawEnhanced } from '../../lib/enhancedWaveform';
 import { formatSeconds } from '../../lib/util';
 import {
   beatGridSeconds,
-  estimatedPhraseBarMarkers,
+  countedBeatMarkers,
   maxOf,
   resamplePeaks,
   visibleBeatTimes,
@@ -231,33 +231,17 @@ const WaveformSeekBar = ({
           ? data.barAnchorSeconds
           : null
         : data.basicBarMarkers?.[0]?.seconds ?? null;
-      const basicBarMarkers = (data.basicBarMarkers || []).filter(
-        (marker) =>
-          !newPhaseStatus ||
-          (marker.level === 2
-            ? data.basicThirtyTwoBarPhaseStatus === 'supported'
-            : data.basicSixteenBarPhaseStatus === 'supported'),
+      const beatCountMarkers = countedBeatMarkers(
+        gridBeats,
+        data.analysisDuration,
       );
-      const estimatedBarMarkers =
-        !basicBarMarkers.length &&
-        data.basicSixteenBarPhaseStatus === 'unresolved' &&
-        data.basicThirtyTwoBarPhaseStatus === 'unresolved'
-          ? estimatedPhraseBarMarkers(
-              gridBeats,
-              data.analysisDuration,
-              barAnchorSeconds,
-              data,
-            )
-          : [];
       peaksRef.current = {
         beatOffsetSeconds: beatAvailability.offsetSeconds,
         beatsKnown: beatAvailability.known,
         beats: beatAvailability.beats,
         gridBeats,
         barAnchorSeconds,
-        barMarkers: basicBarMarkers.length
-          ? basicBarMarkers
-          : estimatedBarMarkers,
+        barMarkers: beatCountMarkers,
         skippedInternalBeats: Number(data.basicSkippedInternalBeats) || 0,
         bpm: waveformBeatBpm(gridBeats),
         overall: new Float32Array(data.overallPeaks),
@@ -266,9 +250,9 @@ const WaveformSeekBar = ({
         path: track.path,
         beatCount: gridBeats?.length || 0,
         barPhaseStatus: data.basicBarPhaseStatus ?? null,
-        markerCount: basicBarMarkers.length,
-        estimatedMarkerCount: estimatedBarMarkers.length,
-        estimatedFromBar: Number.isFinite(barAnchorSeconds),
+        markerCount: 0,
+        estimatedMarkerCount: beatCountMarkers.length,
+        estimatedFromBar: false,
       });
       setAnalysisDuration(data.analysisDuration || null);
       setReady(true);
@@ -854,8 +838,8 @@ const WaveformSeekBar = ({
             className="mp-waveform-marker-key"
             role="group"
           >
-            <span className="mp-waveform-marker-key--16">16 bars</span>
-            <span className="mp-waveform-marker-key--32">32 bars</span>
+            <span className="mp-waveform-marker-key--16">16 beats</span>
+            <span className="mp-waveform-marker-key--32">32 beats</span>
           </span>
         )}
       <canvas
