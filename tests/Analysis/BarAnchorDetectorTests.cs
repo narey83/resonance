@@ -67,6 +67,18 @@ public class BarAnchorDetectorTests
     }
 
     [Fact]
+    public void Beat_Grid_Already_On_Kick_Attacks_Is_Not_Shifted_To_The_Kick_Body()
+    {
+        var beats = Beats();
+        var aligned = beats.Select(beat => beat + 0.04f).ToArray();
+        var result = BarAnchorDetector.Analyze(aligned, Waveform(beats));
+
+        Assert.Equal(0, result.DisplayShiftSeconds);
+        Assert.InRange(result.BasicGridBeats[0] - aligned[0], -0.005f, 0.005f);
+        Assert.InRange(result.BasicGridBeats[200] - aligned[200], -0.005f, 0.005f);
+    }
+
+    [Fact]
     public void Pickup_And_Delayed_Bass_Do_Not_Set_The_Bar_Phase()
     {
         var pickupBeats = Beats(pickup: 1);
@@ -214,9 +226,35 @@ public class BarAnchorDetectorTests
         Assert.InRange(sustainedBass.BasicGridBeats[200] - beats[200], 0.02f, 0.06f);
     }
 
+    [Fact]
+    public void Kick_Reentry_After_Breakdown_Uses_Following_Attacks_Without_Shifting_Silence()
+    {
+        var beats = Beats();
+        var result = BarAnchorDetector.Analyze(beats,
+            AttackWaveform(beats, phaseFlip: true, flipAt: 144, silentFrom: 128));
+
+        Assert.InRange(result.BasicGridBeats[143] - beats[143], 0.02f, 0.06f);
+        Assert.InRange(result.BasicGridBeats[144] - beats[144], -0.21f, -0.15f);
+        Assert.InRange(result.BasicGridBeats[145] - beats[145], -0.21f, -0.15f);
+    }
+
+    [Fact]
+    public void Kick_Reentry_Snaps_To_Measured_Leading_Edges_After_A_Quiet_Passage()
+    {
+        var beats = Beats();
+        var detected = beats.Select((beat, index) => beat + (index >= 144 ? 0.08f : 0.04f)).ToArray();
+        var waveform = AttackWaveform(beats, phaseFlip: false, flipAt: 144, silentFrom: 128);
+        var result = BarAnchorDetector.Analyze(detected, waveform);
+
+        Assert.InRange(result.BasicGridBeats[143] - detected[143], -0.005f, 0.005f);
+        Assert.InRange(result.BasicGridBeats[144] - beats[144], 0.03f, 0.05f);
+        Assert.InRange(result.BasicGridBeats[145] - beats[145], 0.03f, 0.05f);
+        Assert.InRange(result.BasicGridBeats[^1] - beats[^1], 0.03f, 0.05f);
+    }
+
     private static WaveformData AttackWaveform(
         float[] beats, bool phaseFlip, bool bassOnlyAfterFlip = false,
-        bool sustainedBassAfterFlip = false)
+        bool sustainedBassAfterFlip = false, int flipAt = 128, int silentFrom = -1)
     {
         var duration = beats[^1] + Period;
         var size = (int)Math.Ceiling(duration * 200);
@@ -226,7 +264,12 @@ public class BarAnchorDetectorTests
         var overall = new float[size];
         for (var beat = 0; beat < beats.Length; beat++)
         {
-            var flipped = phaseFlip && beat >= 128;
+            if (silentFrom >= 0 && beat >= silentFrom && beat < flipAt)
+            {
+                continue;
+            }
+
+            var flipped = phaseFlip && beat >= flipAt;
             var onset = beats[beat] + (flipped ? -0.18 : 0.04);
             var first = (int)Math.Round(onset * 200);
             for (var index = first; index < Math.Min(size, first + 18); index++)

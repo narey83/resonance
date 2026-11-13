@@ -78,9 +78,15 @@ internal static class BarAnchorDetector
 
         var attackCorrected = AlignRepeatedAttacks(shiftedBeats, beats, waveform, period.Value, shift ?? 0);
 
+        // A confident global shift already places a regular grid on the attacks.
+        // Local snapping is for tracks whose attack lag varies across the song.
+        var onsetCorrected = (!shift.HasValue || shift.Value == 0)
+            && SnapMeasuredLowOnsets(shiftedBeats, waveform, period.Value);
+
         var displayBeats = shiftedBeats.Where(value => value >= 0 && value < waveform.DurationSeconds.Value).ToArray();
         var gridSource = beats.Length > savedBeats.Length ? "saved-plus-measured-opening" : "saved-beats";
         var shiftSource = attackCorrected ? "measured-repeated-attacks"
+            : onsetCorrected ? "measured-low-onsets"
             : shift.HasValue ? "measured-waveform-onset" : "unresolved";
         if (!TryOrdinals(beats, period.Value, out var ordinals, out var missing))
         {
@@ -478,6 +484,13 @@ internal static class BarAnchorDetector
         var candidates = new List<(double Lag, double Strength)>();
         foreach (var beat in beats.Take(64))
         {
+            var onset = LowAttackOnset(waveform, beat);
+            if (onset.HasValue)
+            {
+                candidates.Add((onset.Value.Seconds - beat, onset.Value.Strength));
+                continue;
+            }
+
             var first = Math.Clamp((int)Math.Floor((beat - 0.02) * rate), 3, length);
             var last = Math.Clamp((int)Math.Ceiling((beat + 0.12) * rate), first, length);
             var strongest = 0.0;
@@ -527,7 +540,118 @@ internal static class BarAnchorDetector
             return null;
         }
 
-        return Median(inliers);
+        var measuredShift = Median(inliers);
+
+        // A grid already on the leading edge should not be moved to the later
+        // maximum slope of the kick body by a few milliseconds.
+        return Math.Abs(measuredShift) <= 0.0075 ? 0 : measuredShift;
+    }
+
+    private static (double Seconds, double Strength)? LowAttackOnset(WaveformData waveform, double beat)
+    {
+        var low = waveform.LowPeaks;
+        var rate = low.Length / waveform.DurationSeconds!.Value;
+        var first = Math.Clamp((int)Math.Floor((beat - 0.06) * rate), 0, low.Length);
+        var last = Math.Clamp((int)Math.Ceiling((beat + 0.09) * rate), first, low.Length);
+        if (last - first < 4)
+        {
+            return null;
+        }
+
+        var strongestRise = 0.0;
+        var riseIndex = first + 3;
+        for (var index = first + 3; index < last; index++)
+        {
+            var rise = low[index] - low[index - 3];
+            if (rise > strongestRise)
+            {
+                strongestRise = rise;
+                riseIndex = index;
+            }
+        }
+
+        if (strongestRise < 0.2)
+        {
+            return null;
+        }
+
+        var onsetStart = Math.Max(first + 1, riseIndex - 5);
+        var baseline = float.MaxValue;
+        for (var index = onsetStart - 1; index < riseIndex; index++)
+        {
+            baseline = Math.Min(baseline, low[index]);
+        }
+
+        var threshold = baseline + (strongestRise * 0.05);
+        for (var index = onsetStart; index <= riseIndex; index++)
+        {
+            if (low[index - 1] < threshold && low[index] >= threshold)
+            {
+                return (index / rate, strongestRise);
+            }
+        }
+
+        return null;
+    }
+
+    private static bool SnapMeasuredLowOnsets(float[] display, WaveformData waveform, double period)
+    {
+        if (display.Length < 16)
+        {
+            return false;
+        }
+
+        var original = display.ToArray();
+        var onsets = original.Select(beat => LowAttackOnset(waveform, beat)).ToArray();
+        var corrected = false;
+        for (var index = 0; index < display.Length; index++)
+        {
+            var onset = onsets[index];
+            if (!onset.HasValue || onset.Value.Strength < 0.25
+                || Math.Abs(onset.Value.Seconds - original[index]) > 0.06)
+            {
+                continue;
+            }
+
+            var lag = onset.Value.Seconds - original[index];
+            bool ConsistentOnsets(int first, int last)
+            {
+                var supported = 0;
+                for (var neighbor = first; neighbor < last; neighbor++)
+                {
+                    var neighborOnset = onsets[neighbor];
+                    if (neighborOnset.HasValue && neighborOnset.Value.Strength >= 0.25
+                        && Math.Abs((neighborOnset.Value.Seconds - original[neighbor]) - lag) <= 0.035)
+                    {
+                        supported++;
+                    }
+                }
+
+                return supported >= Math.Ceiling((last - first) * 0.75);
+            }
+
+            var contextStart = Math.Max(0, index - 7);
+            var contextEnd = Math.Min(display.Length, index + 9);
+            var followingEnd = Math.Min(display.Length, index + 8);
+            if (!ConsistentOnsets(contextStart, contextEnd)
+                && !(onset.Value.Strength >= 0.5 && followingEnd - index >= 6
+                    && ConsistentOnsets(index, followingEnd)))
+            {
+                continue;
+            }
+
+            var time = onset.Value.Seconds;
+            if (time > (index == 0 ? 0 : display[index - 1] + (period * 0.45))
+                && time < (index + 1 == display.Length
+                    ? waveform.DurationSeconds!.Value
+                    : display[index + 1] - (period * 0.45)))
+            {
+                corrected |= Math.Abs(time - display[index]) > 0.001;
+                display[index] = (float)time;
+            }
+        }
+
+        return corrected;
     }
 
     private static bool AlignRepeatedAttacks(
@@ -548,7 +672,10 @@ internal static class BarAnchorDetector
         for (var index = 8; index < beats.Length; index++)
         {
             var scores = new (double Low, double Mid, int Hits, int LowHits)[3];
-            var contextStart = Math.Min(index - 8, beats.Length - 16);
+
+            // The beats following a breakdown identify the new kick phase;
+            // the preceding quiet passage cannot vote for that reentry.
+            var contextStart = Math.Min(index, beats.Length - 16);
             for (var neighbor = contextStart; neighbor < contextStart + 16; neighbor++)
             {
                 for (var phase = 0; phase < candidates.Length; phase++)
@@ -586,7 +713,12 @@ internal static class BarAnchorDetector
 
             var expected = beats[index] + candidates[best];
             var measured = StrongestLowRise(waveform, expected, 0.025);
-            var corrected = measured.Strength >= 0.08 ? measured.Seconds : expected;
+            if (measured.Strength < 0.08)
+            {
+                continue;
+            }
+
+            var corrected = measured.Seconds;
             if (corrected > (index == 0 ? 0 : display[index - 1] + (period * 0.45))
                 && corrected < (index + 1 == display.Length
                     ? waveform.DurationSeconds!.Value

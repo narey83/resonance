@@ -98,6 +98,30 @@ describe('countedBeatMarkers', () => {
     ).toEqual([8.09, 16.09, 24.09, 32.09, 40.09, 48.09, 56.09]);
   });
 
+  it('keeps phrase counts on measured beats when tempo changes gradually', () => {
+    const beats = [0.09];
+    for (let index = 1; index <= 128; index++)
+      beats.push(beats[index - 1] + 0.5 + index * 0.000_3);
+    const markers = countedBeatMarkers(beats, beats.at(-1) + 0.1);
+    expect(markers).toHaveLength(8);
+    for (const [index, marker] of markers.entries()) {
+      expect(marker.seconds).toBeCloseTo(beats[(index + 1) * 16], 6);
+    }
+
+    expect(markers[7].seconds - (0.09 + 128 * 0.5)).toBeGreaterThan(2);
+  });
+
+  it('interpolates a missing boundary and resumes from later measured beats', () => {
+    const beats = measured(97)
+      .map((beat, index) => beat + Math.max(0, index - 64) * 0.01)
+      .filter((_, index) => index !== 32);
+    const markers = countedBeatMarkers(beats, 49);
+    expect(markers[1]).toEqual({ seconds: 16.09, level: 2 });
+    expect(markers[3]).toEqual({ seconds: 32.09, level: 2 });
+    expect(markers[5].seconds).toBeCloseTo(48.41, 6);
+    expect(markers[5].level).toBe(2);
+  });
+
   it('uses the first measured beat even with a delayed opening', () => {
     expect(countedBeatMarkers(measured(33, 12.09), 29)).toEqual([
       { seconds: 20.09, level: 1 },

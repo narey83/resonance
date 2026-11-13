@@ -111,18 +111,19 @@ namespace resonance.Analysis
                 scale = np.maximum(np.repeat(local, block)[:len(strength)], strength.max()*.01)
                 return strength / np.maximum(scale, 1e-20)
 
-            def attack_support(beats, bass, attack):
+            def attack_support(beats, bass):
                 hits = 0
                 for beat in beats:
                     index = int(beat * 44100 / 220)
-                    transient = attack[max(0, index-3):min(len(attack), index+4)]
-                    body = bass[max(0, index):min(len(bass), index+18)]
-                    if (len(transient) and len(body) and
-                            transient.max() > .3 and body.max() > .3):
+                    # A kick may have no high-frequency click, and its low-end
+                    # rise can begin just before a tracked beat. Measure the
+                    # bass onset on both sides rather than only after it.
+                    onset = bass[max(0, index-6):min(len(bass), index+7)]
+                    if len(onset) and onset.max() > .3:
                         hits += 1
                 return hits / len(beats) if len(beats) else 0
 
-            def prefer_attack_grid(original, candidate, bass, attack):
+            def prefer_attack_grid(original, candidate, bass):
                 # A phase correction must be backed by measured drum attacks,
                 # not BPM extrapolation. Preserve ambiguous/non-percussive grids.
                 if len(original) < 32 or len(candidate) < 32:
@@ -130,16 +131,44 @@ namespace resonance.Analysis
                 period = float(np.median(np.diff(original)))
                 other_period = float(np.median(np.diff(candidate)))
                 if (period <= 0 or abs(other_period / period - 1) > .03 or
-                        candidate[0] < 0 or candidate[-1] > len(attack)*220/44100 + .02 or
+                        candidate[0] < 0 or candidate[-1] > len(bass)*220/44100 + .02 or
                         abs(candidate[0] - original[0]) > 2 or
                         abs(candidate[-1] - original[-1]) > 2 or
                         abs(len(candidate) / len(original) - 1) > .03 or
                         not np.all(np.diff(candidate) > 0) or
                         not np.all(np.isfinite(candidate))):
                     return False
-                before = attack_support(original, bass, attack)
-                after = attack_support(candidate, bass, attack)
+                before = attack_support(original, bass)
+                after = attack_support(candidate, bass)
                 return after >= .75 and after - before >= .25
+
+            def align_bass_onsets(beats, bass):
+                # Once most ticks are supported by bass attacks, use the first
+                # measured rise of each kick. Tracker frames can land 10-25 ms
+                # either side of the onset even with the correct phase.
+                if attack_support(beats, bass) < .75:
+                    return beats
+                rate = 44100 / 220
+                aligned = np.asarray(beats, dtype=float).copy()
+                for i, beat in enumerate(beats):
+                    center = int(beat * rate)
+                    first = max(0, center-9)
+                    last = min(len(bass), center+10)
+                    window = bass[first:last]
+                    if not len(window) or window.max() <= .3:
+                        continue
+                    peak = int(np.argmax(window))
+                    start = max(0, peak-7)
+                    rises = np.flatnonzero(window[start:peak+1] >=
+                                            max(.035, .05 * window[peak]))
+                    if not len(rises):
+                        continue
+                    onset = (first + start + int(rises[0])) / rate
+                    if (abs(onset - beat) <= .055 and
+                            (i == 0 or onset > aligned[i-1]) and
+                            (i == len(beats)-1 or onset < beats[i+1])):
+                        aligned[i] = onset
+                return aligned
 
             SHARP = {'Db':'C#','Eb':'D#','Gb':'F#','Ab':'G#','Bb':'A#'}
             profile, method, max_secs, want = sys.argv[1], sys.argv[2], float(sys.argv[3]), sys.argv[4]
@@ -162,21 +191,25 @@ namespace resonance.Analysis
                     try:
                         bpm, ticks, conf, _, _ = es.RhythmExtractor2013(method=method)(audio)
                         # Multifeature can lock to offbeats in a dense mix. Test
-                        # an independently tracked drum-attack candidate before
-                        # accepting that phase. No fixed delay is subtracted.
+                        # independently tracked low and mid-band candidates
+                        # against measured bass attacks. A soft kick may have no
+                        # high-frequency click; no fixed delay is subtracted.
                         if len(ticks) >= 32:
                             try:
                                 bass = attack_strength(audio, 35, 180)
-                                attack = attack_strength(audio, 300, 2000)
-                                if attack_support(ticks, bass, attack) <= .75:
-                                    percussion = es.HighPass(cutoffFrequency=300)(
-                                        es.LowPass(cutoffFrequency=2000)(audio))
-                                    candidate = es.BeatTrackerDegara()(percussion)
-                                    if prefer_attack_grid(ticks, candidate, bass, attack):
+                                if attack_support(ticks, bass) <= .75:
+                                    candidate = es.BeatTrackerDegara()(
+                                        es.LowPass(cutoffFrequency=180)(audio))
+                                    if not prefer_attack_grid(ticks, candidate, bass):
+                                        percussion = es.HighPass(cutoffFrequency=300)(
+                                            es.LowPass(cutoffFrequency=2000)(audio))
+                                        candidate = es.BeatTrackerDegara()(percussion)
+                                    if prefer_attack_grid(ticks, candidate, bass):
                                         ticks = candidate
                                         # Degara does not report a confidence;
                                         # do not attach the rejected grid's score.
                                         conf = 0
+                                ticks = align_bass_onsets(ticks, bass)
                             except Exception as e:
                                 out['beatAlignmentError'] = str(e)
                         out['bpm'] = float(bpm)

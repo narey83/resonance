@@ -10,6 +10,35 @@ import numpy as np
 
 
 class FullTrackBeatTests(unittest.TestCase):
+    def test_clickless_kick_grid_uses_measured_phase(self):
+        source = (Path(__file__).resolve().parents[2] /
+                  'backend/Analysis/AudioAnalyzer.cs').read_text()
+        script = textwrap.dedent(source.split('private const string EssentiaScript = """', 1)[1]
+                                 .split('""";', 1)[0])
+        rate = 44100
+        duration = 45
+        audio = np.zeros(duration * rate, dtype=np.float32)
+        time = np.arange(int(.24 * rate)) / rate
+        phase = 2*np.pi*(50*time + 90*.035*(1-np.exp(-time/.035)))
+        envelope = (1-np.exp(-time/.006))*np.exp(-time/.09)
+        kick = (.8 * envelope * np.sin(phase)).astype(np.float32)
+        for onset in range(rate//2, len(audio)-len(kick), 18900):
+            audio[onset:onset+len(kick)] = kick
+
+        result = subprocess.run(
+            [sys.executable, '-c', script, 'edma', 'multifeature', '45', 'bpm,key'],
+            input=audio.tobytes(), capture_output=True, check=True, timeout=120)
+        data = json.loads(next(line.split('RESONANCE_JSON:', 1)[1]
+                               for line in result.stdout.decode().splitlines()
+                               if line.startswith('RESONANCE_JSON:')))
+        beats = np.asarray(data['beats'])
+        errors = np.abs((beats - .5 + 30/140) % (60/140) - 30/140)
+        self.assertLess(abs(data['bpm'] - 140), 2)
+        self.assertGreater(len(beats), 100)
+        self.assertLess(abs(beats[0] - .5), .04)
+        self.assertGreater(beats[-1], 44)
+        self.assertLess(float(np.quantile(errors, .95)), .008)
+
     def test_beats_cover_full_pcm_and_follow_known_transients(self):
         source = (Path(__file__).resolve().parents[2] /
                   'backend/Analysis/AudioAnalyzer.cs').read_text()

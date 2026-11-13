@@ -439,10 +439,10 @@ export const waveformBeatBpm = (beats) => {
   return 60 / median;
 };
 
-// Basic's coarse guides are a regular clock from the first measured beat.
-// They are navigation estimates, not analysed downbeats or arrangement boundaries.
-// Continue the clock through missing ticks and quiet passages so the visual
-// count cannot develop holes when the beat tracker loses the pulse.
+// Basic's coarse guides count from the first measured beat. They are
+// navigation estimates, not analysed downbeats or arrangement boundaries.
+// Use measured ticks when available and interpolate through missing ticks, so
+// a changing tempo does not pull later markers away from the beat grid.
 export const countedBeatMarkers = (beats, duration) => {
   if (
     !Array.isArray(beats) ||
@@ -473,10 +473,35 @@ export const countedBeatMarkers = (beats, duration) => {
 
   const origin = beats[0];
   if (origin >= duration) return [];
+  const ordinals = [0];
+  for (let index = 1; index < beats.length; index++) {
+    const elapsed = beats[index] - beats[index - 1];
+    ordinals.push(
+      ordinals[index - 1] + Math.max(1, Math.round(elapsed / period)),
+    );
+  }
+
   const markers = [];
-  for (let ordinal = 16; ordinal * period + origin < duration; ordinal += 16) {
+  let nextBeat = 1;
+  for (let ordinal = 16; ; ordinal += 16) {
+    while (nextBeat < ordinals.length && ordinals[nextBeat] < ordinal)
+      nextBeat++;
+    let seconds;
+    if (nextBeat < ordinals.length) {
+      seconds =
+        ordinals[nextBeat] === ordinal
+          ? beats[nextBeat]
+          : beats[nextBeat - 1] +
+            ((ordinal - ordinals[nextBeat - 1]) /
+              (ordinals[nextBeat] - ordinals[nextBeat - 1])) *
+              (beats[nextBeat] - beats[nextBeat - 1]);
+    } else {
+      seconds = beats.at(-1) + (ordinal - ordinals.at(-1)) * period;
+    }
+
+    if (seconds >= duration) break;
     markers.push({
-      seconds: origin + ordinal * period,
+      seconds,
       level: ordinal % 32 === 0 ? 2 : 1,
     });
   }

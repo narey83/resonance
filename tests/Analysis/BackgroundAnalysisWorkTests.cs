@@ -8,8 +8,9 @@ public sealed class BackgroundAnalysisWorkTests
     [Fact]
     public async Task CpuWorkUsesDedicatedLowPriorityThreadWithoutChangingCaller()
     {
-        var callerIsPool = Thread.CurrentThread.IsThreadPoolThread;
-        var callerPriority = Thread.CurrentThread.Priority;
+        var callerThread = Thread.CurrentThread;
+        var callerIsPool = callerThread.IsThreadPoolThread;
+        var callerPriority = callerThread.Priority;
         var result = await BackgroundAnalysisWork.RunCpuAsync(() =>
         {
             Assert.False(Thread.CurrentThread.IsThreadPoolThread);
@@ -22,8 +23,8 @@ public sealed class BackgroundAnalysisWorkTests
             return 42;
         }, default);
         Assert.Equal(42, result);
-        Assert.Equal(callerIsPool, Thread.CurrentThread.IsThreadPoolThread);
-        Assert.Equal(callerPriority, Thread.CurrentThread.Priority);
+        Assert.Equal(callerIsPool, callerThread.IsThreadPoolThread);
+        Assert.Equal(callerPriority, callerThread.Priority);
     }
 
     [Fact]
