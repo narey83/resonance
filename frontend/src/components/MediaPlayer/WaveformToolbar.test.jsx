@@ -158,7 +158,7 @@ describe('Waveform toolbar', () => {
       estimatedMarkerCount: 12,
     });
     expect(container.querySelector('[role="status"]').textContent).toBe(
-      'Estimated 16/32 bars from first beat · phase uncertain',
+      'Estimated 16/32 bars from measured beats · phase uncertain',
     );
     expect(container.querySelector('.mp-waveform-marker-key')).toBeNull();
     render(
@@ -171,7 +171,7 @@ describe('Waveform toolbar', () => {
       64,
     );
     expect(container.querySelector('[role="status"]').textContent).toBe(
-      'Estimated 16/32 bars from first bar · phase uncertain',
+      'Estimated 16/32 bars from measured beats · phase uncertain',
     );
     render({ beatCount: 732, barPhaseStatus: 'supported' });
     expect(container.querySelector('[role="status"]')).toBeNull();

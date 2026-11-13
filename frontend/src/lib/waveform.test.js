@@ -82,7 +82,7 @@ describe('estimatedPhraseBarMarkers', () => {
     ]);
   });
 
-  it('never extrapolates before a delayed start or beyond an unknown silent gap', () => {
+  it('never extrapolates before a delayed start or across an unknown silent gap', () => {
     const late = measured(129, 12.09);
     expect(estimatedPhraseBarMarkers(late, 77.5)[0].seconds).toBe(12.09);
 
@@ -90,7 +90,29 @@ describe('estimatedPhraseBarMarkers', () => {
     expect(estimatedPhraseBarMarkers(gap, 90)).toEqual([
       { seconds: 0.09, level: 2 },
       { seconds: 32.09, level: 1 },
+      { seconds: 48.09, level: 2 },
+      { seconds: 80.09, level: 1 },
     ]);
+  });
+
+  it('resumes provisional phrases after irregular timing and a half-time breakdown', () => {
+    const opening = measured(129);
+    const breakdown = Array.from(
+      { length: 45 },
+      (_, index) => 65.2 + index * 0.9,
+    );
+    const outro = measured(129, 107);
+    const markers = estimatedPhraseBarMarkers(
+      [...opening, ...breakdown, ...outro],
+      172,
+    );
+    expect(markers).toEqual(
+      expect.arrayContaining([
+        { seconds: 64.09, level: 2 },
+        { seconds: 107, level: 2 },
+        { seconds: 139, level: 1 },
+      ]),
+    );
   });
 
   it('uses a supported bar origin after a pickup and clips at analysis duration', () => {
