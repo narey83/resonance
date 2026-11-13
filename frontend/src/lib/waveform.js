@@ -484,8 +484,7 @@ export const estimatedPhraseBarMarkers = (
     : 0;
   if (origin < 0 || beats[origin] >= duration) return [];
 
-  const markers = [];
-  let run = [{ seconds: beats[origin], level: 2 }];
+  const markers = [{ seconds: beats[origin], level: 2 }];
   let ordinal = 0;
   for (let index = origin + 1; index < beats.length; index++) {
     const time = beats[index];
@@ -494,20 +493,13 @@ export const estimatedPhraseBarMarkers = (
     let step = 1;
     if (ratio < 0.65 || ratio > 1.35) {
       step = Math.round(ratio);
-      if (step < 2 || step > 4 || Math.abs(ratio - step) > 0.2) {
-        if (run.length > 1) markers.push(...run);
-        run = [{ seconds: time, level: 2 }];
-        ordinal = 0;
-        continue;
-      }
+      if (step < 2 || step > 4 || Math.abs(ratio - step) > 0.2) break;
     }
 
     ordinal += step;
-    if (ordinal % 128 === 0) run.push({ seconds: time, level: 2 });
-    else if (ordinal % 64 === 0) run.push({ seconds: time, level: 1 });
+    if (ordinal % 128 === 0) markers.push({ seconds: time, level: 2 });
+    else if (ordinal % 64 === 0) markers.push({ seconds: time, level: 1 });
   }
-
-  if (run.length > 1) markers.push(...run);
 
   // A lone opening marker suggests a phrase that has not been observed.
   if (markers.length < 2) return [];
