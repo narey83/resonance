@@ -245,6 +245,7 @@ const WaveformSeekBar = ({
               gridBeats,
               data.analysisDuration,
               barAnchorSeconds,
+              data,
             )
           : [];
       peaksRef.current = {

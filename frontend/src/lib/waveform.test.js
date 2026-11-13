@@ -109,6 +109,37 @@ describe('estimatedPhraseBarMarkers', () => {
     expect(estimatedPhraseBarMarkers([0.1, 0.1, 0.6], 10)).toEqual([]);
     expect(estimatedPhraseBarMarkers(measured(129), 65, 5)).toEqual([]);
   });
+
+  it('aligns a provisional 32-bar guide to a measured sustained low-end section rise', () => {
+    const overallPeaks = Array.from({ length: 6_500 }).fill(0.3);
+    const lowPeaks = Array.from({ length: 6_500 }).fill(0.15);
+    overallPeaks.fill(0.8, 6_385);
+    lowPeaks.fill(0.65, 6_385);
+    const markers = estimatedPhraseBarMarkers(measured(129), 65, null, {
+      overallPeaks,
+      lowPeaks,
+    });
+
+    expect(markers[1]).toEqual({ seconds: 32.09, level: 1 });
+    expect(markers[2].level).toBe(2);
+    expect(markers[2].seconds).toBeCloseTo(63.85, 1);
+  });
+
+  it('does not move phrase guides for an isolated kick accent or missing low band', () => {
+    const overallPeaks = Array.from({ length: 6_500 }).fill(0.3);
+    const lowPeaks = Array.from({ length: 6_500 }).fill(0.15);
+    overallPeaks.fill(0.9, 6_385, 6_390);
+    lowPeaks.fill(0.8, 6_385, 6_390);
+    expect(
+      estimatedPhraseBarMarkers(measured(129), 65, null, {
+        overallPeaks,
+        lowPeaks,
+      })[2],
+    ).toEqual({ seconds: 64.09, level: 2 });
+    expect(
+      estimatedPhraseBarMarkers(measured(129), 65, null, { overallPeaks })[2],
+    ).toEqual({ seconds: 64.09, level: 2 });
+  });
 });
 
 describe('beatGridSeconds', () => {

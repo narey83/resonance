@@ -443,7 +443,12 @@ export const waveformBeatBpm = (beats) => {
 // an observed beat. These are navigation estimates, not analysed downbeats.
 // Walk measured intervals so a missed tick does not shift every later marker;
 // never place a marker in a gap or continue past a gap whose beat count is unknown.
-export const estimatedPhraseBarMarkers = (beats, duration, originSeconds) => {
+export const estimatedPhraseBarMarkers = (
+  beats,
+  duration,
+  originSeconds,
+  waveform,
+) => {
   if (
     !Array.isArray(beats) ||
     beats.length < 2 ||
@@ -497,7 +502,64 @@ export const estimatedPhraseBarMarkers = (beats, duration, originSeconds) => {
   }
 
   // A lone opening marker suggests a phrase that has not been observed.
-  return markers.length > 1 ? markers : [];
+  if (markers.length < 2) return [];
+
+  // A beat-count estimate can land after a real arrangement change when the
+  // detector's ticks lag a soft or clipped kick. Move only a nearby marker with
+  // a sharp rise that remains present in both overall and low-band energy.
+  // Single kick accents do not have that sustained before/after contrast.
+  const overall = waveform?.overallPeaks;
+  const low = waveform?.lowPeaks;
+  if (
+    !Array.isArray(overall) ||
+    !Array.isArray(low) ||
+    overall.length !== low.length ||
+    overall.length < duration * 20
+  )
+    return markers;
+
+  const rate = overall.length / duration;
+  const mean = (values, start, end) => {
+    const first = Math.max(0, Math.floor(start * rate));
+    const last = Math.min(values.length, Math.ceil(end * rate));
+    if (last <= first) return 0;
+    let sum = 0;
+    for (let index = first; index < last; index++) sum += values[index];
+    return sum / (last - first);
+  };
+
+  return markers.map((marker) => {
+    if (marker.seconds < 0.6 || marker.seconds + 0.65 >= duration)
+      return marker;
+    let best = null;
+    const first = Math.max(0.5, marker.seconds - period * 0.75);
+    const last = Math.min(duration - 0.5, marker.seconds + period * 0.35);
+    const step = Math.max(1, Math.round(rate * 0.01));
+    for (
+      let index = Math.ceil(first * rate);
+      index <= last * rate;
+      index += step
+    ) {
+      const time = index / rate;
+      const overallBefore = mean(overall, time - 0.5, time - 0.1);
+      const lowBefore = mean(low, time - 0.5, time - 0.1);
+      const overallGain = mean(overall, time + 0.1, time + 0.5) - overallBefore;
+      const lowGain = mean(low, time + 0.1, time + 0.5) - lowBefore;
+      if (overallGain < 0.15 || lowGain < 0.15) continue;
+
+      const overallRise =
+        mean(overall, time + 0.025, time + 0.12) -
+        mean(overall, time - 0.12, time - 0.025);
+      const lowRise =
+        mean(low, time + 0.025, time + 0.12) -
+        mean(low, time - 0.12, time - 0.025);
+      if (overallRise < 0.12 || lowRise < 0.12) continue;
+      const score = overallRise + lowRise;
+      if (!best || score > best.score) best = { seconds: time, score };
+    }
+
+    return best ? { ...marker, seconds: best.seconds } : marker;
+  });
 };
 
 // Thin a detected timeline by beat index without replacing its timing with BPM.
