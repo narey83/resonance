@@ -308,6 +308,9 @@ namespace resonance.Analysis
         bool WriteAutoCues = false,
         [property: System.Text.Json.Serialization.JsonIgnore] string CueUsername = null);
 
+    /// <summary>Backend-computed estimated bar accent on the analysis timeline.</summary>
+    public record BarMarker(double Seconds, int Level);
+
     /// <summary>API response shape for waveform data.</summary>
     /// <param name="NumBars">How many bars each peaks array holds.</param>
     /// <param name="OverallPeaks">The overall (unfiltered) peak per bar.</param>
@@ -332,6 +335,9 @@ namespace resonance.Analysis
     /// <param name="AnalysisDuration">See <see cref="WaveformData.DurationSeconds"/>.</param>
     /// <param name="SampleRate">See <see cref="WaveformData.SampleRate"/>.</param>
     /// <param name="WaveformVersion">See <see cref="WaveformData.WaveformVersion"/>.</param>
+    /// <param name="BarAnchorSeconds">First clear bass attack on a detected beat, or the first detected beat when no attack is clear.</param>
+    /// <param name="BarAnchorSource">Whether the Basic bar anchor came from a bass attack or a beat fallback.</param>
+    /// <param name="BasicBarMarkers">Backend-computed estimated 16/32-bar accents on saved beats.</param>
     public record WaveformResponse(
         int NumBars,
         float[] OverallPeaks,
@@ -344,7 +350,10 @@ namespace resonance.Analysis
         double? DownbeatConfidence = null,
         double? AnalysisDuration = null,
         int? SampleRate = null,
-        int? WaveformVersion = null);
+        int? WaveformVersion = null,
+        double? BarAnchorSeconds = null,
+        string BarAnchorSource = null,
+        BarMarker[] BasicBarMarkers = null);
 
     /// <summary>API response shape for loudness data.</summary>
     public record LoudnessResponse(double IntegratedLufs, double TruePeak, double LoudnessRange);

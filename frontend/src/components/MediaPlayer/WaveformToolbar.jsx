@@ -112,7 +112,7 @@ const WaveformToolbar = ({
             title={
               enhancedAvailable
                 ? 'Beat grid with 16/32-bar accents aligned to arrangement sections'
-                : 'Beat grid with estimated 16/32-bar accents from detected beats and downbeat phase'
+                : 'Beat grid with estimated 16/32-bar accents from the backend bass attack or first detected beat'
             }
             type="button"
           >

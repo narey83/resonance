@@ -146,6 +146,58 @@ describe('WaveformSeekBar waveform loading', () => {
     expect(container.querySelector('.mp-vocal-legend')).not.toBeNull();
   });
 
+  it('draws backend Basic bar markers only while the grid is enabled', async () => {
+    expect.hasAssertions();
+    const context = Object.fromEntries(
+      [
+        'beginPath',
+        'clearRect',
+        'clip',
+        'fillRect',
+        'fillText',
+        'lineTo',
+        'moveTo',
+        'rect',
+        'restore',
+        'save',
+        'setTransform',
+        'stroke',
+        'translate',
+      ].map((name) => [name, jest.fn()]),
+    );
+    jest
+      .spyOn(HTMLCanvasElement.prototype, 'getContext')
+      .mockReturnValue(context);
+    analysisApi.getWaveform.mockResolvedValue({
+      ...response,
+      basicBarMarkers: [
+        { seconds: 0.2, level: 2 },
+        { seconds: 30, level: 1 },
+      ],
+    });
+    const track = { path: '/music/basic.flac' };
+    await render(track, { showGrid: true });
+    const canvas = container.querySelector('canvas');
+    Object.defineProperty(canvas, 'clientWidth', { value: 800 });
+    Object.defineProperty(canvas, 'clientHeight', { value: 40 });
+    act(() => window.requestAnimationFrame.mock.calls.at(-1)[0]());
+    expect(context.fillRect.mock.calls).toEqual(
+      expect.arrayContaining([
+        expect.arrayContaining([expect.any(Number), 0, 3, 26]),
+        expect.arrayContaining([expect.any(Number), 0, 2, 26]),
+      ]),
+    );
+
+    await render(track, { showGrid: false });
+    context.fillRect.mockClear();
+    act(() => window.requestAnimationFrame.mock.calls.at(-1)[0]());
+    expect(context.fillRect.mock.calls).not.toEqual(
+      expect.arrayContaining([
+        expect.arrayContaining([expect.any(Number), 0, 3, 26]),
+      ]),
+    );
+  });
+
   it('clears the old track while loading a new one and ignores stale responses', async () => {
     expect.hasAssertions();
     analysisApi.getWaveform.mockResolvedValue(response);

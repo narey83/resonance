@@ -41,7 +41,6 @@ import api from '../../lib/api';
 import { drawEnhanced } from '../../lib/enhancedWaveform';
 import { formatSeconds } from '../../lib/util';
 import {
-  basicBarMarkers,
   beatGridPhase,
   beatGridSeconds,
   firstGridLineAt,
@@ -161,10 +160,7 @@ const WaveformSeekBar = ({
         beatOffsetSeconds: beatAvailability.offsetSeconds,
         beatsKnown: beatAvailability.known,
         beats: beatAvailability.beats,
-        basicBarMarkers: basicBarMarkers(
-          beatAvailability.beats,
-          data.downbeatOffsetSeconds,
-        ),
+        basicBarMarkers: data.basicBarMarkers || [],
         bpm: waveformBeatBpm(beatAvailability.beats),
         overall: new Float32Array(data.overallPeaks),
       };
@@ -460,7 +456,7 @@ const WaveformSeekBar = ({
         const bpm = waveformBeatBpm(detectedBeats);
         const stride = Math.max(1, Math.round(lineSeconds / (60 / bpm)));
         const firstDownbeat =
-          independent?.downbeats?.[0] ?? peaks.basicBarMarkers[0]?.time;
+          independent?.downbeats?.[0] ?? peaks.basicBarMarkers[0]?.seconds;
         const anchor =
           stride > 1
             ? Math.max(
@@ -551,9 +547,9 @@ const WaveformSeekBar = ({
     if (showGrid && !enhancedRef.current?.available) {
       context.save();
       for (const marker of peaks.basicBarMarkers) {
-        if (marker.time < drawStart || marker.time >= drawEnd) continue;
+        if (marker.seconds < drawStart || marker.seconds >= drawEnd) continue;
         const x = timeToPixel(
-          marker.time - drawStart,
+          marker.seconds - drawStart,
           windowDuration,
           windowWidthPx,
         );

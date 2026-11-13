@@ -215,6 +215,12 @@ namespace resonance.Analysis.API
                 return NotFound();
             }
 
+            var beatInfo = Analysis.GetBeatInfo(full);
+
+            // Use the original cached bass band before optional display resampling.
+            var barAnchor = BarAnchorDetector.Estimate(beatInfo.Beats, data);
+            var basicBarMarkers = BarAnchorDetector.Markers(beatInfo.Beats, barAnchor);
+
             // Stored waveforms run to ~75k bars a track -- a few MB of JSON across the four bands. A
             // client drawing a small fixed width (the mobile seek bar) asks for a few hundred bars and
             // gets the same shape for a sliver of the transfer. Without `bars`, nothing changes.
@@ -231,11 +237,11 @@ namespace resonance.Analysis.API
                 };
             }
 
-            var beatInfo = Analysis.GetBeatInfo(full);
             return Ok(new WaveformResponse(
                 data.NumBars, data.OverallPeaks, data.LowPeaks, data.MidPeaks, data.HighPeaks,
                 beatInfo.BeatOffsetSeconds, beatInfo.Beats, beatInfo.DownbeatOffsetSeconds, beatInfo.DownbeatConfidence,
-                data.DurationSeconds, data.SampleRate, data.WaveformVersion));
+                data.DurationSeconds, data.SampleRate, data.WaveformVersion,
+                barAnchor?.Seconds, barAnchor?.Source, basicBarMarkers));
         }
 
         /// <summary>Returns cached EBU R128 loudness for a local file.</summary>
