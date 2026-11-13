@@ -133,7 +133,7 @@ const LibraryMenu = ({ children, label, summary, wide = false }) => {
         createPortal(
           <div
             aria-label={`${label} options`}
-            className="library-toolbar-menu-panel"
+            className="library-toolbar-menu-panel dj-workspace"
             ref={panelRef}
             role="group"
             style={position}

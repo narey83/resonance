@@ -3702,7 +3702,8 @@
 .jb-track-selection-bar { flex-wrap:wrap; box-shadow:0 -3px 15px #0001; }
 .jb-selection-bar-msg { min-width:140px; }
 .library-playlist-tools { position:relative; font-size:12px; }
-.library-playlist-tools>summary { cursor:pointer; border:1px solid var(--border); border-radius:5px; padding:6px 9px; color:var(--text-primary); background:var(--bg-primary); }
+.library-playlist-tools>summary { list-style:none; }
+.library-playlist-tools>summary::-webkit-details-marker { display:none; }
 .library-playlist-menu { position:absolute; top:calc(100% + 5px); left:0; width:290px; max-width:calc(100vw - 40px); max-height:380px; overflow:auto; padding:12px; border:1px solid var(--border); border-radius:8px; background:var(--bg-surface); color:var(--text-primary); box-shadow:0 8px 25px #0004; z-index:30; display:flex; flex-direction:column; gap:9px; }
 .jb-track-selection-bar .library-playlist-menu { top:auto; bottom:calc(100% + 6px); }
 .library-mixtape-drop { min-width:0; border-radius:6px; }

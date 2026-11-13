@@ -26,7 +26,7 @@ export const analysisStatus = (track, active = false, reviewed = false) => {
     };
   if (djSummary(track).complete && djSummary(track).automaticArrangement)
     return {
-      label: reviewed ? 'Reviewed' : 'Analysed',
+      label: reviewed ? 'Reviewed' : 'Enhanced Analysis',
       kind: 'ready',
       detail:
         'Automatic analysis complete. Uncertain DJ sections use neutral labels.',
@@ -41,7 +41,7 @@ export const analysisStatus = (track, active = false, reviewed = false) => {
     };
   if (track.hasWaveform && track.bpm && track.key)
     return {
-      label: 'Basic ready',
+      label: 'Basic Analysis',
       kind: 'partial',
       detail: 'Waveform, tempo and key available; enhanced analysis is pending',
     };

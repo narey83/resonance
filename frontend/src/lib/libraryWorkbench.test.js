@@ -11,7 +11,7 @@ describe('collection preparation semantics', () => {
     expect.hasAssertions();
     expect(
       analysisStatus({ hasWaveform: true, bpm: 128, key: 'Am' }).label,
-    ).toBe('Basic ready');
+    ).toBe('Basic Analysis');
     expect(analysisStatus({ djSummary: '{"complete":true}' }).kind).toBe(
       'review',
     );
@@ -27,7 +27,7 @@ describe('collection preparation semantics', () => {
       djSummary: { complete: true, automaticArrangement: true },
     });
     expect(status.kind).toBe('ready');
-    expect(status.label).toBe('Analysed');
+    expect(status.label).toBe('Enhanced Analysis');
     expect(status.detail).toContain('neutral labels');
   });
   it('uses server filters and includes enharmonic compatible keys', () => {

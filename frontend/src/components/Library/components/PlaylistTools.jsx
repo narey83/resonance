@@ -1,5 +1,6 @@
 import { toast } from '../../../lib/activityNotices';
 import * as mixtapes from '../../../lib/mixtapes';
+import { ListMusic } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 
 export const addTracksToMixtape = async (id, paths) => {
@@ -115,7 +116,9 @@ const PlaylistTools = ({ paths = [] }) => {
       }}
       ref={menuRef}
     >
-      <summary>Add to playlist</summary>
+      <summary className="jb-btn">
+        <ListMusic size={13} /> Add to playlist
+      </summary>
       <div className="library-playlist-menu">
         <p>Drop a track onto a playlist, or add your selection.</p>
         {items.map((p) => (

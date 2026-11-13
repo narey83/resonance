@@ -58,10 +58,12 @@ import {
   Heart,
   ListChecks,
   ListFilter,
+  ListPlus,
   Loader2,
   Play,
   Save,
   Sparkles,
+  Tags,
   Trash2,
   X,
 } from 'lucide-react';
@@ -1365,14 +1367,14 @@ const TrackTable = ({
             }}
             type="button"
           >
-            Add to queue
+            <ListPlus size={13} /> Add to queue
           </button>
           <button
             className="jb-btn"
             onClick={editTags}
             type="button"
           >
-            Edit tags
+            <Tags size={13} /> Edit tags
           </button>
           <PlaylistTools paths={[...selectedPaths]} />
           {setPlanner && (
@@ -1421,7 +1423,7 @@ const TrackTable = ({
             onClick={clearSelection}
             type="button"
           >
-            Clear
+            <X size={13} /> Clear
           </button>
           {onAnalyzeTracks && (
             <button
