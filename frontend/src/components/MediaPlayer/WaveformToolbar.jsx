@@ -1,4 +1,5 @@
-import { AudioWaveform, ChevronDown, Minus, Plus } from 'lucide-react';
+import PlayerDropdown from './PlayerDropdown';
+import { AudioWaveform, Minus, Plus } from 'lucide-react';
 import React from 'react';
 
 export const WAVEFORM_ZOOMS = [1, 16, 32, 64, 128, 256];
@@ -59,26 +60,15 @@ const WaveformToolbar = ({
             >
               <Minus size={14} />
             </button>
-            <span className="mp-waveform-select">
-              <select
-                aria-label="Waveform zoom"
-                onChange={(event) => onZoom(Number(event.target.value))}
-                value={zoom}
-              >
-                {WAVEFORM_ZOOMS.map((value) => (
-                  <option
-                    key={value}
-                    value={value}
-                  >
-                    {value === 1 ? 'Normal' : `${value}× detail`}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown
-                aria-hidden="true"
-                size={12}
-              />
-            </span>
+            <PlayerDropdown
+              label="Waveform zoom"
+              onChange={onZoom}
+              options={WAVEFORM_ZOOMS.map((value) => ({
+                value,
+                label: value === 1 ? 'Normal' : `${value}× detail`,
+              }))}
+              value={zoom}
+            />
             <button
               aria-label="Zoom waveform in"
               disabled={index >= WAVEFORM_ZOOMS.length - 1}
@@ -88,25 +78,19 @@ const WaveformToolbar = ({
               <Plus size={14} />
             </button>
           </div>
-          <span className="mp-waveform-select">
-            <select
-              aria-label="Waveform height"
-              onChange={(event) => onHeight(Number(event.target.value))}
-              value={height}
-            >
-              {![40, 70, 110, 150].includes(height) && (
-                <option value={height}>{height}px · Custom</option>
-              )}
-              <option value={40}>Compact</option>
-              <option value={70}>Standard</option>
-              <option value={110}>Large</option>
-              <option value={150}>Studio</option>
-            </select>
-            <ChevronDown
-              aria-hidden="true"
-              size={12}
-            />
-          </span>
+          <PlayerDropdown
+            label="Waveform height"
+            onChange={onHeight}
+            options={[
+              ...(![70, 110, 150].includes(height)
+                ? [{ value: height, label: `${height}px · Custom` }]
+                : []),
+              { value: 70, label: 'Standard' },
+              { value: 110, label: 'Large' },
+              { value: 150, label: 'Studio' },
+            ]}
+            value={height}
+          />
           <span
             aria-hidden="true"
             className="mp-waveform-divider"
@@ -138,22 +122,19 @@ const WaveformToolbar = ({
             Vocals
           </button>
           <span
-            className={`mp-waveform-select${enhancedAvailable ? '' : ' mp-waveform-select--disabled'}`}
+            className="mp-waveform-phrase"
             title={enhancedAvailable ? undefined : 'Requires Enhanced analysis'}
           >
-            <select
-              aria-label="Waveform phrase labels"
+            <PlayerDropdown
               disabled={!enhancedAvailable}
-              onChange={(event) => onPhrases(event.target.value)}
+              label="Waveform phrase labels"
+              onChange={onPhrases}
+              options={[
+                { value: 'dj', label: 'DJ phrases' },
+                { value: 'musical', label: 'Musical phrases' },
+                { value: 'off', label: 'Hide phrases' },
+              ]}
               value={enhancedAvailable ? phrases : 'off'}
-            >
-              <option value="dj">DJ phrases</option>
-              <option value="musical">Musical phrases</option>
-              <option value="off">Hide phrases</option>
-            </select>
-            <ChevronDown
-              aria-hidden="true"
-              size={12}
             />
           </span>
           <span className="mp-waveform-hint">

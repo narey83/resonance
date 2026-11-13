@@ -40,6 +40,7 @@ import EqView from './EqView';
 import FilterView from './FilterView';
 import LimiterView from './LimiterView';
 import PerformanceMode from './PerformanceMode';
+import PlayerDropdown from './PlayerDropdown';
 import SaturationView from './SaturationView';
 import StereoView from './StereoView';
 import { X } from 'lucide-react';
@@ -150,8 +151,7 @@ const AudioProcessing = ({
     return () => modalDocument.removeEventListener('keydown', onKeyDown);
   }, [modalHost, modalTarget, open]);
 
-  const handleSelectPreset = (event) => {
-    const nextPresetId = event.target.value;
+  const handleSelectPreset = (nextPresetId) => {
     setPresetId(nextPresetId);
     if (!nextPresetId) return;
 
@@ -203,25 +203,19 @@ const AudioProcessing = ({
           >
             <div className="mp-processing-modal-header">
               <span>Audio Processing</span>
-              <select
-                aria-label="Preset"
+              <PlayerDropdown
                 className="mp-processing-preset-select"
                 disabled={bypassed}
+                label="Preset"
                 onChange={handleSelectPreset}
+                options={[
+                  { value: '', label: 'Preset…' },
+                  ...PRESETS.filter(
+                    (preset) => advanced || SUBTLE_PRESETS.includes(preset.id),
+                  ).map((preset) => ({ value: preset.id, label: preset.name })),
+                ]}
                 value={presetId}
-              >
-                <option value="">Preset…</option>
-                {PRESETS.filter(
-                  (preset) => advanced || SUBTLE_PRESETS.includes(preset.id),
-                ).map((preset) => (
-                  <option
-                    key={preset.id}
-                    value={preset.id}
-                  >
-                    {preset.name}
-                  </option>
-                ))}
-              </select>
+              />
               <button
                 className="mp-processing-modal-close hover-fx"
                 onClick={() => setOpen(false)}

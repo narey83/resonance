@@ -7,11 +7,13 @@ describe('Waveform toolbar', () => {
   let container;
   beforeEach(() => {
     container = document.createElement('div');
+    document.body.append(container);
   });
   afterEach(() => {
     act(() => {
       ReactDOM.unmountComponentAtNode(container);
     });
+    container.remove();
   });
   it('offers explicit zoom, size, grid, vocal and phrase controls', () => {
     expect.hasAssertions();
@@ -45,24 +47,39 @@ describe('Waveform toolbar', () => {
       Simulate.click(
         container.querySelector('[aria-label="Zoom waveform in"]'),
       );
-      Simulate.change(
-        container.querySelector('[aria-label="Waveform height"]'),
-        { target: { value: '150' } },
-      );
-      Simulate.change(
-        container.querySelector('[aria-label="Waveform phrase labels"]'),
-        { target: { value: 'off' } },
-      );
       Simulate.click(
         [...container.querySelectorAll('button')].find(
           (button) => button.textContent === 'Beat grid',
         ),
       );
     });
+    act(() =>
+      Simulate.click(container.querySelector('[aria-label="Waveform height"]')),
+    );
+    act(() =>
+      Simulate.click(
+        [
+          ...document.querySelectorAll('.mp-dropdown-options [role="option"]'),
+        ].find((item) => item.textContent === 'Studio'),
+      ),
+    );
+    act(() =>
+      Simulate.click(
+        container.querySelector('[aria-label="Waveform phrase labels"]'),
+      ),
+    );
+    act(() =>
+      Simulate.click(
+        [
+          ...document.querySelectorAll('.mp-dropdown-options [role="option"]'),
+        ].find((item) => item.textContent === 'Hide phrases'),
+      ),
+    );
     expect(handlers.onZoom).toHaveBeenCalledWith(16);
     expect(handlers.onHeight).toHaveBeenCalledWith(150);
     expect(handlers.onPhrases).toHaveBeenCalledWith('off');
     expect(handlers.onGrid).toHaveBeenCalledWith(false);
+    expect(container.textContent).not.toContain('Compact');
   });
   it('greys out enhanced controls for Basic tracks and restores saved choices', () => {
     expect.hasAssertions();
@@ -97,7 +114,7 @@ describe('Waveform toolbar', () => {
     expect(vocals.disabled).toBe(true);
     expect(vocals.getAttribute('aria-pressed')).toBe('false');
     expect(phrases.disabled).toBe(true);
-    expect(phrases.value).toBe('off');
+    expect(phrases.textContent).toContain('Hide phrases');
     expect(onVocals).not.toHaveBeenCalled();
     expect(onPhrases).not.toHaveBeenCalled();
 
@@ -105,7 +122,67 @@ describe('Waveform toolbar', () => {
     expect(vocals.disabled).toBe(false);
     expect(vocals.getAttribute('aria-pressed')).toBe('true');
     expect(phrases.disabled).toBe(false);
-    expect(phrases.value).toBe('musical');
+    expect(phrases.textContent).toContain('Musical phrases');
+  });
+  it('supports keyboard navigation and Escape in the styled dropdown', () => {
+    expect.hasAssertions();
+    const onHeight = jest.fn();
+    act(() => {
+      ReactDOM.render(
+        <WaveformToolbar
+          enabled
+          height={70}
+          onHeight={onHeight}
+          zoom={1}
+        />,
+        container,
+      );
+    });
+    const height = container.querySelector('[aria-label="Waveform height"]');
+    act(() => Simulate.keyDown(height, { key: 'ArrowDown' }));
+    const options = document.querySelectorAll(
+      '.mp-dropdown-options [role="option"]',
+    );
+    expect(options).toHaveLength(3);
+    act(() => Simulate.keyDown(options[1], { key: 'End' }));
+    expect(document.activeElement).toBe(options[2]);
+    act(() => Simulate.keyDown(options[2], { key: 'Enter' }));
+    expect(onHeight).toHaveBeenCalledWith(150);
+    expect(height.getAttribute('aria-expanded')).toBe('false');
+    act(() => Simulate.click(height));
+    act(() =>
+      Simulate.keyDown(
+        document.querySelector('.mp-dropdown-options [role="option"]'),
+        { key: 'Escape' },
+      ),
+    );
+    expect(height.getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(height);
+  });
+  it('keeps a previously saved 40px height available as a custom size', () => {
+    expect.hasAssertions();
+    act(() => {
+      ReactDOM.render(
+        <WaveformToolbar
+          enabled
+          height={40}
+          zoom={1}
+        />,
+        container,
+      );
+    });
+    const height = container.querySelector('[aria-label="Waveform height"]');
+    expect(height.textContent).toContain('40px · Custom');
+    act(() => Simulate.click(height));
+    const options = [
+      ...document.querySelectorAll('.mp-dropdown-options [role="option"]'),
+    ];
+    expect(options.map((option) => option.textContent)).toEqual([
+      '40px · Custom',
+      'Standard',
+      'Large',
+      'Studio',
+    ]);
   });
   it('retains the waveform toggle when the waveform is hidden', () => {
     expect.hasAssertions();
