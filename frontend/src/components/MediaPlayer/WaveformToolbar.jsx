@@ -15,6 +15,7 @@ export const normalizeWaveformZoom = (value) => {
 
 const WaveformToolbar = ({
   enabled,
+  enhancedAvailable = false,
   grid,
   height,
   onGrid,
@@ -114,18 +115,27 @@ const WaveformToolbar = ({
             Beat grid
           </button>
           <button
-            aria-pressed={vocals}
+            aria-pressed={enhancedAvailable && vocals}
+            disabled={!enhancedAvailable}
             onClick={() => onVocals(!vocals)}
-            title="Show vocal predictions where available"
+            title={
+              enhancedAvailable
+                ? 'Show vocal predictions'
+                : 'Requires Enhanced analysis'
+            }
             type="button"
           >
             Vocals
           </button>
-          <span className="mp-waveform-select">
+          <span
+            className={`mp-waveform-select${enhancedAvailable ? '' : ' mp-waveform-select--disabled'}`}
+            title={enhancedAvailable ? undefined : 'Requires Enhanced analysis'}
+          >
             <select
               aria-label="Waveform phrase labels"
+              disabled={!enhancedAvailable}
               onChange={(event) => onPhrases(event.target.value)}
-              value={phrases}
+              value={enhancedAvailable ? phrases : 'off'}
             >
               <option value="dj">DJ phrases</option>
               <option value="musical">Musical phrases</option>

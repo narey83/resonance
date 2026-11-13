@@ -31,7 +31,7 @@ jest.mock('../../lib/mediaAudioGraph', () => ({
 jest.mock('./AudioProcessing', () => mockEmpty);
 jest.mock('./LoudnessMeter', () => mockEmpty);
 jest.mock('./PlaybackSyncMonitor', () => mockEmpty);
-jest.mock('./WaveformSeekBar', () => mockEmpty);
+jest.mock('./WaveformSeekBar', () => mockWaveformSeekBar);
 jest.mock('../Library/components/AlbumArt', () => mockEmpty);
 
 // Jest hoists these factories, so their shared component stubs must be hoisted.
@@ -41,8 +41,18 @@ function mockEmpty() {
 }
 
 // eslint-disable-next-line func-style
+let mockMetadataRecord = {};
+let mockWaveformOnAnalysing;
+
+// eslint-disable-next-line func-style
 function mockMetadata() {
-  return {};
+  return mockMetadataRecord;
+}
+
+// eslint-disable-next-line func-style
+function mockWaveformSeekBar({ onAnalysing }) {
+  mockWaveformOnAnalysing = onAnalysing;
+  return null;
 }
 
 const tracks = ['first', 'second'].map((name) => ({
@@ -102,6 +112,8 @@ describe('player startup and playback intent', () => {
   beforeEach(() => {
     sessionStorage.clear();
     jest.clearAllMocks();
+    mockMetadataRecord = {};
+    mockWaveformOnAnalysing = null;
     container = document.createElement('div');
     document.body.append(container);
     cast = {
@@ -134,6 +146,7 @@ describe('player startup and playback intent', () => {
       ReactDOM.unmountComponentAtNode(container);
     });
     container.remove();
+    localStorage.removeItem('mediaPlayer.seekerEnabled');
     jest.restoreAllMocks();
   });
 
@@ -230,6 +243,39 @@ describe('player startup and playback intent', () => {
     expect(play).toHaveBeenCalledTimes(1);
     expect(player.isPlaying).toBe(false);
     expect(player.queue).toEqual(tracks);
+  });
+
+  it('shows playback analysis running, then Basic and its disabled enhanced controls', async () => {
+    expect.hasAssertions();
+    localStorage.setItem('mediaPlayer.seekerEnabled', 'true');
+    await restore();
+    await click('Play');
+    await act(async () => {
+      container.querySelector('audio').dispatchEvent(new Event('playing'));
+    });
+    expect(mockWaveformOnAnalysing).toEqual(expect.any(Function));
+    act(() => mockWaveformOnAnalysing(true));
+    expect(
+      container
+        .querySelector('.media-player-bar .mp-analysis-badge')
+        .getAttribute('aria-label'),
+    ).toBe('Track analysis: Analysing');
+
+    mockMetadataRecord = { bpm: 128, key: 'Am', hasWaveform: true, lufs: -9 };
+    act(() => mockWaveformOnAnalysing(false));
+    expect(
+      container
+        .querySelector('.media-player-bar .mp-analysis-badge')
+        .getAttribute('aria-label'),
+    ).toBe('Track analysis: Basic');
+    expect(
+      [...container.querySelectorAll('.mp-waveform-toolbar button')].find(
+        (button) => button.textContent === 'Vocals',
+      ).disabled,
+    ).toBe(true);
+    expect(
+      container.querySelector('[aria-label="Waveform phrase labels"]').disabled,
+    ).toBe(true);
   });
 
   it('plays manual selections, ended transitions, repeat, and queue navigation', async () => {

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 
 // Display metadata is separate from the playback track object: updating a BPM/key
 // must not make the audio-loading effect reload or restart the current stream.
-export default function usePlayerMetadata(track) {
+export default function usePlayerMetadata(track, analysisActive = false) {
   const [snapshot, setSnapshot] = useState(null);
   const revision = useLibraryActivity()?.libraryRevision || 0;
   const path = track?.localRelativePath || track?.path;
@@ -20,11 +20,13 @@ export default function usePlayerMetadata(track) {
     return () => {
       cancelled = true;
     };
-  }, [local, path, revision]);
+  }, [analysisActive, local, path, revision]);
   const record = snapshot && snapshot.path === path ? snapshot.record : null;
   return {
     bpm: record?.bpm ?? track?.bpm,
     key: record?.key || track?.key,
     hasWaveform: record?.hasWaveform ?? track?.hasWaveform,
+    lufs: record?.lufs ?? track?.lufs,
+    djSummary: record?.djSummary ?? track?.djSummary,
   };
 }

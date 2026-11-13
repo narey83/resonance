@@ -61,6 +61,7 @@ import AlbumArt from '../Library/components/AlbumArt';
 import AudioProcessing from './AudioProcessing';
 import LoudnessMeter from './LoudnessMeter';
 import PlaybackSyncMonitor from './PlaybackSyncMonitor';
+import TrackAnalysisBadge, { playerAnalysisLevel } from './TrackAnalysisBadge';
 import usePlayerPopout from './usePlayerPopout';
 import WaveformResizeHandle from './WaveformResizeHandle';
 import WaveformSeekBar from './WaveformSeekBar';
@@ -365,7 +366,6 @@ const MediaPlayer = () => {
   const [scrubHover, setScrubHover] = useState(null);
   // Reused pref key from when this was a single 3-way cycle (bar/waveform/
   // colored) — anything other than the old "bar" value means waveform was on.
-  const playerMetadata = usePlayerMetadata(track);
   const [seekerEnabled, setSeekerEnabled] = useState(() =>
     prefs.get(
       'mediaPlayer.seekerEnabled',
@@ -389,6 +389,9 @@ const MediaPlayer = () => {
   );
   const [waveformAnalysing, setWaveformAnalysing] = useState(false);
   const [miniWaveformAnalysing, setMiniWaveformAnalysing] = useState(false);
+  const analysisActive = waveformAnalysing || miniWaveformAnalysing;
+  const playerMetadata = usePlayerMetadata(track, analysisActive);
+  const enhancedAvailable = playerAnalysisLevel(playerMetadata) === 'enhanced';
   // A full-resolution waveform is several megabytes of JSON. Do not request it alongside the
   // first audio bytes: on a fresh track those responses compete and noticeably delay playback.
   // Keeping the path (rather than a boolean) also prevents the previous track's ready state from
@@ -915,6 +918,7 @@ const MediaPlayer = () => {
   const waveformToolbar = (
     <WaveformToolbar
       enabled={seekerEnabled}
+      enhancedAvailable={enhancedAvailable}
       grid={showBeatGrid}
       height={seekerHeight}
       onGrid={(value) => {
@@ -1178,6 +1182,11 @@ const MediaPlayer = () => {
               <div className="mp-expanded-info">
                 <div className="mp-deck-caption">
                   PREPARATION DECK <span>{playing ? 'PLAYING' : 'PAUSED'}</span>
+                  <TrackAnalysisBadge
+                    active={analysisActive && waveformReadyPath === track.path}
+                    metadata={playerMetadata}
+                    track={track}
+                  />
                 </div>
                 <div className="mp-expanded-title">{displayTitle}</div>
                 <div className="mp-track-metrics">
@@ -1231,10 +1240,10 @@ const MediaPlayer = () => {
                         onAnalysing={setWaveformAnalysing}
                         onReady={() => {}}
                         onSeek={seekTo}
-                        phraseMode={phraseMode}
+                        phraseMode={enhancedAvailable ? phraseMode : 'off'}
                         progressPct={progressPct}
                         showGrid={showBeatGrid}
-                        showVocals={showVocals}
+                        showVocals={enhancedAvailable && showVocals}
                         track={track}
                         zoom={seekerZoom}
                       />
@@ -1535,10 +1544,10 @@ const MediaPlayer = () => {
                 onAnalysing={setMiniWaveformAnalysing}
                 onReady={() => {}}
                 onSeek={seekTo}
-                phraseMode={phraseMode}
+                phraseMode={enhancedAvailable ? phraseMode : 'off'}
                 progressPct={progressPct}
                 showGrid={showBeatGrid}
-                showVocals={showVocals}
+                showVocals={enhancedAvailable && showVocals}
                 track={track}
                 zoom={seekerZoom}
               />
@@ -1601,6 +1610,11 @@ const MediaPlayer = () => {
           <div className="media-player-info">
             <div className="mp-deck-caption">
               PREVIEW DECK <span>{playing ? 'PLAYING' : 'PAUSED'}</span>
+              <TrackAnalysisBadge
+                active={analysisActive && waveformReadyPath === track.path}
+                metadata={playerMetadata}
+                track={track}
+              />
             </div>
             <div className="media-player-title-row">
               <div

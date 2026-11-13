@@ -28,6 +28,7 @@ describe('Waveform toolbar', () => {
         <WaveformToolbar
           {...handlers}
           enabled
+          enhancedAvailable
           grid
           height={70}
           phrases="dj"
@@ -62,6 +63,49 @@ describe('Waveform toolbar', () => {
     expect(handlers.onHeight).toHaveBeenCalledWith(150);
     expect(handlers.onPhrases).toHaveBeenCalledWith('off');
     expect(handlers.onGrid).toHaveBeenCalledWith(false);
+  });
+  it('greys out enhanced controls for Basic tracks and restores saved choices', () => {
+    expect.hasAssertions();
+    const onVocals = jest.fn();
+    const onPhrases = jest.fn();
+    const render = (enhancedAvailable) => {
+      act(() => {
+        ReactDOM.render(
+          <WaveformToolbar
+            enabled
+            enhancedAvailable={enhancedAvailable}
+            grid
+            height={70}
+            onPhrases={onPhrases}
+            onVocals={onVocals}
+            phrases="musical"
+            vocals
+            zoom={1}
+          />,
+          container,
+        );
+      });
+    };
+
+    render(false);
+    const vocals = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Vocals',
+    );
+    const phrases = container.querySelector(
+      '[aria-label="Waveform phrase labels"]',
+    );
+    expect(vocals.disabled).toBe(true);
+    expect(vocals.getAttribute('aria-pressed')).toBe('false');
+    expect(phrases.disabled).toBe(true);
+    expect(phrases.value).toBe('off');
+    expect(onVocals).not.toHaveBeenCalled();
+    expect(onPhrases).not.toHaveBeenCalled();
+
+    render(true);
+    expect(vocals.disabled).toBe(false);
+    expect(vocals.getAttribute('aria-pressed')).toBe('true');
+    expect(phrases.disabled).toBe(false);
+    expect(phrases.value).toBe('musical');
   });
   it('retains the waveform toggle when the waveform is hidden', () => {
     expect.hasAssertions();

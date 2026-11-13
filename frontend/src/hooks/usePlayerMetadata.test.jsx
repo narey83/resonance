@@ -10,11 +10,12 @@ jest.mock('../lib/libraryWorkbench', () => ({
 jest.mock('../context/LibraryActivityContext', () => ({
   useLibraryActivity: () => ({ libraryRevision: 1 }),
 }));
-const Harness = ({ track }) => {
-  const metadata = usePlayerMetadata(track);
+const Harness = ({ analysisActive = false, track }) => {
+  const metadata = usePlayerMetadata(track, analysisActive);
   return (
     <span>
       {metadata.bpm || '—'} / {metadata.key || '—'}
+      {metadata.djSummary ? ' / Enhanced' : ''}
     </span>
   );
 };
@@ -77,6 +78,34 @@ describe('player metadata recovery', () => {
       finishA([{ bpm: 140, key: 'Am' }]);
     });
     expect(container.textContent).toBe('128 / C');
+    act(() => {
+      ReactDOM.unmountComponentAtNode(container);
+    });
+  });
+  it('refreshes the saved analysis after a playback analysis finishes', async () => {
+    expect.hasAssertions();
+    const track = { path: 'song', localRelativePath: 'song' };
+    const container = document.createElement('div');
+    resolveLibraryTracks
+      .mockResolvedValueOnce([{ bpm: null, key: null }])
+      .mockResolvedValueOnce([{ bpm: null, key: null }])
+      .mockResolvedValueOnce([
+        { bpm: 128, key: 'Am', djSummary: '{"complete":true}' },
+      ]);
+    for (const active of [false, true, false]) {
+      await act(async () => {
+        ReactDOM.render(
+          <Harness
+            analysisActive={active}
+            track={track}
+          />,
+          container,
+        );
+      });
+    }
+
+    expect(container.textContent).toBe('128 / Am / Enhanced');
+    expect(resolveLibraryTracks).toHaveBeenCalledTimes(3);
     act(() => {
       ReactDOM.unmountComponentAtNode(container);
     });
