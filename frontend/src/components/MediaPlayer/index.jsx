@@ -69,7 +69,6 @@ import WaveformToolbar, { normalizeWaveformZoom } from './WaveformToolbar';
 import {
   Cast,
   Heart,
-  Keyboard,
   ListMusic,
   Pause,
   Play,
@@ -288,7 +287,6 @@ const MediaPlayer = () => {
     analyseMissing: waveformReadyPath === track?.path,
   });
   const [showCast, setShowCast] = useState(false);
-  const [showShortcuts, setShowShortcuts] = useState(false);
   useEffect(() => {
     repeatRef.current = repeat;
   }, [repeat]);
@@ -937,12 +935,19 @@ const MediaPlayer = () => {
       if (
         target instanceof Element &&
         target.closest(
-          'input, textarea, select, button, a, summary, [contenteditable], [role="textbox"], [role="slider"], [role="button"]',
+          'input, textarea, select, [contenteditable], [role="textbox"]',
         )
       )
         return;
 
       const key = event.key.toLowerCase();
+      // Sliders handle their own arrows; Space remains the global transport key.
+      if (
+        target instanceof Element &&
+        target.closest('[role="slider"]') &&
+        (key === 'arrowleft' || key === 'arrowright')
+      )
+        return;
       const isToggle = key === ' ' || key === 'spacebar' || key === 'm';
       if (event.repeat && (isToggle || key === 'n' || key === 'p')) return;
       if (key === ' ' || key === 'spacebar') {
@@ -1226,35 +1231,6 @@ const MediaPlayer = () => {
           )}
         </div>
       </div>
-      {showShortcuts && (
-        <div
-          className="media-player-shortcuts-panel"
-          id="player-shortcuts-panel"
-        >
-          <strong>Player shortcuts</strong>
-          <div>
-            <kbd>Space</kbd>
-            <span>Play / pause</span>
-          </div>
-          <div>
-            <kbd>← / →</kbd>
-            <span>Seek 5 seconds</span>
-          </div>
-          <div>
-            <kbd>Shift + ← / →</kbd>
-            <span>Seek 30 seconds</span>
-          </div>
-          <div>
-            <kbd>M</kbd>
-            <span>Mute / unmute</span>
-          </div>
-          <div>
-            <kbd>N / P</kbd>
-            <span>Next / previous</span>
-          </div>
-        </div>
-      )}
-
       {/* ── Main bar ─────────────────────────────────────────── */}
       <div className="media-player-bar">
         <div className="media-player-left">
@@ -1453,17 +1429,6 @@ const MediaPlayer = () => {
 
         {/* ── Right controls ── */}
         <div className="media-player-right">
-          <button
-            aria-controls="player-shortcuts-panel"
-            aria-expanded={showShortcuts}
-            aria-label="Keyboard shortcuts"
-            className="media-player-btn hover-fx"
-            onClick={() => setShowShortcuts((open) => !open)}
-            title="Keyboard shortcuts"
-            type="button"
-          >
-            <Keyboard size={18} />
-          </button>
           <button
             className={
               queuePanelOpen

@@ -210,12 +210,14 @@ describe('player startup and playback intent', () => {
     await restore();
     expect(
       container.querySelector('[aria-label="Keyboard shortcuts"]'),
-    ).not.toBeNull();
-    await key(' ');
+    ).toBeNull();
+    const focusedButton = document.createElement('button');
+    container.append(focusedButton);
+    await key(' ', {}, focusedButton);
     expect(play).toHaveBeenCalledTimes(1);
     const audio = container.querySelector('audio');
     audio.currentTime = 20;
-    await key('ArrowRight');
+    await key('ArrowRight', {}, focusedButton);
     expect(audio.currentTime).toBe(25);
     await key('ArrowLeft', { shiftKey: true });
     expect(audio.currentTime).toBe(0);
@@ -227,6 +229,7 @@ describe('player startup and playback intent', () => {
     expect(player.track).toEqual(tracks[1]);
     await key('p');
     expect(player.track).toEqual(tracks[0]);
+    focusedButton.remove();
   });
 
   it('leaves form fields, modifier keys and modal dialogs in control of their keys', async () => {

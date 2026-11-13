@@ -29,20 +29,42 @@
 
 import api from './api';
 
+const isLoopback = (hostname) =>
+  hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]';
+
+export const resolveCastStreamOrigin = (pageOrigin, serverOrigin) => {
+  const page = new URL(pageOrigin);
+  if (!isLoopback(page.hostname)) return page.origin;
+
+  try {
+    const server = new URL(serverOrigin);
+    if (
+      !['http:', 'https:'].includes(server.protocol) ||
+      server.username ||
+      server.password
+    )
+      return page.origin;
+    return server.origin;
+  } catch {
+    return page.origin;
+  }
+};
+
 // Created once; subsequent calls reuse the same Promise (result is cached inside it).
 let streamOriginPromise = null;
 
-// Returns the HTTP origin cast devices should use to fetch media streams.
-// The backend exposes its direct HTTP port to avoid TLS certificate issues
-// when a reverse proxy uses a local/self-signed cert.
+// A receiver can reach the same public origin as the browser. Localhost-only
+// development pages need the backend's advertised network address instead.
 const getStreamOrigin = () => {
   if (!streamOriginPromise) {
     streamOriginPromise = (async () => {
+      const pageOrigin = window.location.origin;
+      if (!isLoopback(window.location.hostname)) return pageOrigin;
       try {
         const response = await api.get('/cast/stream-origin');
-        return response.data.origin;
+        return resolveCastStreamOrigin(pageOrigin, response.data.origin);
       } catch {
-        return window.location.origin;
+        return pageOrigin;
       }
     })();
   }

@@ -68,10 +68,6 @@
   user-select: none;
   flex-shrink: 0;
 }
-.media-player-shortcuts-panel { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 4px 16px; padding: 8px 16px; border-top: 1px solid var(--border); background: var(--bg-surface); color: var(--text-primary); font-size: 11px; }
-.media-player-shortcuts-panel strong { font-weight: 600; }
-.media-player-shortcuts-panel div { display: flex; justify-content: space-between; gap: 10px; }
-.media-player-shortcuts-panel kbd { color: var(--text-secondary); font: inherit; white-space: nowrap; }
 :root:is(.dark,.dim,.amoled,.midnight,.violet,.ember) .media-player {
   --bar-marker-16: #ffbd59;
   --bar-marker-32: #dda5ff;
