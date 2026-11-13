@@ -485,7 +485,62 @@ export const estimatedPhraseBarMarkers = (
   if (origin < 0 || beats[origin] >= duration) return [];
 
   const markers = [{ seconds: beats[origin], level: 2 }];
+  // A tracker may report half-time through a breakdown while the underlying
+  // pulse continues. Establish its clock from measured, stable opening ticks.
+  // Rejoin that clock only after a sustained run of measured beats; never
+  // invent markers inside a gap or restart the phrase count there.
+  const openingSpans = [];
+  for (
+    let index = origin + 32;
+    index < Math.min(beats.length, origin + 96);
+    index++
+  ) {
+    if (beats[index] - beats[index - 32] > period * 34) break;
+    openingSpans.push((beats[index] - beats[index - 32]) / 32);
+  }
+
+  openingSpans.sort((left, right) => left - right);
+  const latticePeriod =
+    openingSpans.length >= 8
+      ? openingSpans[Math.floor(openingSpans.length / 2)]
+      : null;
+  const rejoin = (from) => {
+    if (!latticePeriod) return -1;
+    for (let candidate = from; candidate + 16 < beats.length; candidate++) {
+      // Continuous observed ticks are required through the uncertain passage.
+      if (beats[candidate] - beats[candidate - 1] > period * 2.5) return -1;
+      let stable = true;
+      for (let offset = 0; offset <= 16; offset++) {
+        const index = candidate + offset;
+        if (
+          offset &&
+          Math.abs(beats[index] - beats[index - 1] - latticePeriod) >
+            period * 0.15
+        ) {
+          stable = false;
+          break;
+        }
+
+        const count = Math.round(
+          (beats[index] - beats[origin]) / latticePeriod,
+        );
+        if (
+          Math.abs(beats[index] - beats[origin] - count * latticePeriod) >
+          period * 0.16
+        ) {
+          stable = false;
+          break;
+        }
+      }
+
+      if (stable) return candidate;
+    }
+
+    return -1;
+  };
+
   let ordinal = 0;
+  let rejoinedClock = false;
   for (let index = origin + 1; index < beats.length; index++) {
     const time = beats[index];
     if (time >= duration) break;
@@ -493,10 +548,43 @@ export const estimatedPhraseBarMarkers = (
     let step = 1;
     if (ratio < 0.65 || ratio > 1.35) {
       step = Math.round(ratio);
-      if (step < 2 || step > 4 || Math.abs(ratio - step) > 0.2) break;
+      if (step < 2 || step > 4 || Math.abs(ratio - step) > 0.2) {
+        const resumed = rejoin(index);
+        if (resumed < 0 || beats[resumed] >= duration) break;
+        index = resumed;
+        ordinal = Math.round((beats[index] - beats[origin]) / latticePeriod);
+        rejoinedClock = true;
+        if (ordinal % 128 === 0)
+          markers.push({ seconds: beats[index], level: 2 });
+        else if (ordinal % 64 === 0)
+          markers.push({ seconds: beats[index], level: 1 });
+        continue;
+      }
     }
 
     ordinal += step;
+    if (rejoinedClock) {
+      // Do not accumulate the tracker's missed or extra ticks after rejoining.
+      // Each later marker must still sit on an observed beat of the same clock.
+      const clockOrdinal = Math.round((time - beats[origin]) / latticePeriod);
+      if (
+        Math.abs(time - beats[origin] - clockOrdinal * latticePeriod) >
+        period * 0.16
+      ) {
+        const resumed = rejoin(index + 1);
+        if (resumed < 0 || beats[resumed] >= duration) break;
+        index = resumed;
+        ordinal = Math.round((beats[index] - beats[origin]) / latticePeriod);
+        if (ordinal % 128 === 0)
+          markers.push({ seconds: beats[index], level: 2 });
+        else if (ordinal % 64 === 0)
+          markers.push({ seconds: beats[index], level: 1 });
+        continue;
+      }
+
+      ordinal = clockOrdinal;
+    }
+
     if (ordinal % 128 === 0) markers.push({ seconds: time, level: 2 });
     else if (ordinal % 64 === 0) markers.push({ seconds: time, level: 1 });
   }

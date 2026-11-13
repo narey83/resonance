@@ -47,6 +47,10 @@ import {
 const BEAT = 60 / 128;
 const measured = (count, start = 0.09) =>
   Array.from({ length: count }, (_, index) => start + index * 0.5);
+const halfTimeMeasured = (count, from, to) =>
+  measured(count).filter(
+    (_, index) => index < from || index > to || index % 2 === 0,
+  );
 
 describe('estimatedPhraseBarMarkers', () => {
   it('counts 16 and 32 bars from measured beats with distinct levels', () => {
@@ -90,6 +94,43 @@ describe('estimatedPhraseBarMarkers', () => {
     expect(estimatedPhraseBarMarkers(gap, 90)).toEqual([
       { seconds: 0.09, level: 2 },
       { seconds: 32.09, level: 1 },
+    ]);
+  });
+
+  it('resumes the original count after measured half-time beats reconnect to the pulse', () => {
+    const beats = halfTimeMeasured(520, 320, 400);
+    const markers = estimatedPhraseBarMarkers(beats, 260);
+    expect(
+      markers
+        .filter((marker) => marker.level === 2)
+        .map((marker) => marker.seconds),
+    ).toEqual([0.09, 64.09, 128.09, 192.09, 256.09]);
+    expect(
+      markers.every(
+        (marker) =>
+          Math.abs(
+            (marker.seconds - 0.09) / 32 -
+              Math.round((marker.seconds - 0.09) / 32),
+          ) < 1e-6,
+      ),
+    ).toBe(true);
+  });
+
+  it('does not restart or rejoin across a silent break or a changed beat phase', () => {
+    const before = measured(160);
+    const afterSilence = measured(160, 100.09);
+    expect(
+      estimatedPhraseBarMarkers([...before, ...afterSilence], 180),
+    ).toEqual([
+      { seconds: 0.09, level: 2 },
+      { seconds: 32.09, level: 1 },
+      { seconds: 64.09, level: 2 },
+    ]);
+    const changedPhase = [...before, ...measured(160, 80.34)];
+    expect(estimatedPhraseBarMarkers(changedPhase, 161)).toEqual([
+      { seconds: 0.09, level: 2 },
+      { seconds: 32.09, level: 1 },
+      { seconds: 64.09, level: 2 },
     ]);
   });
 
