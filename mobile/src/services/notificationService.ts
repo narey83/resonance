@@ -100,7 +100,7 @@ export async function initNotifications(): Promise<boolean> {
 
     for (const [id, name] of [['messages-v2', 'Alerts'], ['private-messages-v2', 'Private messages'], ['room-mentions-v2', 'Room mentions'], ['transfers-v2', 'Transfers']]) {
       await N.setNotificationChannelAsync(id, {
-        name, importance: N.AndroidImportance.HIGH, sound: 'default',
+        name, importance: N.AndroidImportance.HIGH,
       });
     }
 

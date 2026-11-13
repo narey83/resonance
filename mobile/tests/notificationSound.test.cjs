@@ -13,7 +13,7 @@ test('disabled message notifications stay silent; enabled alerts request sound o
     'expo-notifications': {
       AndroidImportance: { HIGH: 4 },
       setNotificationHandler() {},
-      setNotificationChannelAsync: async (id) => channels.push(id),
+      setNotificationChannelAsync: async (id, options) => channels.push({ id, options }),
       getPermissionsAsync: async () => ({ status: 'granted' }),
       scheduleNotificationAsync: async (notification) => scheduled.push(notification),
       setBadgeCountAsync: async (count) => { badges.push(count); return true; },
@@ -34,7 +34,9 @@ test('disabled message notifications stay silent; enabled alerts request sound o
   await service.notifyDownloadComplete('test');
   assert.deepEqual(scheduled.map(n => n.content.sound), ['default', 'default', 'default']);
   assert.equal(new Set(scheduled.map(n => n.trigger.channelId)).size, 3);
-  assert.ok(scheduled.every(n => channels.includes(n.trigger.channelId)));
+  assert.ok(scheduled.every(n => channels.some(c => c.id === n.trigger.channelId)));
+  assert.ok(channels.every(c => !Object.hasOwn(c.options, 'sound')),
+    'omitting channel sound uses the system default without a custom-sound error');
   settings.backgroundChat = true;
   appState.currentState = 'background';
   await service.notifyPrivateMessage('peer', 'background');
