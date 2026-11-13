@@ -645,9 +645,17 @@ const MediaPlayer = () => {
     // Signatures may have expired or never been warmed for this exact path (e.g.
     // stepping past what a library-list fetch or session-restore signed) — build
     // the URL only after making sure it's signed, not before.
-    const buildLocalUrl = () =>
+    const supportsIndexedMp3 =
+      isLocal &&
+      /\.mp3$/i.test(track.localRelativePath) &&
+      document.createElement('audio').canPlayType('audio/mp4; codecs="mp3"') ===
+        'probably';
+    const buildLocalUrl = (forLocalPlayback = false) =>
       isLocal
-        ? getLocalStreamUrl(track.localRelativePath)
+        ? getLocalStreamUrl(
+            track.localRelativePath,
+            forLocalPlayback && supportsIndexedMp3,
+          )
         : `/api/v0/streams/${encodeURIComponent(track.username)}/preview?filename=${encodeURIComponent(track.filename)}${sizeParameter}${tokenParameter}`;
 
     setError(null);
@@ -724,7 +732,7 @@ const MediaPlayer = () => {
       }
 
       if (cancelled || playbackPausedRef.current) return;
-      const localUrl = buildLocalUrl();
+      const localUrl = buildLocalUrl(!googleCastRef.current?.connected);
 
       // When Google Cast is active, stream to the cast device instead of local audio
       if (googleCastRef.current?.connected) {

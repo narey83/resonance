@@ -1,5 +1,6 @@
 import { PlayerProvider, usePlayer } from '../../context/PlayerContext';
 import { useCast } from '../../hooks/useCast';
+import { getLocalStreamUrl } from '../../lib/files';
 import { getTracks } from '../../lib/musicLibrary';
 import { ensureSigned } from '../../lib/streamSignatures';
 import MediaPlayer from '.';
@@ -20,7 +21,7 @@ jest.mock('../../lib/musicLibrary', () => ({
 }));
 jest.mock('../../lib/streamSignatures', () => ({ ensureSigned: jest.fn() }));
 jest.mock('../../lib/files', () => ({
-  getLocalStreamUrl: (path) => `/stream/${path}`,
+  getLocalStreamUrl: jest.fn((path) => `/stream/${path}`),
 }));
 jest.mock('../../lib/cast', () => ({
   getAbsoluteStreamUrl: jest.fn((path) => Promise.resolve(path)),
@@ -327,6 +328,19 @@ describe('player startup and playback intent', () => {
     expect(play).toHaveBeenCalledTimes(1);
     expect(player.isPlaying).toBe(false);
     expect(player.queue).toEqual(tracks);
+  });
+
+  it('uses indexed MP3 playback only when the browser supports the container', async () => {
+    expect.hasAssertions();
+    jest
+      .spyOn(HTMLMediaElement.prototype, 'canPlayType')
+      .mockReturnValue('probably');
+    await restore();
+    await click('Play');
+    expect(getLocalStreamUrl).toHaveBeenCalledWith(
+      tracks[0].localRelativePath,
+      true,
+    );
   });
 
   it('shows playback analysis running, then Basic and its disabled enhanced controls', async () => {

@@ -1135,6 +1135,8 @@ namespace resonance
                 sp.GetRequiredService<resonance.MusicLibrary.MusicRepository>(),
                 Path.Combine(DataDirectory, "library-index-snapshots")));
             services.AddSingleton<resonance.MusicLibrary.IMusicLibraryService, resonance.MusicLibrary.MusicLibraryService>();
+            services.AddSingleton(_ => new resonance.MusicLibrary.SeekableMp3Cache(
+                Path.Combine(DataDirectory, "playback-mp4-cache")));
             services.AddHostedService(p => p.GetRequiredService<resonance.MusicLibrary.IMusicLibraryService>());
             services.AddSingleton<resonance.MusicLibrary.Workspace.WorkspaceStore>();
             services.AddSingleton<resonance.MusicLibrary.Workspace.PreparationService>();

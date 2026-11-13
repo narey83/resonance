@@ -113,7 +113,8 @@ namespace resonance.MusicLibrary.API
             StreamUrlSigner urlSigner,
             resonance.Common.Ffmpeg.IFfmpegService ffmpeg,
             LibraryIndexSnapshotService snapshots = null,
-            MusicRepository repository = null)
+            MusicRepository repository = null,
+            SeekableMp3Cache seekableMp3Cache = null)
         {
             Service = service;
             Analysis = analysis;
@@ -126,6 +127,7 @@ namespace resonance.MusicLibrary.API
             Ffmpeg = ffmpeg;
             Snapshots = snapshots;
             Repository = repository;
+            SeekableMp3Cache = seekableMp3Cache;
         }
 
         private IMusicLibraryService Service { get; }
@@ -140,6 +142,7 @@ namespace resonance.MusicLibrary.API
         private resonance.Common.Ffmpeg.IFfmpegService Ffmpeg { get; }
         private LibraryIndexSnapshotService Snapshots { get; }
         private MusicRepository Repository { get; }
+        private SeekableMp3Cache SeekableMp3Cache { get; }
 
         // Resolved by the app-wide ffmpeg service (auto-downloaded/updated); null until provisioned.
         private string? FfmpegPath => Ffmpeg.FfmpegPath;
@@ -554,7 +557,7 @@ namespace resonance.MusicLibrary.API
         [HttpGet("stream")]
         [AllowAnonymous]
         [Produces("audio/mpeg", "audio/flac", "audio/ogg", "audio/wav", "audio/mp4", "audio/aac")]
-        public async Task<IActionResult> StreamTrack([FromQuery] string path, [FromQuery] long exp = 0, [FromQuery] string sig = null, [FromQuery] string quality = null)
+        public async Task<IActionResult> StreamTrack([FromQuery] string path, [FromQuery] long exp = 0, [FromQuery] string sig = null, [FromQuery] string quality = null, [FromQuery] string container = null)
         {
             var file = Service.ResolveLibraryPath(path);
             if (file == null)
@@ -604,6 +607,26 @@ namespace resonance.MusicLibrary.API
             }
 
             var extension = Path.GetExtension(file).TrimStart('.').ToLowerInvariant();
+            if (extension == "mp3" && string.Equals(container, "mp4", StringComparison.OrdinalIgnoreCase))
+            {
+                if (FfmpegPath != null && SeekableMp3Cache != null)
+                {
+                    try
+                    {
+                        var stream = await SeekableMp3Cache.OpenAsync(file, FfmpegPath, HttpContext.RequestAborted);
+                        return File(stream, "audio/mp4", enableRangeProcessing: true);
+                    }
+                    catch (Exception ex) when (!HttpContext.RequestAborted.IsCancellationRequested)
+                    {
+                        Serilog.Log.Warning(ex, "Indexed MP4 playback unavailable for {Path}; serving original MP3", file);
+                    }
+                }
+                else
+                {
+                    Serilog.Log.Warning("Indexed MP4 playback unavailable for {Path}: ffmpeg or cache is not ready", file);
+                }
+            }
+
             var contentType = extension switch
             {
                 "mp3" => "audio/mpeg",

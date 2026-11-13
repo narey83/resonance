@@ -37,12 +37,14 @@ import api from './api';
 import { signedQuery } from './streamSignatures';
 import { getToken, isPassthroughEnabled } from './token';
 
-export const getLocalStreamUrl = (path) => {
+export const getLocalStreamUrl = (path, seekableMp3 = false) => {
   // Absolute paths are music library tracks; relative paths are downloaded files
   if (path.startsWith('/')) {
     // Library tracks authenticate via a path-scoped signature (warmed by the library fetchers),
     // not the account token.
-    return `/api/v0/musiclibrary/stream?path=${encodeURIComponent(path)}${signedQuery(path)}`;
+    const container =
+      seekableMp3 && /\.mp3$/i.test(path) ? '&container=mp4' : '';
+    return `/api/v0/musiclibrary/stream?path=${encodeURIComponent(path)}${signedQuery(path)}${container}`;
   }
 
   const token = isPassthroughEnabled() ? null : getToken();
