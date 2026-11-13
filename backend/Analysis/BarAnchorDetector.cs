@@ -76,9 +76,12 @@ internal static class BarAnchorDetector
             RepairStartupDisplayBeats(shiftedBeats, savedBeats, recovery.Fit.Value, waveform, shift);
         }
 
+        var attackCorrected = AlignRepeatedAttacks(shiftedBeats, beats, waveform, period.Value, shift ?? 0);
+
         var displayBeats = shiftedBeats.Where(value => value >= 0 && value < waveform.DurationSeconds.Value).ToArray();
         var gridSource = beats.Length > savedBeats.Length ? "saved-plus-measured-opening" : "saved-beats";
-        var shiftSource = shift.HasValue ? "measured-waveform-onset" : "unresolved";
+        var shiftSource = attackCorrected ? "measured-repeated-attacks"
+            : shift.HasValue ? "measured-waveform-onset" : "unresolved";
         if (!TryOrdinals(beats, period.Value, out var ordinals, out var missing))
         {
             return Result.Unavailable with
@@ -525,6 +528,98 @@ internal static class BarAnchorDetector
         }
 
         return Median(inliers);
+    }
+
+    private static bool AlignRepeatedAttacks(
+        float[] display, float[] beats, WaveformData waveform, double period, double openingShift)
+    {
+        // Some trackers change phase by half a beat during a breakdown. Compare
+        // three phases against repeated low and mid-band attacks around each
+        // beat. A clipped kick can lack a mid-band click, so repeated strong
+        // low-band attacks can also qualify. Keep the opening estimate when
+        // evidence is weak.
+        if (beats.Length < 32 || period is < 0.25 or > 1.5)
+        {
+            return false;
+        }
+
+        var candidates = new[] { openingShift, openingShift - (period / 2), openingShift + (period / 2) };
+        var correctedAny = false;
+        for (var index = 8; index < beats.Length; index++)
+        {
+            var scores = new (double Low, double Mid, int Hits, int LowHits)[3];
+            var contextStart = Math.Min(index - 8, beats.Length - 16);
+            for (var neighbor = contextStart; neighbor < contextStart + 16; neighbor++)
+            {
+                for (var phase = 0; phase < candidates.Length; phase++)
+                {
+                    var attack = AttackRise(waveform, beats[neighbor] + candidates[phase]);
+                    scores[phase].Low += attack.Low;
+                    scores[phase].Mid += attack.Mid;
+                    if (attack.Low >= 0.2)
+                    {
+                        scores[phase].LowHits++;
+                    }
+
+                    if (attack.Low >= 0.08 && attack.Mid >= 0.04)
+                    {
+                        scores[phase].Hits++;
+                    }
+                }
+            }
+
+            // The two half-beat candidates can describe the same repeating
+            // kick train one beat apart. Prefer the earlier attack when their
+            // evidence is effectively tied, keeping the count continuous.
+            var earlier = scores[1].Low + scores[1].Mid;
+            var later = scores[2].Low + scores[2].Mid;
+            var best = earlier >= later * 0.9 ? 1 : 2;
+            var dualBand = scores[best].Hits >= 12
+                && scores[best].Low >= Math.Max(1.6, scores[0].Low * 1.8)
+                && scores[best].Mid >= Math.Max(0.8, scores[0].Mid * 1.6);
+            var clippedKick = scores[best].LowHits >= 15
+                && scores[best].Low >= Math.Max(3.2, scores[0].Low * 2.5);
+            if (!dualBand && !clippedKick)
+            {
+                continue;
+            }
+
+            var expected = beats[index] + candidates[best];
+            var measured = StrongestLowRise(waveform, expected, 0.025);
+            var corrected = measured.Strength >= 0.08 ? measured.Seconds : expected;
+            if (corrected > (index == 0 ? 0 : display[index - 1] + (period * 0.45))
+                && corrected < (index + 1 == display.Length
+                    ? waveform.DurationSeconds!.Value
+                    : beats[index + 1] + openingShift - (period * 0.35)))
+            {
+                display[index] = (float)corrected;
+                correctedAny = true;
+            }
+        }
+
+        return correctedAny;
+    }
+
+    private static (double Low, double Mid) AttackRise(WaveformData waveform, double seconds)
+    {
+        var rate = waveform.LowPeaks.Length / waveform.DurationSeconds!.Value;
+        var low = waveform.LowPeaks;
+        var mid = waveform.MidPeaks;
+        var first = (int)Math.Round(seconds * rate);
+        var lowRise = 0.0;
+        var midRise = 0.0;
+        for (var index = first - 2; index <= first + 2; index++)
+        {
+            if (index < 3 || index >= Math.Min(low.Length, mid.Length))
+            {
+                continue;
+            }
+
+            lowRise = Math.Max(lowRise, low[index] - low[index - 3]);
+            midRise = Math.Max(midRise, mid[index] - mid[index - 3]);
+        }
+
+        return (lowRise, midRise);
     }
 
     private static bool TryOrdinals(float[] beats, double period, out int[] ordinals, out int missing)

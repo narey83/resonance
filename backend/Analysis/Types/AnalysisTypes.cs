@@ -340,8 +340,8 @@ namespace resonance.Analysis
     /// <param name="BasicBarMarkers">Only 16/32-bar accents whose phase has repeated structural support.</param>
     /// <param name="BasicGridBeats">Display beats with measured onset shift and any evidence-backed opening recovery; raw <see cref="Beats"/> stays unchanged.</param>
     /// <param name="BasicGridSource">Whether the display grid includes a measured opening beat.</param>
-    /// <param name="BasicDisplayShiftSeconds">Stable measured difference from saved beats to visible waveform onsets, if available.</param>
-    /// <param name="BasicDisplayShiftSource">The evidence source for the display shift, or unresolved.</param>
+    /// <param name="BasicDisplayShiftSeconds">Measured opening difference from saved beats to visible waveform onsets, if available. Later beats can receive local attack corrections.</param>
+    /// <param name="BasicDisplayShiftSource">The evidence source for the display alignment, or unresolved.</param>
     /// <param name="BasicBarPhaseStatus">Whether the four-beat bar phase has repeated structural support.</param>
     /// <param name="BasicBarPhaseEvidence">Winning phase's uncalibrated margin over the runner-up, not a probability.</param>
     /// <param name="BasicSixteenBarPhaseStatus">Whether the 16-bar phase has repeated structural support.</param>

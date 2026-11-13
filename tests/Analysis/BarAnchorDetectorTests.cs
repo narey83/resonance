@@ -192,6 +192,68 @@ public class BarAnchorDetectorTests
         Assert.All(result.Markers, marker => Assert.InRange(marker.Seconds, 0, waveform.DurationSeconds!.Value));
     }
 
+    [Fact]
+    public void Repeated_Transient_Attacks_Correct_A_Later_Half_Beat_Phase_Change()
+    {
+        var beats = Beats();
+        var aligned = BarAnchorDetector.Analyze(beats, AttackWaveform(beats, phaseFlip: true));
+
+        Assert.Equal("measured-repeated-attacks", aligned.DisplayShiftSource);
+        Assert.InRange(aligned.BasicGridBeats[40] - beats[40], 0.02f, 0.06f);
+        Assert.InRange(aligned.BasicGridBeats[200] - beats[200], -0.21f, -0.15f);
+        Assert.InRange(aligned.BasicGridBeats[500] - beats[500], -0.21f, -0.15f);
+        Assert.True(aligned.BasicGridBeats.Zip(aligned.BasicGridBeats.Skip(1), (a, b) => a < b)
+            .All(increasing => increasing));
+
+        var bassOnly = BarAnchorDetector.Analyze(beats,
+            AttackWaveform(beats, phaseFlip: true, bassOnlyAfterFlip: true));
+        Assert.InRange(bassOnly.BasicGridBeats[200] - beats[200], -0.21f, -0.15f);
+
+        var sustainedBass = BarAnchorDetector.Analyze(beats,
+            AttackWaveform(beats, phaseFlip: true, sustainedBassAfterFlip: true));
+        Assert.InRange(sustainedBass.BasicGridBeats[200] - beats[200], 0.02f, 0.06f);
+    }
+
+    private static WaveformData AttackWaveform(
+        float[] beats, bool phaseFlip, bool bassOnlyAfterFlip = false,
+        bool sustainedBassAfterFlip = false)
+    {
+        var duration = beats[^1] + Period;
+        var size = (int)Math.Ceiling(duration * 200);
+        var low = new float[size];
+        var mid = new float[size];
+        var high = new float[size];
+        var overall = new float[size];
+        for (var beat = 0; beat < beats.Length; beat++)
+        {
+            var flipped = phaseFlip && beat >= 128;
+            var onset = beats[beat] + (flipped ? -0.18 : 0.04);
+            var first = (int)Math.Round(onset * 200);
+            for (var index = first; index < Math.Min(size, first + 18); index++)
+            {
+                low[index] = 0.8f;
+                if (!flipped || (!bassOnlyAfterFlip && !sustainedBassAfterFlip))
+                {
+                    mid[index] = 0.5f;
+                }
+
+                overall[index] = Math.Max(low[index], mid[index]);
+            }
+        }
+
+        if (sustainedBassAfterFlip)
+        {
+            var first = (int)Math.Round((beats[128] - 0.18) * 200);
+            for (var index = first; index < size; index++)
+            {
+                low[index] = 0.8f;
+                overall[index] = Math.Max(overall[index], low[index]);
+            }
+        }
+
+        return new WaveformData(overall, low, mid, high, size, duration);
+    }
+
     private static float[] Beats(int pickup = 0) =>
         Enumerable.Range(0, (160 * 4) + pickup)
             .Select(index => (float)(0.02 + (index * Period))).ToArray();
