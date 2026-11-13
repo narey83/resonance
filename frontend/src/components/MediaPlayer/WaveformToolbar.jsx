@@ -109,7 +109,11 @@ const WaveformToolbar = ({
           <button
             aria-pressed={grid}
             onClick={() => onGrid(!grid)}
-            title="Show detected beat grid"
+            title={
+              enhancedAvailable
+                ? 'Beat grid with 16/32-bar accents aligned to arrangement sections'
+                : 'Beat grid with estimated 16/32-bar accents from detected beats'
+            }
             type="button"
           >
             Beat grid

@@ -178,6 +178,22 @@ export const visibleBeats = (beats, fromSeconds, toSeconds) => {
   return out;
 };
 
+// Basic analysis has beat times but no saved downbeats or arrangement sections.
+// In common 4/4, 64 beats span 16 bars. Keep accents on the detected ticks so
+// tempo changes do not shift them away from the visible beat grid.
+export const basicBarMarkers = (beats) => {
+  if (!beats?.length) return [];
+  const markers = [];
+  for (let index = 0; index < beats.length; index += 64) {
+    const time = beats[index];
+    if (!Number.isFinite(time) || (index > 0 && time <= beats[index - 1]))
+      return [];
+    markers.push({ time, level: index % 128 === 0 ? 2 : 1 });
+  }
+
+  return markers;
+};
+
 /**
  * Diagnostic-only comparison of detected beats against the theoretical grid
  * their own bpm/beatOffsetSeconds imply — never corrects or mutates `beats`.

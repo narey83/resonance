@@ -28,6 +28,7 @@
 // </copyright>
 
 import {
+  basicBarMarkers,
   beatGridPhase,
   beatGridSeconds,
   compareBeats,
@@ -43,6 +44,27 @@ import {
 // 128bpm: 0.469s a beat. The scales below are what the player's seek bar
 // actually works at — a 5 minute track across ~900px is 3 pixels a second.
 const BEAT = 60 / 128;
+
+describe('basicBarMarkers', () => {
+  it('places 16/32-bar accents on detected beats even when the tempo shifts', () => {
+    const beats = [
+      ...Array.from({ length: 100 }, (_, index) => 0.2 + index * 0.5),
+      ...Array.from({ length: 93 }, (_, index) => 50.2 + index * 0.48),
+    ];
+    expect(basicBarMarkers(beats)).toEqual([
+      { time: beats[0], level: 2 },
+      { time: beats[64], level: 1 },
+      { time: beats[128], level: 2 },
+      { time: beats[192], level: 1 },
+    ]);
+  });
+
+  it('omits accents without detected beats', () => {
+    expect(basicBarMarkers(null)).toEqual([]);
+    expect(basicBarMarkers([])).toEqual([]);
+    expect(basicBarMarkers([Number.NaN])).toEqual([]);
+  });
+});
 
 describe('beatGridSeconds', () => {
   it('keeps a line per beat once there is room for one', () => {

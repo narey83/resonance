@@ -41,6 +41,7 @@ import api from '../../lib/api';
 import { drawEnhanced } from '../../lib/enhancedWaveform';
 import { formatSeconds } from '../../lib/util';
 import {
+  basicBarMarkers,
   beatGridPhase,
   beatGridSeconds,
   firstGridLineAt,
@@ -160,6 +161,7 @@ const WaveformSeekBar = ({
         beatOffsetSeconds: beatAvailability.offsetSeconds,
         beatsKnown: beatAvailability.known,
         beats: beatAvailability.beats,
+        basicBarMarkers: basicBarMarkers(beatAvailability.beats),
         bpm: waveformBeatBpm(beatAvailability.beats),
         overall: new Float32Array(data.overallPeaks),
       };
@@ -536,6 +538,25 @@ const WaveformSeekBar = ({
       vocals: showVocals,
       scale: dprScale,
     });
+
+    if (showGrid && !enhancedRef.current?.available) {
+      context.save();
+      for (const marker of peaks.basicBarMarkers) {
+        if (marker.time < drawStart || marker.time >= drawEnd) continue;
+        const x = timeToPixel(
+          marker.time - drawStart,
+          windowDuration,
+          windowWidthPx,
+        );
+        const lineWidth = (marker.level === 2 ? 3 : 2) * dprScale;
+        context.globalAlpha = marker.level === 2 ? 0.9 : 0.55;
+        context.fillStyle = colours.text;
+        context.fillRect(x - lineWidth / 2, 0, lineWidth, waveformHeight);
+      }
+
+      context.restore();
+    }
+
     // Keep timeline labels separate from the vocal lanes and use the same
     // window mapping as seeking and the grid.
     context.save();
