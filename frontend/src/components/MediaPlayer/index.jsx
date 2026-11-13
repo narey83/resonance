@@ -62,15 +62,11 @@ import AudioProcessing from './AudioProcessing';
 import LoudnessMeter from './LoudnessMeter';
 import PlaybackSyncMonitor from './PlaybackSyncMonitor';
 import TrackAnalysisBadge, { playerAnalysisLevel } from './TrackAnalysisBadge';
-import usePlayerPopout from './usePlayerPopout';
 import WaveformResizeHandle from './WaveformResizeHandle';
 import WaveformSeekBar from './WaveformSeekBar';
 import WaveformToolbar, { normalizeWaveformZoom } from './WaveformToolbar';
-import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Cast,
-  ChevronDown,
-  ExternalLink,
   Heart,
   ListMusic,
   Pause,
@@ -79,13 +75,11 @@ import {
   Shuffle,
   SkipBack,
   SkipForward,
-  Trash2,
   Volume2,
   VolumeX,
   X,
 } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 
 const RESUME_POSITION_KEY = 'resonance-player-position';
 
@@ -159,131 +153,20 @@ const parseTrackInfo = (filename) => {
   };
 };
 
-// Inline "Up Next" drawer for the immersive view. Virtualised so only the
-// visible rows (and their artwork) render — a long queue mounts a handful of
-// rows instead of hundreds. Rendered only while open, so its scroll ref
-// attaches cleanly on mount.
-const ExpandedQueue = ({
-  jumpTo,
-  onClose,
-  queueIndex,
-  removeFromQueue,
-  upNext,
-}) => {
-  const listRef = useRef(null);
-  const virtualizer = useVirtualizer({
-    count: upNext.length,
-    getScrollElement: () => listRef.current,
-    estimateSize: () => 54,
-    overscan: 6,
-  });
-
-  return (
-    <div className="mp-expanded-queue">
-      <div className="mp-expanded-queue-header">
-        <span className="mp-expanded-queue-title">Up Next</span>
-        <span className="mp-expanded-queue-count">{upNext.length}</span>
-        <button
-          className="mp-expanded-queue-close hover-fx"
-          onClick={onClose}
-          title="Hide queue"
-          type="button"
-        >
-          <X size={16} />
-        </button>
-      </div>
-      <div
-        className="mp-expanded-queue-list"
-        ref={listRef}
-      >
-        {upNext.length === 0 ? (
-          <div className="mp-expanded-queue-empty">Nothing up next</div>
-        ) : (
-          <div
-            style={{
-              height: virtualizer.getTotalSize(),
-              position: 'relative',
-            }}
-          >
-            {virtualizer.getVirtualItems().map((virtualItem) => {
-              const actualIndex = queueIndex + 1 + virtualItem.index;
-              const qTrack = upNext[virtualItem.index];
-              const qParsed = parseTrackInfo(qTrack.filename);
-              return (
-                <div
-                  key={virtualItem.key}
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    transform: `translateY(${virtualItem.start}px)`,
-                  }}
-                >
-                  <div
-                    className="mp-expanded-queue-row"
-                    onClick={() => jumpTo(actualIndex)}
-                    onKeyDown={(event) =>
-                      event.key === 'Enter' && jumpTo(actualIndex)
-                    }
-                    role="button"
-                    tabIndex={0}
-                  >
-                    <AlbumArt
-                      hasArtwork={qTrack.hasArtwork}
-                      name={qTrack.album || qTrack.artist || qParsed.title}
-                      path={qTrack.path}
-                      radius={4}
-                      size={40}
-                    />
-                    <div className="mp-expanded-queue-meta">
-                      <div className="mp-expanded-queue-row-title">
-                        {qTrack.title || qParsed.title}
-                      </div>
-                      <div className="mp-expanded-queue-row-artist">
-                        {qTrack.artist || qParsed.artist}
-                      </div>
-                    </div>
-                    <button
-                      className="mp-expanded-queue-remove"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        removeFromQueue(actualIndex);
-                      }}
-                      title="Remove from queue"
-                      type="button"
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
 // eslint-disable-next-line complexity
 const MediaPlayer = () => {
   const googleCast = useCast();
   const {
     auditionTempo,
     hasQueue,
-    jumpTo,
     next,
     pendingSeekRef,
     playbackRequest,
     prev,
-    queue,
-    queueIndex,
     queuePanelOpen,
     registerPauseHandler,
     registerSeekHandler,
     registerTempoHandler,
-    removeFromQueue,
     setIsPlaying,
     shuffle,
     stop,
@@ -387,9 +270,8 @@ const MediaPlayer = () => {
   const [phraseMode, setPhraseMode] = useState(() =>
     prefs.get('mediaPlayer.phrases', 'dj'),
   );
-  const [waveformAnalysing, setWaveformAnalysing] = useState(false);
   const [miniWaveformAnalysing, setMiniWaveformAnalysing] = useState(false);
-  const analysisActive = waveformAnalysing || miniWaveformAnalysing;
+  const analysisActive = miniWaveformAnalysing;
   const playerMetadata = usePlayerMetadata(track, analysisActive);
   const enhancedAvailable = playerAnalysisLevel(playerMetadata) === 'enhanced';
   // A full-resolution waveform is several megabytes of JSON. Do not request it alongside the
@@ -401,23 +283,9 @@ const MediaPlayer = () => {
     analyseMissing: waveformReadyPath === track?.path,
   });
   const [showCast, setShowCast] = useState(false);
-  const popout = usePlayerPopout();
-  const [showQueue, setShowQueue] = useState(false);
-  const [processingLauncherTarget, setProcessingLauncherTarget] =
-    useState(null);
   useEffect(() => {
     repeatRef.current = repeat;
   }, [repeat]);
-
-  // The player-window queue closes when the window docks.
-  useEffect(() => {
-    if (!popout.container) setShowQueue(false);
-  }, [popout.container]);
-
-  useEffect(() => {
-    if (popout.container)
-      popout.container.ownerDocument.title = `${track?.title || 'Player'} · Resonance`;
-  }, [popout.container, track?.title]);
 
   // Stable refs so effects can read latest values without listing them as deps
   const googleCastRef = useRef(googleCast);
@@ -572,21 +440,6 @@ const MediaPlayer = () => {
 
   // Safety: revert when the player unmounts entirely.
   useEffect(() => () => clearAmbientColour(), []);
-
-  // Escape docks the player window without stopping audio.
-  const closePopout = popout.close;
-  useEffect(() => {
-    if (!popout.container) return undefined;
-    const targetWindow = popout.container.ownerDocument.defaultView;
-    const onKey = (event) => {
-      if (event.key === 'Escape') {
-        closePopout();
-      }
-    };
-
-    targetWindow.addEventListener('keydown', onKey);
-    return () => targetWindow.removeEventListener('keydown', onKey);
-  }, [popout.container, closePopout]);
 
   // Keep the playing row visible when the player first appears.
   const previousTrackNullRef = useRef(track === null);
@@ -1073,7 +926,6 @@ const MediaPlayer = () => {
     setDuration(0);
     setError(null);
     setStatusMessage(null);
-    popout.close();
     stop();
     if (queuePanelOpen) toggleQueuePanel();
   };
@@ -1121,12 +973,8 @@ const MediaPlayer = () => {
   const attributes = formatAttributes(track);
   const localFolder = getFolderInfo(track.localRelativePath);
   const artistMeta = [displayArtist, attributes].filter(Boolean).join(' · ');
-  const upNext = queueIndex == null ? [] : queue.slice(queueIndex + 1);
-
-  // Fetch hero artwork only when the expanded player is mounted. Small thumbnails
-  // and the blurred backdrop share the inexpensive browser-cached rendition.
+  // The dock uses a small, browser-cached artwork rendition.
   const thumbArtUrl = track.path ? getArtworkUrl(track.path, 192) : null;
-  const artUrl = track.path ? getArtworkUrl(track.path, 512) : null;
   const integratedLufs = Number.isFinite(trackLoudness?.integratedLufs)
     ? trackLoudness.integratedLufs.toFixed(1)
     : '—';
@@ -1136,335 +984,6 @@ const MediaPlayer = () => {
       className="media-player"
       ref={playerRef}
     >
-      {/* ── Separate player window ──────────────────────────── */}
-      {popout.container &&
-        createPortal(
-          <div
-            aria-label="Now playing"
-            className={`mp-expanded mp-expanded--popout${showQueue ? ' mp-expanded--with-queue' : ''}`}
-            role="dialog"
-          >
-            <div
-              className={
-                track.hasArtwork
-                  ? 'mp-expanded-backdrop'
-                  : 'mp-expanded-backdrop mp-expanded-backdrop--fallback'
-              }
-              style={
-                track.hasArtwork
-                  ? { backgroundImage: `url(${thumbArtUrl})` }
-                  : undefined
-              }
-            />
-            <button
-              className="mp-expanded-collapse mp-expanded-collapse--dock hover-fx"
-              onClick={() => popout.close()}
-              title="Dock player"
-              type="button"
-            >
-              <ChevronDown size={24} />
-              <span>Dock player</span>
-            </button>
-
-            <div className="mp-expanded-content">
-              <div className="mp-expanded-art">
-                <AlbumArt
-                  hasArtwork={track.hasArtwork}
-                  name={displayAlbum || displayArtist || displayTitle}
-                  onColour={applyAmbientColour}
-                  path={track.path}
-                  radius={16}
-                  size={480}
-                  src={artUrl}
-                />
-              </div>
-
-              <div className="mp-expanded-info">
-                <div className="mp-deck-caption">
-                  PREPARATION DECK <span>{playing ? 'PLAYING' : 'PAUSED'}</span>
-                  <TrackAnalysisBadge
-                    active={analysisActive && waveformReadyPath === track.path}
-                    metadata={playerMetadata}
-                    track={track}
-                  />
-                </div>
-                <div className="mp-expanded-title">{displayTitle}</div>
-                <div className="mp-track-metrics">
-                  <span>
-                    <b>{playerMetadata.bpm || '—'}</b> BPM
-                  </span>
-                  <span>
-                    <b>{playerMetadata.key || '—'}</b> KEY
-                  </span>
-                  <span title="Integrated track loudness">
-                    <b>{integratedLufs}</b> LUFS
-                  </span>
-                  {auditionTempo?.path ===
-                    (track.localRelativePath ||
-                      track.path ||
-                      track.filename) && (
-                    <span title="Temporary audition tempo; pitch preserved">
-                      <b>
-                        {Math.round(
-                          playerMetadata.bpm * auditionTempo.rate * 10,
-                        ) / 10}
-                      </b>{' '}
-                      MASTER
-                    </span>
-                  )}
-                </div>
-                {displayArtist && (
-                  <div className="mp-expanded-artist">{displayArtist}</div>
-                )}
-                {displayAlbum && (
-                  <div className="mp-expanded-album">{displayAlbum}</div>
-                )}
-              </div>
-
-              <div className="mp-expanded-scrub-stack">
-                {seekerEnabled &&
-                  (playerMetadata.hasWaveform === true ||
-                    waveformReadyPath === track.path) && (
-                    <>
-                      <WaveformResizeHandle
-                        height={seekerHeight}
-                        onHeight={(value) => {
-                          setSeekerHeight(value);
-                          prefs.set('mediaPlayer.seekerHeight', value);
-                        }}
-                      />
-                      <WaveformSeekBar
-                        duration={displayDuration}
-                        getCurrentTime={getCurrentTime}
-                        height={seekerHeight}
-                        onAnalysing={setWaveformAnalysing}
-                        onReady={() => {}}
-                        onSeek={seekTo}
-                        phraseMode={enhancedAvailable ? phraseMode : 'off'}
-                        progressPct={progressPct}
-                        showGrid={showBeatGrid}
-                        showVocals={enhancedAvailable && showVocals}
-                        track={track}
-                        zoom={seekerZoom}
-                      />
-                    </>
-                  )}
-                <div className="mp-expanded-scrub-row">
-                  <span className="mp-expanded-time">
-                    {formatSeconds(effectiveTime)}
-                  </span>
-                  <div
-                    aria-label="Seek"
-                    aria-valuemax={displayDuration}
-                    aria-valuemin={0}
-                    aria-valuenow={effectiveTime}
-                    className="mp-expanded-scrubber"
-                    onClick={handleSeek}
-                    onKeyDown={handleSeekKey}
-                    role="slider"
-                    tabIndex={0}
-                  >
-                    <div
-                      className="media-player-scrubber-buffered"
-                      style={{ width: `${bufferedPct}%` }}
-                    />
-                    <div
-                      className="media-player-scrubber-fill"
-                      style={{ width: `${progressPct}%` }}
-                    />
-                    {seekerEnabled && waveformAnalysing && (
-                      <span className="mp-scrubber-analysing">
-                        <span className="media-player-spinner media-player-spinner--sm" />
-                        Analyzing waveform…
-                      </span>
-                    )}
-                  </div>
-                  <span className="mp-expanded-time">
-                    {formatSeconds(displayDuration)}
-                  </span>
-                </div>
-              </div>
-
-              <div className="mp-expanded-footer">
-                {waveformToolbar}
-
-                <div className="mp-expanded-audio-tools">
-                  <div
-                    aria-label="Output volume"
-                    className="mp-expanded-volume-section"
-                    role="group"
-                  >
-                    <span className="mp-expanded-audio-caption">Volume</span>
-                    <div className="mp-popout-volume">
-                      <button
-                        aria-label={muted ? 'Unmute' : 'Mute'}
-                        onClick={toggleMute}
-                        type="button"
-                      >
-                        {muted ? <VolumeX size={16} /> : <Volume2 size={16} />}
-                      </button>
-                      <input
-                        aria-label="Player volume"
-                        aria-orientation="vertical"
-                        max="1"
-                        min="0"
-                        onChange={handleVolumeChange}
-                        step="0.05"
-                        type="range"
-                        value={
-                          googleCast.connected
-                            ? googleCast.castVolumeLevel
-                            : muted
-                              ? 0
-                              : volume
-                        }
-                      />
-                    </div>
-                  </div>
-                  {!googleCast.connected && (
-                    <div
-                      aria-label="Loudness and processing"
-                      className="mp-expanded-audio-monitor"
-                      role="group"
-                    >
-                      <div className="mp-expanded-live-level">
-                        <span className="mp-expanded-audio-caption">
-                          LUFS / VU
-                        </span>
-                        <LoudnessMeter
-                          audioRef={audioRef}
-                          loudness={trackLoudness}
-                          orientation="vertical"
-                          showLive
-                        />
-                      </div>
-                      <div
-                        className="mp-expanded-processing-launcher"
-                        ref={setProcessingLauncherTarget}
-                      />
-                    </div>
-                  )}
-                </div>
-                <div className="mp-expanded-transport">
-                  <div
-                    aria-label="Playback modes"
-                    className="mp-expanded-modes"
-                    role="group"
-                  >
-                    <button
-                      className={
-                        shuffle
-                          ? 'mp-expanded-ctrl mp-expanded-ctrl--active hover-fx'
-                          : 'mp-expanded-ctrl hover-fx'
-                      }
-                      disabled={!hasQueue}
-                      onClick={toggleShuffle}
-                      title={shuffle ? 'Shuffle on' : 'Shuffle off'}
-                      type="button"
-                    >
-                      <Shuffle size={20} />
-                    </button>
-                    <button
-                      className={
-                        repeat
-                          ? 'mp-expanded-ctrl mp-expanded-ctrl--active hover-fx'
-                          : 'mp-expanded-ctrl hover-fx'
-                      }
-                      onClick={toggleRepeat}
-                      title={repeat ? 'Repeat: on' : 'Repeat: off'}
-                      type="button"
-                    >
-                      <Repeat size={20} />
-                    </button>
-                  </div>
-                  <div className="mp-expanded-controls">
-                    <button
-                      className="mp-expanded-ctrl hover-fx"
-                      onClick={handlePrev}
-                      title="Previous track"
-                      type="button"
-                    >
-                      <SkipBack size={26} />
-                    </button>
-                    <button
-                      className="mp-expanded-play"
-                      disabled={Boolean(error)}
-                      onClick={togglePlay}
-                      title={effectivePlaying ? 'Pause' : 'Play'}
-                      type="button"
-                    >
-                      {loading ? (
-                        <span className="media-player-spinner" />
-                      ) : effectivePlaying ? (
-                        <Pause size={28} />
-                      ) : (
-                        <Play size={28} />
-                      )}
-                    </button>
-                    <button
-                      className="mp-expanded-ctrl hover-fx"
-                      disabled={!hasQueue}
-                      onClick={next}
-                      title="Next track"
-                      type="button"
-                    >
-                      <SkipForward size={26} />
-                    </button>
-                  </div>
-
-                  {track.path && (
-                    <div className="mp-expanded-secondary">
-                      <button
-                        className={`mp-expanded-ctrl hover-fx${activity?.lovedPaths?.has(track.path) ? ' mp-expanded-ctrl--active' : ''}`}
-                        onClick={() => activity?.toggleLove(track.path)}
-                        title={
-                          activity?.lovedPaths?.has(track.path)
-                            ? 'Remove from loved'
-                            : 'Love this track'
-                        }
-                        type="button"
-                      >
-                        <Heart
-                          fill={
-                            activity?.lovedPaths?.has(track.path)
-                              ? 'currentColor'
-                              : 'none'
-                          }
-                          size={20}
-                          strokeWidth={1.75}
-                        />
-                      </button>
-                      <button
-                        className={
-                          showQueue
-                            ? 'mp-expanded-ctrl mp-expanded-ctrl--active hover-fx'
-                            : 'mp-expanded-ctrl hover-fx'
-                        }
-                        onClick={() => setShowQueue((value) => !value)}
-                        title={showQueue ? 'Hide queue' : 'Show queue'}
-                        type="button"
-                      >
-                        <ListMusic size={20} />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {showQueue && (
-              <ExpandedQueue
-                jumpTo={jumpTo}
-                onClose={() => setShowQueue(false)}
-                queueIndex={queueIndex}
-                removeFromQueue={removeFromQueue}
-                upNext={upNext}
-              />
-            )}
-          </div>,
-          popout.container,
-        )}
-
       {/* ── Cast panel ──────────────────────────────────────── */}
       {showCast && (
         <div className="media-player-cast">
@@ -1772,25 +1291,6 @@ const MediaPlayer = () => {
         {/* ── Right controls ── */}
         <div className="media-player-right">
           <button
-            aria-label={
-              popout.container ? 'Focus player window' : 'Open player window'
-            }
-            className="media-player-btn hover-fx"
-            onClick={() => {
-              if (!popout.open())
-                toast.info(
-                  'Allow pop-ups for Resonance, then try Open player window again.',
-                );
-            }}
-            title={
-              popout.container ? 'Focus player window' : 'Open player window'
-            }
-            type="button"
-          >
-            <ExternalLink size={18} />
-          </button>
-
-          <button
             className={
               queuePanelOpen
                 ? 'media-player-btn media-player-ctrl-btn--active hover-fx'
@@ -1869,8 +1369,6 @@ const MediaPlayer = () => {
           {!googleCast.connected && track && (
             <AudioProcessing
               audioRef={audioRef}
-              launcherTarget={processingLauncherTarget}
-              modalTarget={popout.container}
               targetLufs={trackLoudness?.integratedLufs ?? null}
             >
               <PlaybackSyncMonitor

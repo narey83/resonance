@@ -47,20 +47,21 @@ a suitable groove or arrangement.
 
 ## Player controls
 
-The docked player and separate player window use one audio stream and current-track
-state. Open the separate window with the player-window button; docked artwork does
-not open another player view. BPM, key and LUFS appear with the track information.
+The docked player uses one audio stream and current-track state. BPM, key and
+LUFS appear with the track information.
 The queue starts closed and opens explicitly.
 
 The waveform can be shown or hidden, resized, and set to **Normal, 16×, 32×, 64×,
 128× or 256× detail**. Normal shows the whole track; detail follows the playhead.
-Beat grid and Vocals toggle their overlays. Choose **DJ phrases**, **Musical phrases**
-or **Hide phrases** independently. Phrase colours identify section types; singing
-and processed-voice regions are distinct predictions. Overlays require the relevant
+Beat grid and Vocals toggle their overlays. The grid accents arrangement starts,
+16-bar boundaries and stronger 32-bar boundaries using saved downbeats. Choose
+**DJ phrases**, **Musical phrases** or **Hide phrases** independently. Phrase
+colours identify section types; singing and processed-voice regions are distinct
+predictions. Overlays require the relevant
 saved analysis. See [beatgrid verification](beatgrid-verification.md).
 
-Daylight, AMOLED, Midnight, Ultraviolet and Ember themes apply to the workspace and
-player window. Waveform colours follow the active theme.
+Daylight, AMOLED, Midnight, Ultraviolet and Ember themes apply to the workspace
+and docked player. Waveform colours follow the active theme.
 
 Audio processing starts **bypassed**. The master processing switch bypasses effects
 and loudness normalization while leaving player volume available. When enabled,

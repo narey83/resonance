@@ -237,26 +237,6 @@ const SHOTS = [
     route: 'mix-preview',
   },
   {
-    caption: 'Separate player window with phrase-coloured waveform',
-    file: 'player.png',
-    path: 'library',
-    prepare: async (page, config) => {
-      await preparePlayer(page, config);
-      const opened = page.waitForEvent('popup');
-      await page
-        .getByRole('button', { name: 'Open player window', exact: true })
-        .click();
-      const player = await opened;
-      await player.setViewportSize({
-        height: config.height,
-        width: config.width,
-      });
-      await player.locator('.mp-expanded--popout').waitFor();
-      return player;
-    },
-    route: 'player',
-  },
-  {
     caption: 'Folder-aware Pioneer USB export wizard',
     file: 'export.png',
     prepare: async (page) => {

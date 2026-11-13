@@ -167,8 +167,8 @@ const LoudnessMeter = ({
         meter.setAttribute('aria-valuenow', clamped.toFixed(1));
         meter.setAttribute('aria-valuetext', `${clamped.toFixed(1)} LUFS`);
 
-        // The player window always shows live LUFS; the compact bar keeps its
-        // integrated reference when available. Avoid re-rendering the player
+        // The live meter shows LUFS; the compact bar keeps its integrated
+        // reference when available. Avoid re-rendering the player
         // for this visual update, which runs about 15 times per second.
         if (
           labelRef.current &&

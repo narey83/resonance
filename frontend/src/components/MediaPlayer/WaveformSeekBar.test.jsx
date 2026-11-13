@@ -270,6 +270,40 @@ describe('WaveformSeekBar waveform loading', () => {
     expect(context.fillText).toHaveBeenCalledTimes(6);
     expect(waveformPreview.analyseTrack).not.toHaveBeenCalled();
   });
+  it('reserves the timestamp lane instead of covering the lower waveform peaks', async () => {
+    expect.hasAssertions();
+    const context = Object.fromEntries(
+      [
+        'beginPath',
+        'clearRect',
+        'clip',
+        'fillRect',
+        'fillText',
+        'lineTo',
+        'moveTo',
+        'rect',
+        'restore',
+        'save',
+        'setTransform',
+        'stroke',
+        'translate',
+      ].map((name) => [name, jest.fn()]),
+    );
+    jest
+      .spyOn(HTMLCanvasElement.prototype, 'getContext')
+      .mockReturnValue(context);
+    analysisApi.getWaveform.mockResolvedValue(response);
+    await render({ path: '/music/timestamp-lane.flac' });
+    const canvas = container.querySelector('canvas');
+    Object.defineProperty(canvas, 'clientWidth', { value: 800 });
+    Object.defineProperty(canvas, 'clientHeight', { value: 40 });
+    act(() => window.requestAnimationFrame.mock.calls.at(-1)[0]());
+    const fills = context.fillRect.mock.calls;
+    expect(fills.at(-1)).toEqual([0, 26, 800, 14]);
+    expect(
+      Math.max(...fills.slice(0, -1).map(([, y, , height]) => y + height)),
+    ).toBeLessThanOrEqual(26);
+  });
   it('keeps cached peaks visible while missing beat data is analysed', async () => {
     expect.hasAssertions();
     let finish;

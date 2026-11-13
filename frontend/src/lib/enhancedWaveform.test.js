@@ -2,11 +2,96 @@ import timelines from './__fixtures__/djTimelines.json';
 import {
   djTimeline,
   drawEnhanced,
+  phraseBarMarkers,
   visibleEvents,
   visibleSpans,
 } from './enhancedWaveform';
 
 describe('enhanced waveform timeline', () => {
+  it('resets 16- and 32-bar accents at arrangement boundaries using saved downbeats', () => {
+    const downbeats = [
+      ...Array.from({ length: 32 }, (_, index) => index * 2),
+      ...Array.from({ length: 33 }, (_, index) => 64 + index * 1.8),
+    ];
+    const data = {
+      available: true,
+      downbeats,
+      djPhrases: [
+        { start_seconds: 0, end_seconds: downbeats[16] },
+        { start_seconds: downbeats[16], end_seconds: downbeats[48] },
+        { start_seconds: downbeats[48], end_seconds: downbeats[64] },
+      ],
+    };
+    expect(phraseBarMarkers(data)).toEqual([
+      { time: downbeats[0], level: 2 },
+      { time: downbeats[16], level: 2 },
+      { time: downbeats[32], level: 1 },
+      { time: downbeats[48], level: 2 },
+    ]);
+    expect(phraseBarMarkers(data)).toBe(phraseBarMarkers(data));
+    expect(phraseBarMarkers({ available: false, downbeats })).toEqual([]);
+  });
+
+  it('uses the selected musical arrangement to anchor phrase accents', () => {
+    const downbeats = Array.from({ length: 41 }, (_, index) => index * 2);
+    expect(
+      phraseBarMarkers(
+        {
+          available: true,
+          downbeats,
+          djPhrases: [{ start_seconds: 0, end_seconds: 80 }],
+          musicalPhrases: [
+            { start_seconds: 0, end_seconds: 16 },
+            { start_seconds: 16, end_seconds: 80 },
+          ],
+        },
+        'musical',
+      ),
+    ).toEqual([
+      { time: 0, level: 2 },
+      { time: 16, level: 2 },
+      { time: 48, level: 1 },
+    ]);
+  });
+
+  it('anchors a slightly late section boundary to its nearest saved downbeat', () => {
+    const downbeats = Array.from({ length: 41 }, (_, index) => index * 2);
+    expect(
+      phraseBarMarkers({
+        available: true,
+        downbeats,
+        djPhrases: [
+          { start_seconds: 0, end_seconds: 32.1 },
+          { start_seconds: 32.1, end_seconds: 80 },
+        ],
+      }),
+    ).toContainEqual({ time: 32, level: 2 });
+  });
+
+  it('draws stronger phrase lines at their saved downbeat positions in a zoom window', () => {
+    const downbeats = Array.from({ length: 34 }, (_, index) => index * 2);
+    const ctx = {
+      fillRect: jest.fn(),
+      restore: jest.fn(),
+      save: jest.fn(),
+    };
+    drawEnhanced(
+      ctx,
+      { available: true, downbeats },
+      {
+        start: 20,
+        end: 40,
+        width: 200,
+        height: 60,
+        grid: true,
+        phrases: 'off',
+        vocals: false,
+      },
+    );
+    expect(ctx.fillRect.mock.calls).toContainEqual([119, 14, 2, 46]);
+    expect(ctx.fillRect.mock.calls).not.toContainEqual([319, 14, 2, 46]);
+  });
+
   it('clips spanning vocal regions to the zoom window', () => {
     expect(
       visibleSpans([{ startSeconds: 5, endSeconds: 15 }], 10, 20, 100),

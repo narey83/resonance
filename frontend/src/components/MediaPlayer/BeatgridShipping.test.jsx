@@ -1,4 +1,4 @@
-// Matrix branches select the window/zoom under test; each branch asserts real canvas output.
+// Each display size and zoom asserts real canvas output.
 /* eslint-disable jest/no-conditional-in-test, jest/no-conditional-expect, no-loop-func */
 import fixtures from '../../lib/__fixtures__/beatgrid-15.json';
 import { getWaveform } from '../../lib/analysis';
@@ -27,7 +27,7 @@ const sizes = [
   { width: 1_595, height: 180, dpr: 2 },
 ];
 
-describe.each(['docked', 'popout'])('%s beatgrid shipping matrix', (mode) => {
+describe('docked beatgrid shipping matrix', () => {
   // Give each display size its own timeout and cleanup boundary while retaining
   // every track, zoom, playback position and seek assertion in the matrix.
   it.each(
@@ -39,12 +39,9 @@ describe.each(['docked', 'popout'])('%s beatgrid shipping matrix', (mode) => {
     async ({ fixture, size, title }) => {
       expect.hasAssertions();
       expect(fixture.track.title).toBe(title);
-      const iframe = document.createElement('iframe');
-      if (mode === 'popout') document.body.append(iframe);
-      const doc = mode === 'popout' ? iframe.contentDocument : document;
-      const win = doc.defaultView;
-      const container = doc.createElement('div');
-      doc.body.append(container);
+      const win = window;
+      const container = document.createElement('div');
+      document.body.append(container);
       let frame;
       const raf = jest
         .spyOn(win, 'requestAnimationFrame')
@@ -228,7 +225,7 @@ describe.each(['docked', 'popout'])('%s beatgrid shipping matrix', (mode) => {
           );
           report.push({
             track: fixture.track.title,
-            mode,
+            mode: 'docked',
             zoom,
             ...size,
             frames,
@@ -242,7 +239,6 @@ describe.each(['docked', 'popout'])('%s beatgrid shipping matrix', (mode) => {
         container.remove();
         raf.mockRestore();
         cancel.mockRestore();
-        if (mode === 'popout') iframe.remove();
         Object.defineProperty(window, 'devicePixelRatio', {
           configurable: true,
           value: 1,

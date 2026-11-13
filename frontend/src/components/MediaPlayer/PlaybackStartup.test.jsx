@@ -169,6 +169,15 @@ describe('player startup and playback intent', () => {
     expect(play).not.toHaveBeenCalled();
   });
 
+  it('keeps docked playback controls without a separate player window', async () => {
+    expect.hasAssertions();
+    await restore();
+    expect(container.querySelector('[title="Open player window"]')).toBeNull();
+    expect(container.querySelector('.mp-expanded')).toBeNull();
+    expect(container.querySelector('[title="Show queue"]')).not.toBeNull();
+    expect(container.querySelector('[title="Close player"]')).not.toBeNull();
+  });
+
   it('stays paused when a saved queue arrives after asynchronous validation', async () => {
     expect.hasAssertions();
     await restore();

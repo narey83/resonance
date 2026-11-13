@@ -55,7 +55,7 @@ Resonance is a modified version of [slskd](https://github.com/slskd/slskd). It i
 
 ### Play and share
 
-- Use the docked player or a separate player window, with BPM/key/LUFS, level meters, queue controls and waveform seeking.
+- Use the docked player with BPM/key/LUFS, level meters, queue controls and waveform seeking.
 - Toggle beatgrids, vocal regions and coloured DJ or musical phrases; inspect waveform detail from Normal through 256×.
 - Bypass all audio processing, or enable subtle adjustments and explicitly unlock advanced controls.
 - Choose Daylight, AMOLED, Midnight, Ultraviolet or Ember themes. Interface scale makes the desktop workspace more compact, with 100% as normal size and an automatic sizing option.
@@ -107,8 +107,8 @@ Captured **21 October 2026** from the isolated 15-track test library, with enhan
 
 | | |
 | :---: | :---: |
-| <a href="docs/screenshots/albums.png"><img src="docs/screenshots/albums.png" alt="Daylight album browser with artwork and collection navigation" width="460"></a> | <a href="docs/screenshots/player.png"><img src="docs/screenshots/player.png" alt="Separate Midnight player window with track metadata, phrase waveform and vertical volume and level meters" width="460"></a> |
-| **Album browser** — artwork and collection browsing in Daylight | **Player window** — dedicated playback, waveform controls and metering |
+| <a href="docs/screenshots/albums.png"><img src="docs/screenshots/albums.png" alt="Daylight album browser with artwork and collection navigation" width="460"></a> | <a href="docs/screenshots/library.png"><img src="docs/screenshots/library.png" alt="Music library with analysed waveforms and docked player" width="460"></a> |
+| **Album browser** — artwork and collection browsing in Daylight | **Docked player** — playback, waveform controls and metering |
 | <a href="docs/screenshots/set-planner.png"><img src="docs/screenshots/set-planner.png" alt="Set planner with a running order, fixed master tempo and transition guidance" width="460"></a> | <a href="docs/screenshots/set-rehearsal.png"><img src="docs/screenshots/set-rehearsal.png" alt="Full-set rehearsal with fixed master tempo, handover navigation and crossfader" width="460"></a> |
 | **Set planner** — build the order and review each transition | **Full-set rehearsal** — audition consecutive handovers at one master tempo |
 | <a href="docs/screenshots/mix-preview.png"><img src="docs/screenshots/mix-preview.png" alt="Mix compatibility comparing the ending of one track with the opening of another" width="460"></a> | <a href="docs/screenshots/preparation.png"><img src="docs/screenshots/preparation.png" alt="Automatic preparation showing analysis progress and completed tracks" width="460"></a> |

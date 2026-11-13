@@ -108,21 +108,6 @@
       }
     },
     {
-      "caption": "Separate player window with phrase-coloured waveform",
-      "capturedAt": "2026-10-21T13:31:18.815868Z",
-      "file": "player.png",
-      "path": "library",
-      "route": "player",
-      "scale": 1.5,
-      "sourceRevision": "0abfc16e01f6e592d9baedd30b3cb937cffd3bc9",
-      "theme": "midnight",
-      "viewport": {
-        "height": 1000,
-        "width": 1600
-      },
-      "uiScale": 100
-    },
-    {
       "caption": "Automatic library preparation",
       "capturedAt": "2026-10-21T13:52:36.979391Z",
       "file": "preparation.png",

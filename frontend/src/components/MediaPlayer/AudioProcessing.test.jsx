@@ -36,7 +36,7 @@ jest.mock('./SaturationView', () => mockEmptyProcessor);
 jest.mock('./StereoView', () => mockEmptyProcessor);
 jest.mock('./FilterView', () => mockEmptyProcessor);
 
-describe('shared processing controls in the player window', () => {
+describe('shared processing controls across documents', () => {
   let container;
   let frame;
   let launcherTarget;
@@ -134,7 +134,7 @@ describe('shared processing controls in the player window', () => {
     expect(graph.processing.subscribe).toHaveBeenCalledTimes(1);
   });
 
-  it('Escape closes processing in the player document without closing the player window', async () => {
+  it('Escape closes processing in its document without handling unrelated window keys', async () => {
     expect.hasAssertions();
     await render();
     act(() => Simulate.click(launcherTarget.querySelector('button')));

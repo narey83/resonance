@@ -220,7 +220,7 @@ describe('LoudnessMeter', () => {
     expect(label.textContent).toBe(EXPECTED_LABEL);
   });
 
-  it('uses the player window’s animation clock while sharing the parent audio graph', async () => {
+  it('uses its document’s animation clock while sharing the parent audio graph', async () => {
     expect.hasAssertions();
     const iframe = document.createElement('iframe');
     document.body.append(iframe);

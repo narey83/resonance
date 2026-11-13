@@ -393,7 +393,11 @@ const WaveformSeekBar = ({
     context.setTransform(1, 0, 0, 1, 0, 0);
     context.clearRect(0, 0, pixelWidth, pixelHeight);
     context.translate(-offsetPx, 0);
-    const halfH = pixelHeight / 2;
+    // Reserve the timestamp strip before sizing the waveform. Painting that
+    // strip over a full-height waveform hid its lower peaks and vocal lanes.
+    const timelineHeight = 14 * dprScale;
+    const waveformHeight = Math.max(0, pixelHeight - timelineHeight);
+    const halfH = waveformHeight / 2;
     const pixelsPerSecond = barWidth / slotSeconds;
     // The pixel width the current [drawStart, drawEnd) window is actually drawn across —
     // `numberSlots`, not the `slots` overdraw count, matches `pixelsPerSecond` above exactly.
@@ -410,7 +414,7 @@ const WaveformSeekBar = ({
     );
     const clipToPlayed = () => {
       context.beginPath();
-      context.rect(0, 0, playedX, pixelHeight);
+      context.rect(0, 0, playedX, waveformHeight);
       context.clip();
     };
 
@@ -484,7 +488,7 @@ const WaveformSeekBar = ({
           detectedBeats?.length || offsetPx ? rawX : Math.round(rawX) + 0.5;
         context.beginPath();
         context.moveTo(x, 0);
-        context.lineTo(x, pixelHeight);
+        context.lineTo(x, waveformHeight);
         // A contrasting outline keeps beats legible over both played and
         // unplayed bars, including the brighter named theme palettes.
         context.strokeStyle = detailGrid ? colours.surface : colours.grid;
@@ -521,7 +525,7 @@ const WaveformSeekBar = ({
       start: drawStart,
       end: drawEnd,
       width: slots * barWidth,
-      height: pixelHeight - 16 * dprScale,
+      height: waveformHeight - 2 * dprScale,
       grid: showGrid,
       labelColour: colours.text,
       labelBackground: colours.surface,
@@ -536,7 +540,7 @@ const WaveformSeekBar = ({
     // window mapping as seeking and the grid.
     context.save();
     context.fillStyle = colours.surface;
-    context.fillRect(0, pixelHeight - 14 * dprScale, pixelWidth, 14 * dprScale);
+    context.fillRect(0, waveformHeight, pixelWidth, timelineHeight);
     context.fillStyle = colours.text;
     context.font = `${9 * dprScale}px sans-serif`;
     for (let index = 0; index <= 5; index++) {
@@ -557,7 +561,7 @@ const WaveformSeekBar = ({
     context.lineWidth = dprScale;
     context.beginPath();
     context.moveTo(playedX, 0);
-    context.lineTo(playedX, pixelHeight - 14 * dprScale);
+    context.lineTo(playedX, waveformHeight);
     context.stroke();
     context.restore();
   };

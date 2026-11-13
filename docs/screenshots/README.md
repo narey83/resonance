@@ -71,7 +71,7 @@ Useful flags — `npm run screenshots -- --help` lists them all:
 ## What the README uses
 
 The main image is the analysed track library with its docked player. The expandable
-gallery includes albums, the separate player window, set planning, full-set rehearsal,
+gallery includes albums, the docked player, set planning, full-set rehearsal,
 mix compatibility, automatic preparation, smart crates, conversion, USB export and
 Network Link. It uses the actual UI and saved analysis, not fabricated result data.
 
@@ -87,7 +87,6 @@ Capture IDs can differ from URL paths when a view lives inside the library.
 | --- | --- | --- | --- |
 | `library` | `/library` | `library.png` | Analysed tracks and docked waveform/player |
 | `albums` | `/library` | `albums.png` | Album artwork browser |
-| `player` | `/library`, then player window | `player.png` | Separate player window |
 | `preparation` | `/library` | `preparation.png` | Analysis queue and status |
 | `smart-crates` | `/library` | `smart-crates.png` | Saved rules and current counts |
 | `set-planner` | `/library` | `set-planner.png` | Saved running order and fixed tempo |
@@ -127,7 +126,7 @@ personal data does not belong in a public repository. Only the instance's own IP
 redacted automatically.
 
 Named theme choices are applied to the capture session and verified before shooting.
-Review the resulting colours in both the docked and separate player windows.
+Review the resulting colours in the docked player.
 
 Theme and display preferences are isolated to a throwaway browser profile. The script
 intercepts preference reads for the chosen theme and prevents preference writes, so

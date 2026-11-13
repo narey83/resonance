@@ -105,13 +105,13 @@ These are preparation and audition tools. A numerical compatibility result or su
 
 ## Player and waveforms
 
-- Docked playback and a separate player window share one audio stream, transport, queue and current-track metadata. The separate window opens from the player-window button; clicking docked artwork does not open an additional player view.
+- Docked playback provides one audio stream, transport, queue and current-track metadata.
 - BPM, key and LUFS information, artwork, history, loved tracks, shuffle/repeat, volume and level metering. The Up Next queue starts closed.
-- Optional waveform display with seeking, adjustable height, detected beat/downbeat markers, coloured phrase regions and vocal overlays where analysis is available.
+- Optional waveform display with seeking, adjustable height, detected beat/downbeat markers, 16- and 32-bar accents aligned to arrangement sections, coloured phrase regions and vocal overlays where analysis is available.
 - Waveform detail levels: **Normal, 16×, 32×, 64×, 128× and 256×**. Detailed views follow the playhead; waveform detail is independent of interface scale.
 - Separate **DJ phrases**, **Musical phrases** and **Hide phrases** settings; singing and processed voice have distinct overlay labels.
 - Audio processing starts bypassed. Bypass excludes effects and loudness normalization while retaining player volume. Enabling processing offers subtle controls; wider parameter ranges require explicitly unlocking advanced controls.
-- Theme-aware waveform rendering in the docked and separate player views; optional artwork-derived ambient colour.
+- Theme-aware waveform rendering in the docked player; optional artwork-derived ambient colour.
 - SSDP discovery and casting to DLNA renderers; optional DLNA/UPnP media server with configurable name, port and artwork.
 
 ## Pioneer export and Network Link (experimental)
@@ -182,7 +182,7 @@ See [database configuration, logging, migration and backup](docs/database/archit
 - Main and library navigation rails expand on hover or keyboard focus; compact spacing keeps the desktop workspace available. Status information retains the same shell across routes.
 - Interface scale has manual presets of 50%, 67%, 75%, 80%, 90% and 100%. **100% is normal size**, not a fit command. **Auto size** selects a scale for the current desktop window and never enlarges beyond 100%.
 - Notification Centre with per-type mute toggles, read/unread tracking, clear-all, optional sound.
-- Persistent docked player and separate player window (see Player and waveforms).
+- Persistent docked player (see Player and waveforms).
 - First-run Setup wizard.
 - Distinct "connecting" (first load) vs. "lost connection" (mid-session) states with manual retry and backoff.
 - Desktop-oriented web layout; compact interface scale does not imply a phone layout. The companion React Native app and cookie-sync browser extension are separate applications.

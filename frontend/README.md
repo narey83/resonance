@@ -1,7 +1,7 @@
 # Resonance web application
 
-The React application provides the desktop library and DJ workspace, docked and
-separate-window playback, Soulseek tools and administration. It is designed for
+The React application provides the desktop library and DJ workspace, docked
+playback, Soulseek tools and administration. It is designed for
 larger screens. Interface scale makes the workspace more compact, up to normal size
 (100%); waveform detail is a separate player control. The mobile companion lives in
 [`../mobile/`](../mobile/).
@@ -47,7 +47,7 @@ Focused regression commands:
 
 | Command | Coverage |
 | --- | --- |
-| `npm run test:beatgrid` | Saved-timestamp alignment, waveform detail and player-window lifecycle |
+| `npm run test:beatgrid` | Saved-timestamp alignment and docked waveform detail |
 | `npm run test:mix-preview` | Compatibility, synchronization, audition and DSP checks |
 | `npm run test:set-planner` | Set plans, genre evidence, library preparation and related controls |
 | `npm run test:set-rehearsal` | Rehearsal, fixed master tempo, player controls and DSP checks |
@@ -72,14 +72,13 @@ security checks exercise both module formats, expansion limits and real consumer
 Keep `vendor/` available when installing from the lockfile, including in container
 dependency layers.
 
-## Themes and player window
+## Themes and docked player
 
 The current themes are Daylight, AMOLED, Midnight, Ultraviolet and Ember. Use shared
 theme variables for surfaces and text, and refresh canvas rendering when theme or
-window state changes. The separate player window shares the main player's audio
-and transport; it should not create a second playback stream.
+waveform size changes.
 
-Check the docked and separate player views, menus, overlays and processing controls
+Check the docked player, menus, overlays and processing controls
 when changing theme styles. Keep interface scale, waveform detail and waveform height
 independent, and retain the desktop layout across navigation routes.
 

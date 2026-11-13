@@ -1,4 +1,4 @@
-// Stable phrase colours are shared by the docked and popout canvas renderers.
+// Stable phrase colours for the player waveform and its arrangement sections.
 export const phraseColour = (label = '') => {
   const value = label.toLowerCase();
   if (/intro|outro|instrumental/.test(value)) return '#475569';
@@ -89,6 +89,62 @@ export const visibleEvents = (events, start, end, width) => {
   });
 };
 
+// Count phrase bars from the arrangement's own section starts. Saved downbeats
+// supply every position, so a tempo change cannot drift the accent off the grid.
+const phraseBarCache = new WeakMap();
+export const phraseBarMarkers = (data, phrases = 'dj') => {
+  if (!data?.available || !Array.isArray(data.downbeats)) return [];
+  let cached = phraseBarCache.get(data);
+  if (!cached) {
+    cached = new Map();
+    phraseBarCache.set(data, cached);
+  }
+
+  const mode = phrases === 'musical' ? 'musical' : 'dj';
+  if (cached.has(mode)) return cached.get(mode);
+
+  const downbeats = data.downbeats;
+  if (
+    !downbeats.length ||
+    downbeats.some(
+      (time, index) =>
+        !Number.isFinite(time) || (index > 0 && time <= downbeats[index - 1]),
+    )
+  )
+    return [];
+  const sections =
+    (mode === 'musical' ? data.musicalPhrases : djTimeline(data).sections) ||
+    [];
+  const spans = sections.length
+    ? sections
+    : [{ start_seconds: downbeats[0], end_seconds: Number.POSITIVE_INFINITY }];
+  const markers = new Map();
+  for (const span of spans) {
+    const start = Number(span.start_seconds);
+    const end = Number(span.end_seconds);
+    if (!Number.isFinite(start) || end <= start) continue;
+    const atOrAfter = downbeats.findIndex((time) => time >= start);
+    if (atOrAfter < 0) continue;
+    const first =
+      atOrAfter > 0 &&
+      start - downbeats[atOrAfter - 1] < downbeats[atOrAfter] - start
+        ? atOrAfter - 1
+        : atOrAfter;
+    for (let index = first; index < downbeats.length; index += 16) {
+      if (downbeats[index] >= end) break;
+      // A section start and each 32-bar boundary get the strongest accent.
+      const level = (index - first) % 32 === 0 ? 2 : 1;
+      markers.set(index, Math.max(markers.get(index) || 0, level));
+    }
+  }
+
+  const result = [...markers]
+    .sort(([a], [b]) => a - b)
+    .map(([index, level]) => ({ time: downbeats[index], level }));
+  cached.set(mode, result);
+  return result;
+};
+
 export const drawEnhanced = (ctx, data, options) => {
   if (!data?.available) return;
   const {
@@ -170,6 +226,32 @@ export const drawEnhanced = (ctx, data, options) => {
       // Wider caps distinguish the first beat of each bar from other beats.
       ctx.fillRect(x - 3 * scale, 14 * scale, 8 * scale, 5 * scale);
     }
+  }
+
+  if (grid) {
+    const lineHeight = Math.max(0, height - 14 * scale);
+    ctx.save();
+    for (const marker of phraseBarMarkers(data, phrases)) {
+      const x = ((marker.time - start) / (end - start)) * width;
+      if (x < 0 || x > width) continue;
+      const lineWidth = (marker.level === 2 ? 3 : 2) * scale;
+      if (gridOutline) {
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = gridOutline;
+        ctx.fillRect(
+          x - lineWidth / 2 - scale,
+          14 * scale,
+          lineWidth + 2 * scale,
+          lineHeight,
+        );
+      }
+
+      ctx.globalAlpha = marker.level === 2 ? 0.9 : 0.55;
+      ctx.fillStyle = labelColour;
+      ctx.fillRect(x - lineWidth / 2, 14 * scale, lineWidth, lineHeight);
+    }
+
+    ctx.restore();
   }
 
   // Event markers use the exact same source-time window as phrases and seeking.

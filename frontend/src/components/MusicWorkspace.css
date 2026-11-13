@@ -158,7 +158,7 @@
 .theme-palette--violet { --preview-bg: #151021; --preview-surface: #30243f; --preview-accent: #c6a0ff; }
 .theme-palette--ember { --preview-bg: #1b1512; --preview-surface: #3a2d24; --preview-accent: #ffb46b; }
 
-/* Keep named palettes consistent in portals and the independent player window. */
+/* Keep named palettes consistent in processing overlays. */
 :root:is(.midnight,.violet,.ember),
 :root:is(.midnight,.violet,.ember) .dj-workspace {
   --text-dim: var(--text-muted);
@@ -166,7 +166,6 @@
   --player-surface-bg: var(--bg-elevated);
   --player-surface-border: var(--border);
 }
-:root:is(.midnight,.violet,.ember) .mp-expanded,
 :root:is(.midnight,.violet,.ember) .mp-processing-overlay {
   --bg-primary: inherit; --bg-surface: inherit; --border: inherit;
   --text-primary: inherit; --text-secondary: inherit; --text-muted: inherit;
@@ -176,15 +175,6 @@
   --player-text-muted: var(--text-muted); --player-text-dim: var(--text-muted);
   --wave-bg: var(--bg-primary); --wave-grid: var(--border);
 }
-:root:is(.midnight,.violet,.ember) .mp-expanded-backdrop { background: var(--bg-primary); }
-:root:is(.midnight,.violet,.ember) .mp-expanded-content,
-:root:is(.midnight,.violet,.ember) .mp-expanded-queue { background: var(--bg-surface); color: var(--text-primary); border-color: var(--border); }
-:root:is(.midnight,.violet,.ember) :is(.mp-expanded-title,.mp-expanded-queue-row-title) { color: var(--text-primary); }
-:root:is(.midnight,.violet,.ember) :is(.mp-expanded-artist,.mp-expanded-album,.mp-expanded-time,.mp-expanded-ctrl,.mp-expanded-queue-empty,.mp-expanded-queue-row-artist,.mp-expanded-queue-remove,.mp-expanded-queue-close,.mp-expanded-collapse) { color: var(--text-muted); }
-:root:is(.midnight,.violet,.ember) .mp-expanded-ctrl--active { color: var(--accent); }
-:root:is(.midnight,.violet,.ember) .mp-expanded-play { background: var(--accent); color: var(--on-accent); }
-:root:is(.midnight,.violet,.ember) .mp-expanded-queue-count { background: var(--bg-elevated); color: var(--text-muted); }
-:root:is(.midnight,.violet,.ember) .mp-expanded-queue-header { border-color: var(--border); }
 :root:is(.midnight,.violet,.ember) .network-link-note { color: var(--text-muted); opacity: 1; }
 :root:is(.midnight,.violet,.ember) input::placeholder { color: var(--text-muted); opacity: 1; }
 
