@@ -45,6 +45,7 @@ import {
   maxOf,
   resamplePeaks,
   visibleBeatTimes,
+  visibleSampledBeatTimes,
   waveColours,
   waveformBeatBpm,
 } from '../../lib/waveform';
@@ -67,6 +68,7 @@ const WaveformSeekBar = ({
   getCurrentTime,
   height = 40,
   onAnalysing,
+  onBasicGridState,
   onReady,
   onSeek,
   phraseMode = 'dj',
@@ -199,6 +201,7 @@ const WaveformSeekBar = ({
       setAnalysisDuration(null);
       onReady(false);
       onAnalysing?.(false);
+      onBasicGridState?.(null);
     }
 
     if (!track?.path) {
@@ -244,6 +247,11 @@ const WaveformSeekBar = ({
         bpm: waveformBeatBpm(gridBeats),
         overall: new Float32Array(data.overallPeaks),
       };
+      onBasicGridState?.({
+        path: track.path,
+        beatCount: gridBeats?.length || 0,
+        barPhaseStatus: data.basicBarPhaseStatus ?? null,
+      });
       setAnalysisDuration(data.analysisDuration || null);
       setReady(true);
       onReady(true);
@@ -528,7 +536,8 @@ const WaveformSeekBar = ({
       const independent = enhancedRef.current?.available
         ? enhancedRef.current
         : null;
-      if (!showGrid || (!independent && !peaks.beatsKnown)) return;
+      const detectedBeats = independent?.beats || peaks.gridBeats;
+      if (!showGrid || !detectedBeats?.length) return;
       // One line per beat at zoom 1 is a line every pixel or two — a second
       // comb at almost exactly the waveform's own period, which is where the
       // crawling Moiré came from. Widen to bar/phrase lines, or drop the grid.
@@ -541,43 +550,46 @@ const WaveformSeekBar = ({
         pixelsPerSecond,
         8 * dprScale,
       );
-      if (!lineSeconds) return;
       // Detected beats are a timeline, not a constant-tempo estimate. Rebuilding
       // them from median BPM accumulates error against the saved downbeats.
-      const times = [];
-      const detectedBeats = independent?.beats || peaks.gridBeats;
-      if (detectedBeats?.length > 1) {
-        const bpm = waveformBeatBpm(detectedBeats);
-        const stride = Math.max(1, Math.round(lineSeconds / (60 / bpm)));
-        const firstDownbeat =
-          independent?.downbeats?.[0] ?? peaks.barAnchorSeconds;
-        const anchor =
-          stride > 1
-            ? detectedBeats.findIndex(
-                (time) => Math.abs(time - firstDownbeat) < 0.05,
-              )
+      const bpm = waveformBeatBpm(detectedBeats);
+      const stride =
+        lineSeconds && bpm
+          ? Math.max(1, Math.round(lineSeconds / (60 / bpm)))
+          : 0;
+      const firstDownbeat =
+        independent?.downbeats?.[0] ?? peaks.barAnchorSeconds;
+      const anchor =
+        stride > 1 && Number.isFinite(firstDownbeat)
+          ? detectedBeats.findIndex(
+              (time) => Math.abs(time - firstDownbeat) < 0.05,
+            )
+          : stride > 1
+            ? -1
             : 0;
-        // A saved beat timeline alone cannot identify which beat starts a bar.
-        // At coarse zoom, suppress this guide unless a measured bar phase is
-        // available; individual beats remain visible when they have room.
-        if (
-          stride > 1 &&
-          (anchor < 0 || (!independent && peaks.skippedInternalBeats > 0))
-        )
-          return;
-        times.push(
-          ...visibleBeatTimes(
+      // If a bar phase is unresolved, a saved beat timeline still supports a
+      // subtle beat grid. Sample actual ticks by screen spacing, never by a
+      // musical stride that would invent bar phase or propagate a missed beat.
+      const sampledBasic =
+        !independent &&
+        (!stride ||
+          (stride > 1 && (anchor < 0 || peaks.skippedInternalBeats > 0)));
+      const times = sampledBasic
+        ? visibleSampledBeatTimes(
             detectedBeats,
             drawStart,
             drawEnd,
-            stride,
-            anchor,
-          ),
-        );
-      } else return;
+            pixelsPerSecond,
+            12 * dprScale,
+          )
+        : stride
+          ? visibleBeatTimes(detectedBeats, drawStart, drawEnd, stride, anchor)
+          : [];
+      if (!times.length) return;
 
       context.save();
-      const detailGrid = zoom > 1;
+      const detailGrid = zoom > 1 && !sampledBasic;
+      context.globalAlpha = sampledBasic ? 0.32 : 1;
       for (const time of times) {
         // Whole-pixel snapping only where the view is static — under a
         // scrolling sub-pixel offset it would make the grid jitter against
@@ -594,8 +606,16 @@ const WaveformSeekBar = ({
         context.lineTo(x, waveformHeight);
         // A contrasting outline keeps beats legible over both played and
         // unplayed bars, including the brighter named theme palettes.
-        context.strokeStyle = detailGrid ? colours.surface : colours.grid;
-        context.lineWidth = detailGrid ? 3 * dprScale : 1;
+        context.strokeStyle = sampledBasic
+          ? colours.text
+          : detailGrid
+            ? colours.surface
+            : colours.grid;
+        context.lineWidth = sampledBasic
+          ? dprScale
+          : detailGrid
+            ? 3 * dprScale
+            : 1;
         context.stroke();
         if (detailGrid) {
           context.strokeStyle = colours.text;

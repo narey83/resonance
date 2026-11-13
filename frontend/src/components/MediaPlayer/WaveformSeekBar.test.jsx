@@ -529,9 +529,10 @@ describe('WaveformSeekBar waveform loading', () => {
     Object.defineProperty(canvas, 'clientWidth', { value: 800 });
     Object.defineProperty(canvas, 'clientHeight', { value: 40 });
     act(() => window.requestAnimationFrame.mock.calls.at(-1)[0]());
-    // The only line at full-track zoom is the playhead: a tempo and a beat
-    // timeline do not identify which of four beats starts a bar.
-    expect(context.moveTo).toHaveBeenCalledTimes(1);
+    // The sparse overview uses actual beat timestamps, without claiming one
+    // of them starts a bar.
+    expect(context.moveTo.mock.calls.length).toBeGreaterThan(1);
+    expect(context.globalAlpha).toBe(0.32);
 
     await render(track, { zoom: 64 });
     context.moveTo.mockClear();
@@ -560,6 +561,10 @@ describe('WaveformSeekBar waveform loading', () => {
         'translate',
       ].map((name) => [name, jest.fn()]),
     );
+    const strokeAlphas = [];
+    context.stroke.mockImplementation(() =>
+      strokeAlphas.push(context.globalAlpha),
+    );
     jest
       .spyOn(HTMLCanvasElement.prototype, 'getContext')
       .mockReturnValue(context);
@@ -585,6 +590,7 @@ describe('WaveformSeekBar waveform loading', () => {
     Object.defineProperty(canvas, 'clientHeight', { value: 40 });
     act(() => window.requestAnimationFrame.mock.calls.at(-1)[0]());
     expect(context.moveTo.mock.calls.length).toBeGreaterThan(1);
+    expect(strokeAlphas[0]).toBe(1);
     expect(context.fillRect.mock.calls).not.toEqual(
       expect.arrayContaining([
         expect.arrayContaining([expect.any(Number), 0, 3, 26]),
@@ -605,8 +611,10 @@ describe('WaveformSeekBar waveform loading', () => {
     await render(track);
     context.moveTo.mockClear();
     context.fillRect.mockClear();
+    strokeAlphas.splice(0);
     act(() => window.requestAnimationFrame.mock.calls.at(-1)[0]());
-    expect(context.moveTo).toHaveBeenCalledTimes(1);
+    expect(context.moveTo.mock.calls.length).toBeGreaterThan(1);
+    expect(strokeAlphas[0]).toBe(0.32);
     expect(context.fillRect.mock.calls).toEqual(
       expect.arrayContaining([
         expect.arrayContaining([expect.any(Number), 0, 2, 26]),
@@ -615,8 +623,94 @@ describe('WaveformSeekBar waveform loading', () => {
 
     await render(track, { zoom: 64 });
     context.moveTo.mockClear();
+    strokeAlphas.splice(0);
     act(() => window.requestAnimationFrame.mock.calls.at(-1)[0]());
     expect(context.moveTo.mock.calls.length).toBeGreaterThan(1);
+    expect(strokeAlphas[0]).toBe(1);
+  });
+
+  it('keeps sampled Basic beat guides visible at desktop and phone overview widths', async () => {
+    expect.hasAssertions();
+    const context = Object.fromEntries(
+      [
+        'beginPath',
+        'clearRect',
+        'clip',
+        'fillRect',
+        'fillText',
+        'lineTo',
+        'moveTo',
+        'rect',
+        'restore',
+        'save',
+        'setTransform',
+        'stroke',
+        'translate',
+      ].map((name) => [name, jest.fn()]),
+    );
+    const strokeAlphas = [];
+    context.stroke.mockImplementation(() =>
+      strokeAlphas.push(context.globalAlpha),
+    );
+    jest
+      .spyOn(HTMLCanvasElement.prototype, 'getContext')
+      .mockReturnValue(context);
+    const duration = 304.536;
+    const basicGridBeats = Array.from(
+      { length: 733 },
+      (_, index) => 0.023_2 + (index * 60) / 145,
+    );
+    const onBasicGridState = jest.fn();
+    analysisApi.getWaveform.mockResolvedValue({
+      ...response,
+      analysisDuration: duration,
+      beatOffsetSeconds: basicGridBeats[0],
+      beats: basicGridBeats,
+      basicGridBeats,
+      basicBarPhaseStatus: 'unresolved',
+      basicBarMarkers: [],
+      barAnchorSeconds: null,
+      overallPeaks: Array.from({ length: 2_048 }, () => 0.5),
+    });
+    const track = { bpm: 145, path: '/music/vault-stories.flac' };
+    await render(track, { onBasicGridState });
+    expect(onBasicGridState).toHaveBeenLastCalledWith({
+      path: track.path,
+      beatCount: basicGridBeats.length,
+      barPhaseStatus: 'unresolved',
+    });
+    const canvas = container.querySelector('canvas');
+    Object.defineProperty(canvas, 'clientHeight', { value: 40 });
+    for (const width of [800, 352]) {
+      Object.defineProperty(canvas, 'clientWidth', {
+        configurable: true,
+        value: width,
+      });
+      context.moveTo.mockClear();
+      strokeAlphas.splice(0);
+      act(() => window.requestAnimationFrame.mock.calls.at(-1)[0]());
+      const guideXs = context.moveTo.mock.calls.slice(0, -1).map(([x]) => x);
+      expect(guideXs.length).toBeGreaterThan(10);
+      expect(strokeAlphas[0]).toBe(0.32);
+      for (const x of guideXs)
+        expect(
+          basicGridBeats.some(
+            (time) => Math.abs(time - (x / width) * duration) < 0.001,
+          ),
+        ).toBe(true);
+    }
+
+    await render(track, { zoom: 64, onBasicGridState });
+    context.moveTo.mockClear();
+    strokeAlphas.splice(0);
+    act(() => window.requestAnimationFrame.mock.calls.at(-1)[0]());
+    expect(context.moveTo.mock.calls.length).toBeGreaterThan(1);
+    expect(strokeAlphas[0]).toBe(1);
+
+    await render(track, { zoom: 64, showGrid: false, onBasicGridState });
+    context.moveTo.mockClear();
+    act(() => window.requestAnimationFrame.mock.calls.at(-1)[0]());
+    expect(context.moveTo).toHaveBeenCalledTimes(1);
   });
 
   it('clears the old track while loading a new one and ignores stale responses', async () => {

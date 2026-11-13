@@ -283,6 +283,7 @@ const MediaPlayer = () => {
     prefs.get('mediaPlayer.phrases', 'dj'),
   );
   const [miniWaveformAnalysing, setMiniWaveformAnalysing] = useState(false);
+  const [basicGridState, setBasicGridState] = useState(null);
   const analysisActive = miniWaveformAnalysing;
   const playerMetadata = usePlayerMetadata(track, analysisActive);
   const enhancedAvailable = playerAnalysisLevel(playerMetadata) === 'enhanced';
@@ -885,6 +886,9 @@ const MediaPlayer = () => {
 
   const waveformToolbar = (
     <WaveformToolbar
+      basicGridState={
+        basicGridState?.path === track?.path ? basicGridState : null
+      }
       enabled={seekerEnabled}
       enhancedAvailable={enhancedAvailable}
       grid={showBeatGrid}
@@ -1296,6 +1300,7 @@ const MediaPlayer = () => {
                 getCurrentTime={getCurrentTime}
                 height={seekerHeight}
                 onAnalysing={setMiniWaveformAnalysing}
+                onBasicGridState={setBasicGridState}
                 onReady={() => {}}
                 onSeek={seekTo}
                 phraseMode={enhancedAvailable ? phraseMode : 'off'}

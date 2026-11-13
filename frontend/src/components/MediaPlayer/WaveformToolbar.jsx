@@ -15,6 +15,7 @@ export const normalizeWaveformZoom = (value) => {
 };
 
 const WaveformToolbar = ({
+  basicGridState,
   enabled,
   enhancedAvailable = false,
   grid,
@@ -30,6 +31,14 @@ const WaveformToolbar = ({
   zoom,
 }) => {
   const index = WAVEFORM_ZOOMS.indexOf(zoom);
+  const basicGridStatus =
+    enabled && grid && !enhancedAvailable && basicGridState
+      ? basicGridState.beatCount === 0
+        ? 'No detected beat timing yet'
+        : basicGridState.barPhaseStatus === 'unresolved' && zoom === 1
+          ? 'Beat timing only · bar phase uncertain'
+          : null
+      : null;
   return (
     <div
       aria-label="Waveform controls"
@@ -108,6 +117,14 @@ const WaveformToolbar = ({
           >
             Beat grid
           </button>
+          {basicGridStatus && (
+            <span
+              className="mp-waveform-grid-status"
+              role="status"
+            >
+              {basicGridStatus}
+            </span>
+          )}
           <button
             aria-pressed={enhancedAvailable && vocals}
             disabled={!enhancedAvailable}

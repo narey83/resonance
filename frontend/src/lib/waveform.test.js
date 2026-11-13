@@ -36,6 +36,7 @@ import {
   resamplePeaks,
   visibleBeats,
   visibleBeatTimes,
+  visibleSampledBeatTimes,
   waveColours,
   waveformBeatBpm,
 } from './waveform';
@@ -379,5 +380,16 @@ describe('detected grid timing', () => {
       );
       for (const time of visibleBars) expect(visible).toContain(time);
     }
+  });
+
+  it('samples only observed timestamps at screen spacing without assigning a bar phase', () => {
+    const beats = [0.1, 0.4, 0.9, 1.1, 1.5, 3.9, 4.2];
+    expect(visibleSampledBeatTimes(beats, 0, 5, 10, 10)).toEqual([
+      0.4, 1.5, 3.9,
+    ]);
+    expect(visibleSampledBeatTimes(beats, 1, 4, 10, 10)).toEqual([1.5, 3.9]);
+    expect(visibleSampledBeatTimes(beats, 0, 5, 0, 10)).toEqual([]);
+    expect(visibleSampledBeatTimes([], 0, 5, 10, 10)).toEqual([]);
+    expect(beats).toEqual([0.1, 0.4, 0.9, 1.1, 1.5, 3.9, 4.2]);
   });
 });

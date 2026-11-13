@@ -124,6 +124,43 @@ describe('Waveform toolbar', () => {
     expect(phrases.disabled).toBe(false);
     expect(phrases.textContent).toContain('Musical phrases');
   });
+  it('explains Basic beat-only and missing-beat states without disabling the grid', () => {
+    const render = (basicGridState, zoom = 1, grid = true) => {
+      act(() => {
+        ReactDOM.render(
+          <WaveformToolbar
+            basicGridState={basicGridState}
+            enabled
+            grid={grid}
+            height={70}
+            zoom={zoom}
+          />,
+          container,
+        );
+      });
+    };
+
+    render({ beatCount: 732, barPhaseStatus: 'unresolved' });
+    expect(container.querySelector('[role="status"]').textContent).toBe(
+      'Beat timing only · bar phase uncertain',
+    );
+    expect(
+      [...container.querySelectorAll('button')].find(
+        (button) => button.textContent === 'Beat grid',
+      ).disabled,
+    ).toBe(false);
+
+    render({ beatCount: 732, barPhaseStatus: 'unresolved' }, 64);
+    expect(container.querySelector('[role="status"]')).toBeNull();
+    render({ beatCount: 732, barPhaseStatus: 'supported' });
+    expect(container.querySelector('[role="status"]')).toBeNull();
+    render({ beatCount: 0, barPhaseStatus: 'unresolved' });
+    expect(container.querySelector('[role="status"]').textContent).toBe(
+      'No detected beat timing yet',
+    );
+    render({ beatCount: 0, barPhaseStatus: 'unresolved' }, 64, false);
+    expect(container.querySelector('[role="status"]')).toBeNull();
+  });
   it('supports keyboard navigation and Escape in the styled dropdown', () => {
     expect.hasAssertions();
     const onHeight = jest.fn();

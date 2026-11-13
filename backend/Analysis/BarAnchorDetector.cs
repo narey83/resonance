@@ -63,10 +63,19 @@ internal static class BarAnchorDetector
         }
 
         var shift = DisplayShift(savedBeats, waveform);
-        var beats = RecoverOpening(savedBeats, waveform, period.Value, shift);
-        var shiftedBeats = shift.HasValue
-            ? beats.Select(value => (float)(value + shift.Value)).ToArray()
-            : beats;
+        var recovery = RecoverOpening(savedBeats, waveform, period.Value, shift);
+        var beats = recovery.Beats;
+        var shiftedBeats = beats.Select(value => (float)(value + (shift ?? 0))).ToArray();
+        if (!shift.HasValue && recovery.OpeningBodySeconds.HasValue)
+        {
+            shiftedBeats[0] = (float)recovery.OpeningBodySeconds.Value;
+        }
+
+        if (recovery.Fit.HasValue)
+        {
+            RepairStartupDisplayBeats(shiftedBeats, savedBeats, recovery.Fit.Value, waveform, shift);
+        }
+
         var displayBeats = shiftedBeats.Where(value => value >= 0 && value < waveform.DurationSeconds.Value).ToArray();
         var gridSource = beats.Length > savedBeats.Length ? "saved-plus-measured-opening" : "saved-beats";
         var shiftSource = shift.HasValue ? "measured-waveform-onset" : "unresolved";
@@ -212,18 +221,32 @@ internal static class BarAnchorDetector
         return period is >= 0.25 and <= 1.5 ? period : null;
     }
 
-    private static float[] RecoverOpening(float[] saved, WaveformData waveform, double period, double? onsetLag)
+    private static OpeningRecovery RecoverOpening(float[] saved, WaveformData waveform, double period, double? onsetLag)
     {
-        // Only the opening can be recovered from a stable measured interval and
-        // a transient at every preceding slot. The saved detector phase is kept:
+        // Only the opening can be recovered from stable timing and measured
+        // waveform evidence. The saved detector phase is kept:
         // its timestamps can precede the acoustic kick by several milliseconds.
+        var fitted = StableOpeningCandidate(saved, period);
+        if (fitted.HasValue)
+        {
+            var expectedDisplay = fitted.Value.Candidate + (onsetLag ?? 0);
+            var body = OpeningBody(waveform, saved, expectedDisplay);
+            if (body.HasValue && body.Value + (period * 0.5) < saved[0])
+            {
+                var result = new float[saved.Length + 1];
+                result[0] = (float)fitted.Value.Candidate;
+                Array.Copy(saved, 0, result, 1, saved.Length);
+                return new OpeningRecovery(result, body, fitted);
+            }
+        }
+
         var opening = saved.Take(Math.Min(saved.Length, 17)).ToArray();
         var differences = opening.Zip(opening.Skip(1), (a, b) => (double)b - a).ToArray();
         var openingPeriod = Median(differences);
         if (differences.Length < 8 || differences.Count(d => Math.Abs(d - openingPeriod) <= openingPeriod * 0.12)
             < differences.Length * 0.8 || Math.Abs(openingPeriod - period) > period * 0.08)
         {
-            return saved;
+            return new OpeningRecovery(saved, null, null);
         }
 
         var lagStart = onsetLag.HasValue ? onsetLag.Value - 0.02 : 0;
@@ -259,12 +282,169 @@ internal static class BarAnchorDetector
 
         if (added.Count == 0)
         {
-            return saved;
+            return new OpeningRecovery(saved, null, null);
         }
 
         added.Reverse();
         added.AddRange(saved);
-        return added.ToArray();
+        return new OpeningRecovery(added.ToArray(), null, null);
+    }
+
+    private static OpeningFit? StableOpeningCandidate(float[] saved, double period)
+    {
+        // Startup ticks can be biased while the detector settles. Fit the phase
+        // to later observed beats rather than subtracting the first noisy gap.
+        // The fit is useful only for one missing beat near the start of the file.
+        var count = Math.Min(saved.Length, 65);
+        if (count < 32 || !TryOrdinals(saved[..count], period, out var ordinals, out _))
+        {
+            return null;
+        }
+
+        var slopes = new List<double>();
+        for (var first = 8; first < count - 1; first++)
+        {
+            for (var last = first + 1; last < count; last++)
+            {
+                slopes.Add((saved[last] - saved[first]) / (ordinals[last] - ordinals[first]));
+            }
+        }
+
+        var fittedPeriod = Median(slopes);
+        if (fittedPeriod is < 0.25 or > 1.5 || Math.Abs(fittedPeriod - period) > period * 0.08)
+        {
+            return null;
+        }
+
+        var intercept = Median(Enumerable.Range(8, count - 8)
+            .Select(index => saved[index] - (ordinals[index] * fittedPeriod)));
+        var residuals = Enumerable.Range(8, count - 8)
+            .Select(index => Math.Abs(saved[index] - intercept - (ordinals[index] * fittedPeriod))).ToArray();
+        if (Median(residuals) > 0.01 || residuals.Count(value => value <= 0.02) < residuals.Length * 0.8)
+        {
+            return null;
+        }
+
+        var candidate = intercept - fittedPeriod;
+        var gap = saved[0] - candidate;
+        return candidate >= 0 && candidate < fittedPeriod
+            && gap >= fittedPeriod * 0.7 && gap <= fittedPeriod * 1.3
+            ? new OpeningFit(candidate, fittedPeriod, ordinals) : null;
+    }
+
+    private static void RepairStartupDisplayBeats(
+        float[] display, float[] saved, OpeningFit fit, WaveformData waveform, double? shift)
+    {
+        // Only the first few detector ticks may be affected by startup jitter.
+        // Correct a timestamp only when a measured low-band rise supports the
+        // later stable fit. Leave the saved beat array and musical phase intact.
+        var referenceRise = Median(saved.Skip(8).Take(16)
+            .Select(beat => StrongestLowRise(waveform, beat + (shift ?? 0), 0.04).Strength));
+        if (referenceRise < 0.08)
+        {
+            return;
+        }
+
+        var referencePower = Median(saved.Skip(8).Take(16)
+            .Select(beat => WindowPower(waveform.LowPeaks, waveform, beat, beat + 0.1)));
+        var offset = display.Length - saved.Length;
+        for (var index = 0; index < Math.Min(3, saved.Length); index++)
+        {
+            var expected = fit.Candidate + ((fit.Ordinals[index] + 1) * fit.Period) + (shift ?? 0);
+            if (Math.Abs(expected - display[offset + index]) < 0.02
+                || Math.Abs(expected - display[offset + index]) > fit.Period * 0.35)
+            {
+                continue;
+            }
+
+            var measured = StrongestLowRise(waveform, expected, 0.04);
+            if (measured.Strength < Math.Max(0.08, referenceRise * 0.35)
+                || WindowPower(waveform.LowPeaks, waveform, measured.Seconds, measured.Seconds + 0.1)
+                    < referencePower * 0.1
+                || measured.Seconds <= display[offset + index - 1] + (fit.Period * 0.5)
+                || (offset + index + 1 < display.Length
+                    && measured.Seconds >= display[offset + index + 1] - (fit.Period * 0.5)))
+            {
+                continue;
+            }
+
+            display[offset + index] = (float)measured.Seconds;
+        }
+    }
+
+    private static (double Seconds, double Strength) StrongestLowRise(
+        WaveformData waveform, double expected, double tolerance)
+    {
+        var low = waveform.LowPeaks;
+        var rate = low.Length / waveform.DurationSeconds!.Value;
+        var context = Math.Max(2, (int)Math.Round(rate * 0.025));
+        if (low.Length <= context * 2)
+        {
+            return (expected, 0);
+        }
+
+        var first = Math.Clamp((int)Math.Floor((expected - tolerance) * rate), context, low.Length - context);
+        var last = Math.Clamp((int)Math.Ceiling((expected + tolerance) * rate), first, low.Length - context);
+        var strongest = 0.0;
+        var seconds = expected;
+        for (var index = first; index < last; index++)
+        {
+            var before = 0.0;
+            var after = 0.0;
+            for (var sample = 0; sample < context; sample++)
+            {
+                before += Math.Max(0, low[index - context + sample]);
+                after += Math.Max(0, low[index + sample]);
+            }
+
+            var rise = (after - before) / context;
+            if (rise > strongest)
+            {
+                strongest = rise;
+                seconds = index / rate;
+            }
+        }
+
+        return (seconds, strongest);
+    }
+
+    private static double? OpeningBody(WaveformData waveform, float[] saved, double expectedDisplay)
+    {
+        // A clipped opening kick may have little high-frequency click. Require
+        // its sustained low-band body to start near the fitted beat and to be
+        // comparable with later observed beats; silence and off-grid pickups fail.
+        var low = waveform.LowPeaks;
+        var duration = waveform.DurationSeconds!.Value;
+        var rate = low.Length / duration;
+        var referencePeak = Median(saved.Skip(8).Take(16)
+            .Select(beat => WindowMax(low, waveform, beat - 0.03, beat + 0.12)));
+        var referencePower = Median(saved.Skip(8).Take(16)
+            .Select(beat => WindowPower(low, waveform, beat, beat + 0.1)));
+        if (referencePeak < 0.08 || referencePower < 0.002)
+        {
+            return null;
+        }
+
+        var threshold = Math.Max(0.05, referencePeak * 0.22);
+        var first = Math.Clamp((int)Math.Floor((expectedDisplay - 0.04) * rate), 0, low.Length);
+        var last = Math.Clamp((int)Math.Ceiling((expectedDisplay + 0.04) * rate), first, low.Length);
+        for (var index = first; index < last; index++)
+        {
+            if (low[index] < threshold)
+            {
+                continue;
+            }
+
+            var time = index / rate;
+            var before = WindowMean(low, waveform, time - 0.04, time - 0.01);
+            var body = WindowPower(low, waveform, time, time + 0.1);
+            if (before <= threshold * 0.8 && body >= referencePower * 0.1)
+            {
+                return time;
+            }
+        }
+
+        return null;
     }
 
     private static double BandRise(WaveformData waveform, double time, double lagStart, double lagEnd) =>
@@ -649,6 +829,10 @@ internal static class BarAnchorDetector
     }
 
     private readonly record struct Feature(double Low, double Mid, double High);
+
+    private readonly record struct OpeningFit(double Candidate, double Period, int[] Ordinals);
+
+    private readonly record struct OpeningRecovery(float[] Beats, double? OpeningBodySeconds, OpeningFit? Fit);
 
     private readonly record struct Event(int Ordinal, double Score);
 

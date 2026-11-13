@@ -445,3 +445,50 @@ export const visibleBeatTimes = (beats, start, end, stride = 1, anchor = 0) =>
     (time, index) =>
       (index - anchor) % stride === 0 && time >= start && time < end,
   );
+
+// At whole-track scale, individual beats are too close to paint separately.
+// Keep one real detected timestamp nearest each screen-space bucket centre,
+// then enforce a minimum gap. This does not create a musical bar phase.
+export const visibleSampledBeatTimes = (
+  beats,
+  start,
+  end,
+  pixelsPerSecond,
+  minSpacing,
+) => {
+  if (
+    !beats?.length ||
+    !Number.isFinite(start) ||
+    !Number.isFinite(end) ||
+    end <= start ||
+    !Number.isFinite(pixelsPerSecond) ||
+    pixelsPerSecond <= 0 ||
+    !Number.isFinite(minSpacing) ||
+    minSpacing <= 0
+  )
+    return [];
+
+  const bucketSeconds = minSpacing / pixelsPerSecond;
+  const candidates = new Map();
+  for (const time of beats) {
+    if (!Number.isFinite(time)) continue;
+    if (time < start) continue;
+    if (time >= end) break;
+    const bucket = Math.floor(time / bucketSeconds);
+    const centre = (bucket + 0.5) * bucketSeconds;
+    const current = candidates.get(bucket);
+    if (current == null || Math.abs(time - centre) < Math.abs(current - centre))
+      candidates.set(bucket, time);
+  }
+
+  const selected = [];
+  for (const time of candidates.values()) {
+    if (
+      !selected.length ||
+      (time - selected.at(-1)) * pixelsPerSecond >= minSpacing
+    )
+      selected.push(time);
+  }
+
+  return selected;
+};

@@ -30,6 +30,43 @@ public class BarAnchorDetectorTests
     }
 
     [Fact]
+    public void Stable_Later_Beats_Repair_Jittered_Startup_Only_With_Opening_Kick_Body()
+    {
+        var beats = Beats();
+        var saved = beats.Skip(1).ToArray();
+        saved[0] -= 0.09f;
+        saved[1] -= 0.06f;
+        saved[2] -= 0.024f;
+
+        var recovered = BarAnchorDetector.Analyze(saved, Waveform(beats, softOpeningClick: true));
+        Assert.Equal(1, recovered.RecoveredOpeningBeats);
+        Assert.Equal("saved-plus-measured-opening", recovered.BasicGridSource);
+        Assert.InRange(recovered.BasicGridBeats[0], beats[0] + 0.03f, beats[0] + 0.06f);
+        for (var index = 1; index <= 3; index++)
+        {
+            Assert.InRange(recovered.BasicGridBeats[index], beats[index] + 0.03f, beats[index] + 0.06f);
+        }
+
+        Assert.True(recovered.BasicGridBeats.Zip(recovered.BasicGridBeats.Skip(1), (a, b) => a < b)
+            .All(increasing => increasing));
+        Assert.Equal(saved[9] + (recovered.DisplayShiftSeconds ?? 0), recovered.BasicGridBeats[10], 3);
+
+        var silence = BarAnchorDetector.Analyze(saved, Waveform(beats, silentOpening: true));
+        Assert.Equal(0, silence.RecoveredOpeningBeats);
+        Assert.Equal("saved-beats", silence.BasicGridSource);
+
+        var offGridPickup = BarAnchorDetector.Analyze(saved, Waveform(beats, offGridOpening: true));
+        Assert.Equal(0, offGridPickup.RecoveredOpeningBeats);
+        Assert.Equal("saved-beats", offGridPickup.BasicGridSource);
+
+        var nearDuplicate = beats.Skip(1).ToArray();
+        nearDuplicate[0] -= 0.14f;
+        var duplicate = BarAnchorDetector.Analyze(nearDuplicate, Waveform(beats));
+        Assert.Equal(0, duplicate.RecoveredOpeningBeats);
+        Assert.Equal("saved-beats", duplicate.BasicGridSource);
+    }
+
+    [Fact]
     public void Pickup_And_Delayed_Bass_Do_Not_Set_The_Bar_Phase()
     {
         var pickupBeats = Beats(pickup: 1);
@@ -186,7 +223,8 @@ public class BarAnchorDetectorTests
         float[] beats, int pickup = 0, bool irregular = false,
         bool uniform = false, bool silentOpening = false, bool offGridOpening = false,
         bool weakOpeningBass = false, bool anticipateChanges = false,
-        bool downbeatAccent = false, bool backbeatAccent = false, double? endPadding = null)
+        bool downbeatAccent = false, bool backbeatAccent = false, bool softOpeningClick = false,
+        double? endPadding = null)
     {
         var duration = beats[^1] + (endPadding ?? Period + 0.2);
         var size = (int)Math.Ceiling(duration * 200);
@@ -226,8 +264,8 @@ public class BarAnchorDetectorTests
                         || (backbeatAccent && (beat - pickup) % 4 == 1))
                     ? 0.6f : 0;
                 low[index] = level.Low + ((weakOpeningBass && beat < 2) ? 0 : kick);
-                mid[index] = level.Mid + (kick * 0.6f) + accent;
-                high[index] = level.High + (kick * 0.4f) + accent;
+                mid[index] = level.Mid + ((softOpeningClick && beat == 0 ? 0.1f : 0.6f) * kick) + accent;
+                high[index] = level.High + ((softOpeningClick && beat == 0 ? 0 : 0.4f) * kick) + accent;
                 overall[index] = Math.Max(low[index], Math.Max(mid[index], high[index]));
             }
         }
