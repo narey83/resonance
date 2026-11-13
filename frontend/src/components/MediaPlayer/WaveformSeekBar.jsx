@@ -41,9 +41,7 @@ import api from '../../lib/api';
 import { drawEnhanced } from '../../lib/enhancedWaveform';
 import { formatSeconds } from '../../lib/util';
 import {
-  beatGridPhase,
   beatGridSeconds,
-  firstGridLineAt,
   maxOf,
   resamplePeaks,
   visibleBeatTimes,
@@ -60,6 +58,7 @@ import React, { useEffect, useRef, useState } from 'react';
 // crawls as the window scrolls. Aggregating several atoms per bar can't beat
 // against the bar grid at all.
 const GRID_OVERSAMPLE = 4;
+const BASIC_REFRESH_MS = 15_000;
 
 // SoundCloud-style mirrored bar waveform, click/drag to seek.
 // Falls back to nothing (caller renders the plain bar) when no peak data exists.
@@ -110,6 +109,15 @@ const WaveformSeekBar = ({
     };
   }, [track?.path, libraryRevision]);
   const peaksRef = useRef(null);
+  const peaksPathRef = useRef(null);
+  const analysingRunRef = useRef(null);
+  const mountedRef = useRef(false);
+  const onAnalysingRef = useRef(onAnalysing);
+  onAnalysingRef.current = onAnalysing;
+  const basicRefreshPathRef = useRef(track?.path);
+  const seenBasicRevisionRef = useRef(libraryRevision);
+  const lastBasicRefreshAtRef = useRef(0);
+  const [basicRefreshToken, setBasicRefreshToken] = useState(0);
   // Caches a fixed-resolution resample of the whole track (fine enough to
   // cover the highest zoom level), so per-frame redraws only need to
   // re-aggregate that stable grid down to the visible window, not re-derive
@@ -120,8 +128,52 @@ const WaveformSeekBar = ({
   // zoomed into a sub-range of the track. Updated every draw() call.
   const windowRef = useRef({ end: 0, start: 0 });
   const [ready, setReady] = useState(false);
+  // Refreshing the same track keeps ready=true, so duration needs its own
+  // state update to move the seek scale and timeline to a corrected timebase.
+  const [analysisDuration, setAnalysisDuration] = useState(null);
   const [hoverFraction, setHoverFraction] = useState(null);
   const draggingRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      analysingRunRef.current = null;
+      onAnalysingRef.current?.(false);
+    };
+  }, []);
+
+  // LIBRARY_UPDATED has no track path and can fire every second during scans.
+  // Refresh the selected track immediately on the first update, then at most
+  // once per 15 seconds with a trailing request for the last update.
+  useEffect(() => {
+    if (basicRefreshPathRef.current !== track?.path) {
+      basicRefreshPathRef.current = track?.path;
+      seenBasicRevisionRef.current = libraryRevision;
+      lastBasicRefreshAtRef.current = 0;
+      return undefined;
+    }
+
+    if (!track?.path || seenBasicRevisionRef.current === libraryRevision)
+      return undefined;
+    seenBasicRevisionRef.current = libraryRevision;
+    const refresh = () => {
+      lastBasicRefreshAtRef.current = Date.now();
+      setBasicRefreshToken((token) => token + 1);
+    };
+
+    const wait = Math.max(
+      0,
+      lastBasicRefreshAtRef.current + BASIC_REFRESH_MS - Date.now(),
+    );
+    if (!wait) {
+      refresh();
+      return undefined;
+    }
+
+    const timer = setTimeout(refresh, wait);
+    return () => clearTimeout(timer);
+  }, [libraryRevision, track?.path]);
 
   // The stable timeline the waveform/playhead/beat-grid are laid out against — the analysis's
   // own PCM duration whenever it's known, falling back to another already-stable track duration,
@@ -131,15 +183,24 @@ const WaveformSeekBar = ({
   // target is what makes the playhead drift away from the waveform's own, fixed timebase). See
   // resolveWaveformDuration for why this ordering.
   const waveformDuration = resolveWaveformDuration(
-    peaksRef.current?.analysisDuration,
+    analysisDuration,
     track?.length,
     duration,
   );
 
   useEffect(() => {
-    setReady(false);
-    onReady(false);
-    peaksRef.current = null;
+    const sameTrack = peaksPathRef.current === track?.path;
+    const refreshing = sameTrack && Boolean(peaksRef.current);
+    if (!sameTrack) {
+      peaksPathRef.current = track?.path;
+      peaksRef.current = null;
+      analysingRunRef.current = null;
+      setReady(false);
+      setAnalysisDuration(null);
+      onReady(false);
+      onAnalysing?.(false);
+    }
+
     if (!track?.path) {
       onAnalysing?.(false);
       return undefined;
@@ -155,15 +216,35 @@ const WaveformSeekBar = ({
       primeWaveformCache(track.path, data);
 
       const beatAvailability = resolveBeatAvailability(data);
+      const gridBeats = Array.isArray(data.basicGridBeats)
+        ? data.basicGridBeats
+        : beatAvailability.beats;
+      const newPhaseStatus = data.basicBarPhaseStatus != null;
+      const barAnchorSeconds = newPhaseStatus
+        ? data.basicBarPhaseStatus === 'supported' &&
+          Number.isFinite(data.barAnchorSeconds)
+          ? data.barAnchorSeconds
+          : null
+        : data.basicBarMarkers?.[0]?.seconds ?? null;
+      const basicBarMarkers = (data.basicBarMarkers || []).filter(
+        (marker) =>
+          !newPhaseStatus ||
+          (marker.level === 2
+            ? data.basicThirtyTwoBarPhaseStatus === 'supported'
+            : data.basicSixteenBarPhaseStatus === 'supported'),
+      );
       peaksRef.current = {
-        analysisDuration: data.analysisDuration || null,
         beatOffsetSeconds: beatAvailability.offsetSeconds,
         beatsKnown: beatAvailability.known,
         beats: beatAvailability.beats,
-        basicBarMarkers: data.basicBarMarkers || [],
-        bpm: waveformBeatBpm(beatAvailability.beats),
+        gridBeats,
+        barAnchorSeconds,
+        basicBarMarkers,
+        skippedInternalBeats: Number(data.basicSkippedInternalBeats) || 0,
+        bpm: waveformBeatBpm(gridBeats),
         overall: new Float32Array(data.overallPeaks),
       };
+      setAnalysisDuration(data.analysisDuration || null);
       setReady(true);
       onReady(true);
       return true;
@@ -180,17 +261,26 @@ const WaveformSeekBar = ({
       // Existing peaks stay visible while missing beat data is filled in.
       // Missing tag metadata alone must not trigger a new decode.
       if (
-        installed &&
-        resolveBeatAvailability(cached).known &&
-        waveformBeatBpm(cached.beats)
+        refreshing ||
+        (installed &&
+          resolveBeatAvailability(cached).known &&
+          waveformBeatBpm(cached.beats))
       )
         return;
 
       // Any missing metric uses the same full analysis workflow as the manual "Analyse"
       // button. skipAnalysed makes the backend retain the parts that are already present.
+      let run = analysingRunRef.current;
+      if (!run || run.path !== track.path) {
+        run = { path: track.path, promise: analyseTrack(track.path) };
+        analysingRunRef.current = run;
+      }
+
+      const owner = {};
+      run.owner = owner;
       onAnalysing?.(true);
       try {
-        await analyseTrack(track.path);
+        await run.promise;
         if (cancelled) return;
 
         // analyseTrack returns the reduced preview shape; the player needs the raw response's
@@ -200,7 +290,14 @@ const WaveformSeekBar = ({
         }).catch(() => null);
         installWaveform(analysed);
       } finally {
-        if (!cancelled) onAnalysing?.(false);
+        if (
+          mountedRef.current &&
+          analysingRunRef.current === run &&
+          run.owner === owner
+        ) {
+          analysingRunRef.current = null;
+          onAnalysing?.(false);
+        }
       }
     };
 
@@ -210,7 +307,7 @@ const WaveformSeekBar = ({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [track?.path]);
+  }, [track?.path, basicRefreshToken]);
 
   // Reading CSS custom properties forces a style recalc, and these only change
   // on a theme switch or an art-accent crossfade — doing it 60 times a second
@@ -445,29 +542,29 @@ const WaveformSeekBar = ({
         8 * dprScale,
       );
       if (!lineSeconds) return;
-      const phase = beatGridPhase(
-        independent ? independent.beats?.[0] : peaks.beatOffsetSeconds,
-        lineSeconds,
-      );
-      const firstBeat = firstGridLineAt(phase, lineSeconds, drawStart);
       // Detected beats are a timeline, not a constant-tempo estimate. Rebuilding
       // them from median BPM accumulates error against the saved downbeats.
       const times = [];
-      const detectedBeats = independent?.beats || peaks.beats;
+      const detectedBeats = independent?.beats || peaks.gridBeats;
       if (detectedBeats?.length > 1) {
         const bpm = waveformBeatBpm(detectedBeats);
         const stride = Math.max(1, Math.round(lineSeconds / (60 / bpm)));
         const firstDownbeat =
-          independent?.downbeats?.[0] ?? peaks.basicBarMarkers[0]?.seconds;
+          independent?.downbeats?.[0] ?? peaks.barAnchorSeconds;
         const anchor =
           stride > 1
-            ? Math.max(
-                0,
-                detectedBeats.findIndex(
-                  (time) => Math.abs(time - firstDownbeat) < 0.05,
-                ),
+            ? detectedBeats.findIndex(
+                (time) => Math.abs(time - firstDownbeat) < 0.05,
               )
             : 0;
+        // A saved beat timeline alone cannot identify which beat starts a bar.
+        // At coarse zoom, suppress this guide unless a measured bar phase is
+        // available; individual beats remain visible when they have room.
+        if (
+          stride > 1 &&
+          (anchor < 0 || (!independent && peaks.skippedInternalBeats > 0))
+        )
+          return;
         times.push(
           ...visibleBeatTimes(
             detectedBeats,
@@ -477,10 +574,7 @@ const WaveformSeekBar = ({
             anchor,
           ),
         );
-      } else {
-        for (let time = firstBeat; time < drawEnd; time += lineSeconds)
-          times.push(time);
-      }
+      } else return;
 
       context.save();
       const detailGrid = zoom > 1;

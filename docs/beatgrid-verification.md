@@ -40,7 +40,8 @@ this produces **450 cases and 8,100 frames**. Checks cover:
 - Forward and backward clock jumps and pointer seeking.
 - Beat/downbeat pixel alignment, including fractional scaling.
 - Sparse overview lines counted from the downbeat phase.
-- Stronger 16- and 32-bar markers counted from arrangement sections and saved downbeats.
+- 16- and 32-bar markers counted continuously on saved downbeats when repeated
+  arrangement boundaries support their phase.
 
 The repository's [CI workflow](../.github/workflows/ci.yml) runs the frontend test suite
 on main pushes and pull requests. A passing local run does not establish a successful
@@ -66,3 +67,27 @@ and interface scale. Physical Pioneer playback remains a separate hardware task.
 The 15 October 2026 browser checks exercised the controls available at that time.
 Those historical results are not evidence that later controls or browser versions
 have already passed the same review.
+
+## Schelle audio check — 13 November 2026
+
+Both library copies of Obscure Shape’s “Schelle” were checked against decoded audio
+on the dev laptop. Their saved Basic beat lists start at 0.452789 and 0.499229
+seconds, one beat after the opening attack. A stable preceding beat slot falls at
+about 0.023 and 0.070 seconds. The first visible attack in Chromium’s decoded
+audio and the cached waveform begins near 0.035 and 0.085 seconds respectively.
+Across the first 64 beats, cached onset measurements follow the saved beat times
+by a median of about 12 milliseconds in both copies, with median absolute
+deviation near 3 milliseconds. Chromium’s decoded durations agree with the
+cached waveform durations to about 0.02 milliseconds. A separate GStreamer
+decode has a different MP3 delay treatment and should not set the player’s
+timeline offset.
+
+Full-track decoded audio and the stored 200 Hz waveform bands both favor a
+32-bar count from the recovered opening beat. Sustained changes recur around
+bars 32, 64 and 128; competing changes around bars 24 and 56 make that phrase
+phase moderate evidence, not a certain musical label. An eight-bar breakdown
+can begin inside a 32-bar span, and a metrical boundary need not have an audible
+arrangement change. The check measured signal timing and structure; it did not
+include a human listening judgment. The private read-only evidence and plot are
+under `/home/narey/resonance-builds/schelle-alignment-20261113-audio/` on the
+dev laptop. No audio or saved analysis was changed by this check.

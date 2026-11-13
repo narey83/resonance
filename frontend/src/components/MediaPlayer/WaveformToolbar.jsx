@@ -101,8 +101,8 @@ const WaveformToolbar = ({
             onClick={() => onGrid(!grid)}
             title={
               enhancedAvailable
-                ? 'Beat grid: amber 16-bar lines, violet 32-bar lines; aligned to arrangement sections'
-                : 'Beat grid: amber 16-bar lines, violet 32-bar lines; estimated anchors from backend analysis'
+                ? 'Beat grid: estimated 16/32-bar lines appear when repeated section changes support their phase; count stays continuous across sections'
+                : 'Beat grid: observed beats; amber 16-bar and violet 32-bar lines appear only when analysis supports their phase'
             }
             type="button"
           >

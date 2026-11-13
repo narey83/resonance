@@ -53,8 +53,9 @@ The queue starts closed and opens explicitly.
 
 The waveform can be shown or hidden, resized, and set to **Normal, 16×, 32×, 64×,
 128× or 256× detail**. Normal shows the whole track; detail follows the playhead.
-Beat grid and Vocals toggle their overlays. The grid accents arrangement starts,
-16-bar boundaries and stronger 32-bar boundaries using saved downbeats. Choose
+Beat grid and Vocals toggle their overlays. The grid uses saved downbeats and
+accents estimated 16- and 32-bar boundaries only when repeated arrangement
+changes support their phase. Choose
 **DJ phrases**, **Musical phrases** or **Hide phrases** independently. Phrase
 colours identify section types; singing and processed-voice regions are distinct
 predictions. Overlays require the relevant

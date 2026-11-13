@@ -89,8 +89,10 @@ export const visibleEvents = (events, start, end, width) => {
   });
 };
 
-// Count phrase bars from the arrangement's own section starts. Saved downbeats
-// supply every position, so a tempo change cannot drift the accent off the grid.
+// Independent downbeats establish bar positions, but cannot establish a 16- or
+// 32-bar phrase phase by themselves. Repeated section boundaries must agree on
+// a residue before either accent is shown. Continue counting through irregular
+// sections rather than restarting at each boundary.
 const phraseBarCache = new WeakMap();
 export const phraseBarMarkers = (data, phrases = 'dj') => {
   if (!data?.available || !Array.isArray(data.downbeats)) return [];
@@ -112,35 +114,116 @@ export const phraseBarMarkers = (data, phrases = 'dj') => {
     )
   )
     return [];
-  const sections =
-    (mode === 'musical' ? data.musicalPhrases : djTimeline(data).sections) ||
-    [];
-  const spans = sections.length
-    ? sections
-    : [{ start_seconds: downbeats[0], end_seconds: Number.POSITIVE_INFINITY }];
-  const markers = new Map();
-  for (const span of spans) {
-    const start = Number(span.start_seconds);
-    const end = Number(span.end_seconds);
-    if (!Number.isFinite(start) || end <= start) continue;
-    const atOrAfter = downbeats.findIndex((time) => time >= start);
-    if (atOrAfter < 0) continue;
-    const first =
-      atOrAfter > 0 &&
-      start - downbeats[atOrAfter - 1] < downbeats[atOrAfter] - start
-        ? atOrAfter - 1
-        : atOrAfter;
-    for (let index = first; index < downbeats.length; index += 16) {
-      if (downbeats[index] >= end) break;
-      // A section start and each 32-bar boundary get the strongest accent.
-      const level = (index - first) % 32 === 0 ? 2 : 1;
-      markers.set(index, Math.max(markers.get(index) || 0, level));
+  const barIntervals = downbeats
+    .slice(1)
+    .map((time, index) => time - downbeats[index]);
+  const orderedIntervals = [...barIntervals].sort(
+    (left, right) => left - right,
+  );
+  const middleInterval =
+    orderedIntervals[Math.floor(orderedIntervals.length / 2)];
+  // A missing downbeat shifts every later array index. A large unexplained
+  // spacing jump invalidates continuous phrase counting, including through a
+  // pause where the number of silent bars cannot be inferred from this array.
+  if (
+    middleInterval &&
+    barIntervals.some(
+      (interval) =>
+        interval < middleInterval * 0.55 || interval > middleInterval * 1.7,
+    )
+  )
+    return [];
+  const selected =
+    mode === 'musical' ? data.musicalPhrases : djTimeline(data).sections;
+  const sections = Array.isArray(selected) ? selected : [];
+  const nearestBar = (seconds) => {
+    const after = downbeats.findIndex((time) => time >= seconds);
+    if (after < 0) return -1;
+    const index =
+      after > 0 && seconds - downbeats[after - 1] < downbeats[after] - seconds
+        ? after - 1
+        : after;
+    const adjacent = [
+      index > 0
+        ? downbeats[index] - downbeats[index - 1]
+        : Number.POSITIVE_INFINITY,
+      index + 1 < downbeats.length
+        ? downbeats[index + 1] - downbeats[index]
+        : Number.POSITIVE_INFINITY,
+    ];
+    const tolerance = Math.min(0.35, Math.min(...adjacent) * 0.2);
+    return Math.abs(downbeats[index] - seconds) <= tolerance ? index : -1;
+  };
+
+  const boundaries = [
+    ...new Set(
+      sections.flatMap((section) => {
+        const start = section?.start_seconds;
+        if (
+          !Number.isFinite(start) ||
+          !Number.isFinite(section.end_seconds) ||
+          section.end_seconds <= start ||
+          start < downbeats[0] ||
+          start > downbeats.at(-1)
+        )
+          return [];
+        const bar = nearestBar(start);
+        return bar < 0 ? [] : [bar];
+      }),
+    ),
+  ];
+  // The earliest section starts the reported arrangement by construction,
+  // even when the analyser omitted an earlier intro. It cannot count as a
+  // second independent phrase event.
+  const firstBoundary = Math.min(...boundaries);
+  const votes = boundaries.filter((bar) => bar !== firstBoundary);
+  const supportedPhase = (span) => {
+    const groups = new Map();
+    for (const bar of votes) {
+      const residue = bar % span;
+      groups.set(residue, [...(groups.get(residue) || []), bar]);
     }
+
+    const ranked = [...groups].sort(
+      ([, left], [, right]) => right.length - left.length,
+    );
+    const winner = ranked[0];
+    const runnerCount = ranked[1]?.[1].length || 0;
+    if (
+      !winner ||
+      winner[1].length < 2 ||
+      winner[1].length - runnerCount < (runnerCount ? 2 : 1) ||
+      Math.max(...winner[1]) - Math.min(...winner[1]) < span
+    )
+      return null;
+    return winner[0];
+  };
+
+  let phase16 = supportedPhase(16);
+  let phase32 = supportedPhase(32);
+  if (phase32 != null) {
+    if (phase16 == null) phase16 = phase32 % 16;
+    else if (phase16 !== phase32 % 16) phase32 = null;
   }
 
-  const result = [...markers]
-    .sort(([a], [b]) => a - b)
-    .map(([index, level]) => ({ time: downbeats[index], level }));
+  const strongestSpan = phase32 == null ? 16 : 32;
+  const strongestPhase = phase32 ?? phase16;
+  const firstSupportedBoundary =
+    firstBoundary % strongestSpan === strongestPhase
+      ? firstBoundary
+      : Math.min(
+          ...votes.filter((bar) => bar % strongestSpan === strongestPhase),
+        );
+  const result = [];
+  if (phase16 != null) {
+    for (let index = phase16; index < downbeats.length; index += 16)
+      if (index >= firstSupportedBoundary)
+        result.push({
+          time: downbeats[index],
+          level: phase32 != null && index % 32 === phase32 ? 2 : 1,
+        });
+  }
+
   cached.set(mode, result);
   return result;
 };

@@ -335,9 +335,21 @@ namespace resonance.Analysis
     /// <param name="AnalysisDuration">See <see cref="WaveformData.DurationSeconds"/>.</param>
     /// <param name="SampleRate">See <see cref="WaveformData.SampleRate"/>.</param>
     /// <param name="WaveformVersion">See <see cref="WaveformData.WaveformVersion"/>.</param>
-    /// <param name="BarAnchorSeconds">First clear bass attack on a detected beat, or the first detected beat when no attack is clear.</param>
-    /// <param name="BarAnchorSource">Whether the Basic bar anchor came from a bass attack or a beat fallback.</param>
-    /// <param name="BasicBarMarkers">Backend-computed estimated 16/32-bar accents on saved beats.</param>
+    /// <param name="BarAnchorSeconds">First beat of the supported Basic four-beat bar phase, or null when unresolved.</param>
+    /// <param name="BarAnchorSource">The supported structural/accent evidence method, unresolved, or unavailable.</param>
+    /// <param name="BasicBarMarkers">Only 16/32-bar accents whose phase has repeated structural support.</param>
+    /// <param name="BasicGridBeats">Display beats with measured onset shift and any evidence-backed opening recovery; raw <see cref="Beats"/> stays unchanged.</param>
+    /// <param name="BasicGridSource">Whether the display grid includes a measured opening beat.</param>
+    /// <param name="BasicDisplayShiftSeconds">Stable measured difference from saved beats to visible waveform onsets, if available.</param>
+    /// <param name="BasicDisplayShiftSource">The evidence source for the display shift, or unresolved.</param>
+    /// <param name="BasicBarPhaseStatus">Whether the four-beat bar phase has repeated structural support.</param>
+    /// <param name="BasicBarPhaseEvidence">Winning phase's uncalibrated margin over the runner-up, not a probability.</param>
+    /// <param name="BasicSixteenBarPhaseStatus">Whether the 16-bar phase has repeated structural support.</param>
+    /// <param name="BasicSixteenBarPhaseEvidence">Uncalibrated 16-bar phase margin.</param>
+    /// <param name="BasicThirtyTwoBarPhaseStatus">Whether the 32-bar phase has repeated structural support.</param>
+    /// <param name="BasicThirtyTwoBarPhaseEvidence">Uncalibrated 32-bar phase margin.</param>
+    /// <param name="BasicRecoveredOpeningBeats">Number of display beats added before the saved detector's first beat.</param>
+    /// <param name="BasicSkippedInternalBeats">Count of measured internal beat gaps; no timestamp is invented for them.</param>
     public record WaveformResponse(
         int NumBars,
         float[] OverallPeaks,
@@ -353,7 +365,19 @@ namespace resonance.Analysis
         int? WaveformVersion = null,
         double? BarAnchorSeconds = null,
         string BarAnchorSource = null,
-        BarMarker[] BasicBarMarkers = null);
+        BarMarker[] BasicBarMarkers = null,
+        float[] BasicGridBeats = null,
+        string BasicGridSource = null,
+        double? BasicDisplayShiftSeconds = null,
+        string BasicDisplayShiftSource = null,
+        string BasicBarPhaseStatus = null,
+        double? BasicBarPhaseEvidence = null,
+        string BasicSixteenBarPhaseStatus = null,
+        double? BasicSixteenBarPhaseEvidence = null,
+        string BasicThirtyTwoBarPhaseStatus = null,
+        double? BasicThirtyTwoBarPhaseEvidence = null,
+        int BasicRecoveredOpeningBeats = 0,
+        int BasicSkippedInternalBeats = 0);
 
     /// <summary>API response shape for loudness data.</summary>
     public record LoudnessResponse(double IntegratedLufs, double TruePeak, double LoudnessRange);

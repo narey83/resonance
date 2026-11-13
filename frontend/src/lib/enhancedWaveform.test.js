@@ -8,68 +8,200 @@ import {
 } from './enhancedWaveform';
 
 describe('enhanced waveform timeline', () => {
-  it('resets 16- and 32-bar accents at arrangement boundaries using saved downbeats', () => {
+  it('counts 16- and 32-bar accents continuously across arrangement boundaries and tempo changes', () => {
     const downbeats = [
       ...Array.from({ length: 32 }, (_, index) => index * 2),
-      ...Array.from({ length: 33 }, (_, index) => 64 + index * 1.8),
+      ...Array.from({ length: 65 }, (_, index) => 64 + index * 1.8),
     ];
     const data = {
       available: true,
       downbeats,
       djPhrases: [
-        { start_seconds: 0, end_seconds: downbeats[16] },
-        { start_seconds: downbeats[16], end_seconds: downbeats[48] },
-        { start_seconds: downbeats[48], end_seconds: downbeats[64] },
+        { start_seconds: 0, end_seconds: downbeats[12] },
+        { start_seconds: downbeats[12], end_seconds: downbeats[32] },
+        { start_seconds: downbeats[32], end_seconds: downbeats[64] },
+        { start_seconds: downbeats[64], end_seconds: downbeats[96] },
+        { start_seconds: downbeats[96], end_seconds: downbeats[96] + 2 },
       ],
     };
     expect(phraseBarMarkers(data)).toEqual([
       { time: downbeats[0], level: 2 },
-      { time: downbeats[16], level: 2 },
-      { time: downbeats[32], level: 1 },
-      { time: downbeats[48], level: 2 },
+      { time: downbeats[16], level: 1 },
+      { time: downbeats[32], level: 2 },
+      { time: downbeats[48], level: 1 },
+      { time: downbeats[64], level: 2 },
+      { time: downbeats[80], level: 1 },
+      { time: downbeats[96], level: 2 },
     ]);
     expect(phraseBarMarkers(data)).toBe(phraseBarMarkers(data));
     expect(phraseBarMarkers({ available: false, downbeats })).toEqual([]);
   });
 
-  it('uses the selected musical arrangement to anchor phrase accents', () => {
-    const downbeats = Array.from({ length: 41 }, (_, index) => index * 2);
+  it('uses corroborated musical boundaries rather than the DJ section phase', () => {
+    const downbeats = Array.from({ length: 81 }, (_, index) => index * 2);
     expect(
       phraseBarMarkers(
         {
           available: true,
           downbeats,
-          djPhrases: [{ start_seconds: 0, end_seconds: 80 }],
+          djPhrases: [
+            { start_seconds: 0, end_seconds: 64 },
+            { start_seconds: 64, end_seconds: 128 },
+          ],
           musicalPhrases: [
-            { start_seconds: 0, end_seconds: 16 },
-            { start_seconds: 16, end_seconds: 80 },
+            { start_seconds: 32, end_seconds: 96 },
+            { start_seconds: 96, end_seconds: 160 },
+            { start_seconds: 160, end_seconds: 162 },
           ],
         },
         'musical',
       ),
     ).toEqual([
-      { time: 0, level: 2 },
-      { time: 16, level: 2 },
-      { time: 48, level: 1 },
+      { time: 32, level: 2 },
+      { time: 64, level: 1 },
+      { time: 96, level: 2 },
+      { time: 128, level: 1 },
+      { time: 160, level: 2 },
     ]);
   });
 
-  it('anchors a slightly late section boundary to its nearest saved downbeat', () => {
-    const downbeats = Array.from({ length: 41 }, (_, index) => index * 2);
+  it('anchors the earliest valid section to its nearest saved downbeat regardless of section order', () => {
+    const downbeats = Array.from({ length: 49 }, (_, index) => index * 2);
     expect(
       phraseBarMarkers({
         available: true,
         downbeats,
         djPhrases: [
-          { start_seconds: 0, end_seconds: 32.1 },
-          { start_seconds: 32.1, end_seconds: 80 },
+          { start_seconds: 80, end_seconds: 96 },
+          { start_seconds: 16.1, end_seconds: 48 },
+          { start_seconds: 48, end_seconds: 80 },
+          { start_seconds: 0, end_seconds: 0 },
         ],
       }),
-    ).toContainEqual({ time: 32, level: 2 });
+    ).toEqual([
+      { time: 16, level: 1 },
+      { time: 48, level: 1 },
+      { time: 80, level: 1 },
+    ]);
+  });
+
+  it('does not promote 8-, 12- or 24-bar section changes to 32-bar markers', () => {
+    const downbeats = Array.from({ length: 81 }, (_, index) => index * 2);
+    const boundaries = [0, 8, 20, 44, 80];
+    const djPhrases = boundaries.slice(0, -1).map((bar, index) => ({
+      start_seconds: downbeats[bar],
+      end_seconds: downbeats[boundaries[index + 1]],
+    }));
+    const data = { available: true, downbeats, djPhrases };
+    expect(phraseBarMarkers(data)).toEqual([]);
+    expect(phraseBarMarkers(data, 'off')).toEqual([]);
+    expect(djTimeline(data).sections).toEqual(djPhrases);
+  });
+
+  it('omits phrase accents when a single section or competing phases cannot establish an origin', () => {
+    const downbeats = Array.from({ length: 65 }, (_, index) => index * 2);
+    expect(
+      phraseBarMarkers({
+        available: true,
+        downbeats,
+        djPhrases: [{ start_seconds: 0, end_seconds: 130 }],
+      }),
+    ).toEqual([]);
+    expect(
+      phraseBarMarkers({
+        available: true,
+        downbeats,
+        djPhrases: [0, 32].map((bar) => ({
+          start_seconds: downbeats[bar],
+          end_seconds: downbeats[bar] + 2,
+        })),
+      }),
+    ).toEqual([]);
+    expect(
+      phraseBarMarkers({
+        available: true,
+        downbeats,
+        djPhrases: [0, 32, 64].map((bar) => ({
+          start_seconds: downbeats[bar],
+          end_seconds: downbeats[bar] + 2,
+        })),
+      }),
+    ).toEqual([
+      { time: downbeats[0], level: 2 },
+      { time: downbeats[16], level: 1 },
+      { time: downbeats[32], level: 2 },
+      { time: downbeats[48], level: 1 },
+      { time: downbeats[64], level: 2 },
+    ]);
+    expect(
+      phraseBarMarkers({
+        available: true,
+        downbeats,
+        djPhrases: [8, 40].map((bar) => ({
+          start_seconds: downbeats[bar],
+          end_seconds: downbeats[bar] + 2,
+        })),
+      }),
+    ).toEqual([]);
+    expect(
+      phraseBarMarkers({
+        available: true,
+        downbeats,
+        djPhrases: [0, 16, 32, 48].map((bar) => ({
+          start_seconds: downbeats[bar],
+          end_seconds: downbeats[bar] + 2,
+        })),
+      }),
+    ).toEqual([
+      { time: downbeats[0], level: 1 },
+      { time: downbeats[16], level: 1 },
+      { time: downbeats[32], level: 1 },
+      { time: downbeats[48], level: 1 },
+      { time: downbeats[64], level: 1 },
+    ]);
+  });
+
+  it('derives the 16-bar residue from supported 32-bar evidence when the 16 vote is split', () => {
+    const downbeats = Array.from({ length: 97 }, (_, index) => index * 2);
+    expect(
+      phraseBarMarkers({
+        available: true,
+        downbeats,
+        djPhrases: [0, 8, 24, 32, 64, 96].map((index) => ({
+          start_seconds: downbeats[index],
+          end_seconds: downbeats[index] + 2,
+        })),
+      }),
+    ).toEqual([
+      { time: downbeats[0], level: 2 },
+      { time: downbeats[16], level: 1 },
+      { time: downbeats[32], level: 2 },
+      { time: downbeats[48], level: 1 },
+      { time: downbeats[64], level: 2 },
+      { time: downbeats[80], level: 1 },
+      { time: downbeats[96], level: 2 },
+    ]);
+  });
+
+  it('does not count through a missing downbeat or an unmeasured silent bar', () => {
+    const downbeats = [
+      ...Array.from({ length: 20 }, (_, index) => index * 2),
+      ...Array.from({ length: 61 }, (_, index) => (index + 21) * 2),
+    ];
+    expect(
+      phraseBarMarkers({
+        available: true,
+        downbeats,
+        djPhrases: [0, 32, 64].map((index) => ({
+          start_seconds: downbeats[index],
+          end_seconds: downbeats[index] + 2,
+        })),
+      }),
+    ).toEqual([]);
   });
 
   it('draws stronger phrase lines at their saved downbeat positions in a zoom window', () => {
-    const downbeats = Array.from({ length: 34 }, (_, index) => index * 2);
+    const downbeats = Array.from({ length: 66 }, (_, index) => index * 2);
     const ctx = {
       fillRect: jest.fn(),
       restore: jest.fn(),
@@ -77,10 +209,18 @@ describe('enhanced waveform timeline', () => {
     };
     drawEnhanced(
       ctx,
-      { available: true, downbeats },
       {
-        start: 20,
-        end: 40,
+        available: true,
+        downbeats,
+        djPhrases: [
+          { start_seconds: 0, end_seconds: 64 },
+          { start_seconds: 64, end_seconds: 128 },
+          { start_seconds: 128, end_seconds: 132 },
+        ],
+      },
+      {
+        start: 80,
+        end: 100,
         width: 200,
         height: 60,
         grid: true,
@@ -88,7 +228,7 @@ describe('enhanced waveform timeline', () => {
         vocals: false,
       },
     );
-    expect(ctx.fillRect.mock.calls).toContainEqual([119, 14, 2, 46]);
+    expect(ctx.fillRect.mock.calls).toContainEqual([159, 14, 2, 46]);
     expect(ctx.fillRect.mock.calls).not.toContainEqual([319, 14, 2, 46]);
   });
 
@@ -105,11 +245,16 @@ describe('enhanced waveform timeline', () => {
       ctx,
       {
         available: true,
-        downbeats: Array.from({ length: 34 }, (_, index) => index * 2),
+        downbeats: Array.from({ length: 66 }, (_, index) => index * 2),
+        djPhrases: [
+          { start_seconds: 0, end_seconds: 64 },
+          { start_seconds: 64, end_seconds: 128 },
+          { start_seconds: 128, end_seconds: 132 },
+        ],
       },
       {
-        start: 0,
-        end: 70,
+        start: 64,
+        end: 134,
         width: 700,
         height: 60,
         grid: true,

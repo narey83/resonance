@@ -217,9 +217,17 @@ namespace resonance.Analysis.API
 
             var beatInfo = Analysis.GetBeatInfo(full);
 
-            // Use the original cached bass band before optional display resampling.
-            var barAnchor = BarAnchorDetector.Estimate(beatInfo.Beats, data);
-            var basicBarMarkers = BarAnchorDetector.Markers(beatInfo.Beats, barAnchor);
+            // Use the original cached bands before optional display resampling.
+            var basicGrid = BarAnchorDetector.Analyze(beatInfo.Beats, data);
+            Serilog.Log.ForContext<AnalysisController>().Debug(
+                "Basic waveform grid for '{File}': opening={Recovered}, shift={ShiftSeconds}, " +
+                "bar={BarStatus}/{BarEvidence}, sixteen={SixteenStatus}/{SixteenEvidence}, " +
+                "thirtyTwo={ThirtyTwoStatus}/{ThirtyTwoEvidence}, skipped={Skipped}",
+                full, basicGrid.RecoveredOpeningBeats, basicGrid.DisplayShiftSeconds,
+                basicGrid.BarPhaseStatus, basicGrid.BarPhaseEvidence,
+                basicGrid.SixteenBarPhaseStatus, basicGrid.SixteenBarPhaseEvidence,
+                basicGrid.ThirtyTwoBarPhaseStatus, basicGrid.ThirtyTwoBarPhaseEvidence,
+                basicGrid.SkippedInternalBeats);
 
             // Stored waveforms run to ~75k bars a track -- a few MB of JSON across the four bands. A
             // client drawing a small fixed width (the mobile seek bar) asks for a few hundred bars and
@@ -241,7 +249,21 @@ namespace resonance.Analysis.API
                 data.NumBars, data.OverallPeaks, data.LowPeaks, data.MidPeaks, data.HighPeaks,
                 beatInfo.BeatOffsetSeconds, beatInfo.Beats, beatInfo.DownbeatOffsetSeconds, beatInfo.DownbeatConfidence,
                 data.DurationSeconds, data.SampleRate, data.WaveformVersion,
-                barAnchor?.Seconds, barAnchor?.Source, basicBarMarkers));
+                basicGrid.BarAnchorSeconds,
+                basicGrid.BarPhaseSource,
+                basicGrid.Markers,
+                basicGrid.BasicGridBeats,
+                basicGrid.BasicGridSource,
+                basicGrid.DisplayShiftSeconds,
+                basicGrid.DisplayShiftSource,
+                basicGrid.BarPhaseStatus,
+                basicGrid.BarPhaseEvidence,
+                basicGrid.SixteenBarPhaseStatus,
+                basicGrid.SixteenBarPhaseEvidence,
+                basicGrid.ThirtyTwoBarPhaseStatus,
+                basicGrid.ThirtyTwoBarPhaseEvidence,
+                basicGrid.RecoveredOpeningBeats,
+                basicGrid.SkippedInternalBeats));
         }
 
         /// <summary>Returns cached EBU R128 loudness for a local file.</summary>
