@@ -24,11 +24,13 @@ From `mobile/`:
 ```bash
 npm ci
 
-# Build and install on an Android emulator or connected device
-npx expo run:android
+# Build the separate development client on the dev laptop, then install it
+APP_VARIANT=development npx expo prebuild --clean --platform android --no-install
+APP_VARIANT=development npx expo run:android
 
 # Or build and install on an iOS simulator, on macOS
-npx expo run:ios
+APP_VARIANT=development npx expo prebuild --clean --platform ios --no-install
+APP_VARIANT=development npx expo run:ios
 ```
 
 The native `android/` and `ios/` directories are generated and ignored by Git. Configuration plugins apply the native customisations from `app.json`; keep durable changes in those plugins rather than only editing generated files.
@@ -44,8 +46,20 @@ Google Cast's Android SDK is pinned to **22.3.1** through `androidPlayServicesCa
 After installing a compatible development build:
 
 ```bash
-npx expo start --dev-client
+APP_VARIANT=development EXPO_PACKAGER_PROXY_URL=http://127.0.0.1:8083 \
+  npx expo start --dev-client --localhost --port 8083
 ```
+
+The development client uses the **Resonance Dev** name, `com.resonance.mobile.dev`
+on Android, `com.resonance.mobile.dev` on iOS, and the `resonance-dev` link scheme.
+The default `app.json` configuration keeps the production identity.
+Keep `APP_VARIANT=development` set for Metro as well as the native build. A
+previously generated `android/` directory retains its old package until prebuild
+regenerates it. Installing the development package leaves the production package
+and its app data separate. On the Pixel, forward only the development port
+(`adb -s PIXEL_TARGET reverse tcp:8083 tcp:8083`) and open the development
+client with `exp+resonance-mobile-dev://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8083`.
+The existing app and its Metro forwarding on ports 8081/8082 stay separate.
 
 TypeScript, JavaScript and styles normally update through Fast Refresh. Rebuild after adding/removing native dependencies, changing native plugins or permissions, or updating the SDK/native runtime. An old installed binary may not match a newly upgraded JavaScript bundle.
 

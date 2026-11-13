@@ -8,6 +8,7 @@ const templatePackage = 'com.resonance.mobile';
 
 module.exports = (config) => {
   const androidPackage = config.android?.package || templatePackage;
+  const scheme = Array.isArray(config.scheme) ? config.scheme[0] : (config.scheme || 'resonance');
   config = withAndroidManifest(config, (mod) => {
     const manifest = mod.modResults.manifest;
     const permissions = manifest['uses-permission'] ?? [];
@@ -36,7 +37,8 @@ module.exports = (config) => {
     fs.mkdirSync(destDir, { recursive: true });
     for (const file of files) {
       const source = fs.readFileSync(path.join(sourceDir, file), 'utf8')
-        .replace(`package ${templatePackage}`, `package ${androidPackage}`);
+        .replace(`package ${templatePackage}`, `package ${androidPackage}`)
+        .replaceAll('resonance://', `${scheme}://`);
       fs.writeFileSync(path.join(destDir, file), source);
     }
     return mod;

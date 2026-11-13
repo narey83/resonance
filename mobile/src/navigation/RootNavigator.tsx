@@ -28,6 +28,7 @@
 // </copyright>
 
 import { Text } from '../components/Typography';
+import Constants from 'expo-constants';
 import { useServerProfiles } from '../store/serverProfilesStore';
 import { tokenUsername } from '../lib/jwt';
 import StudioController from '../components/StudioController';
@@ -145,8 +146,11 @@ function AppContent() {
 
   const isAuthenticated = mode === 'remote' && !!accessToken && !!serverUrl;
   useEffect(() => {
+    const scheme = Array.isArray(Constants.expoConfig?.scheme)
+      ? Constants.expoConfig.scheme[0]
+      : Constants.expoConfig?.scheme || 'resonance';
     const openChatLink = (url: string | null) => {
-      if (!url || !isAuthenticated || !sessionId || !url.startsWith('resonance://chat?')) return;
+      if (!url || !isAuthenticated || !sessionId || !url.startsWith(`${scheme}://chat?`)) return;
       const match = /[?&]sid=([^&#]+)/.exec(url);
       if (!match || match[1] !== sessionId) return;
       if (navigationRef.isReady()) navigationRef.navigate('ChatTab', { screen: 'Chat' });
