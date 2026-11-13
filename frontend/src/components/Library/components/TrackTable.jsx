@@ -126,6 +126,52 @@ export const COLUMNS = [
   { def: '28px', fixed: true, id: 'love', min: 24 },
 ];
 
+export const LIBRARY_LAYOUTS = {
+  compact: {
+    description: 'Title, artist and duration',
+    hidden: [
+      'album',
+      'key',
+      'bpm',
+      'status',
+      'lufs',
+      'ext',
+      'quality',
+      'plays',
+      'added',
+    ],
+    label: 'Compact',
+    legacyId: 'prepare',
+  },
+  standard: {
+    description: 'Common track information',
+    hidden: ['lufs', 'ext', 'quality', 'added', 'plays'],
+    label: 'Standard',
+    legacyId: 'browse',
+  },
+  detailed: {
+    description: 'All available columns',
+    hidden: [],
+    label: 'Detailed',
+    legacyId: 'export',
+  },
+};
+
+export const normaliseLibraryLayout = (value) =>
+  ({ browse: 'standard', prepare: 'compact', export: 'detailed' })[value] ||
+  (Object.prototype.hasOwnProperty.call(LIBRARY_LAYOUTS, value)
+    ? value
+    : 'standard');
+
+export const readLibraryLayoutPreference = (layout, property, fallback) =>
+  prefs.get(
+    `library.layout.${layout}.${property}`,
+    prefs.get(
+      `library.layout.${LIBRARY_LAYOUTS[layout].legacyId}.${property}`,
+      fallback,
+    ),
+  );
+
 // What a narrowing table gives up, in the order it gives it up. Floors alone only stop the names
 // collapsing; without dropping something they'd still be squeezed to 80px of ellipsis. num, wave,
 // title, artist, duration and love are deliberately absent — a row you can't read (or see the
@@ -222,20 +268,20 @@ const TrackTable = ({
       .filter(Boolean)
       .some((p) => p === path || p.endsWith(`/${path}`));
   const [layout, setLayout] = useState(() =>
-    prefs.get('library.layout', 'browse'),
+    normaliseLibraryLayout(prefs.get('library.layout', 'standard')),
   );
   const [columnPanel, setColumnPanel] = useState(false);
-  const defaultHidden = {
-    browse: ['lufs', 'ext', 'quality', 'added', 'plays'],
-    prepare: ['album', 'ext', 'quality', 'plays', 'added'],
-    export: ['lufs', 'plays'],
-  };
   const [hidden, setHidden] = useState(() =>
-    prefs.get(`library.layout.${layout}.hidden`, defaultHidden[layout] || []),
+    readLibraryLayoutPreference(
+      layout,
+      'hidden',
+      LIBRARY_LAYOUTS[layout].hidden,
+    ),
   );
   const [order, setOrder] = useState(() =>
-    prefs.get(
-      `library.layout.${layout}.order`,
+    readLibraryLayoutPreference(
+      layout,
+      'order',
       COLUMNS.map((c) => c.id),
     ),
   );
@@ -556,8 +602,9 @@ const TrackTable = ({
   // Plain render functions — not components — so React doesn't remount on every render
   const [colWidths, setColWidths] = useState(
     () =>
-      prefs.get(
-        `library.layout.${layout}.widths`,
+      readLibraryLayoutPreference(
+        layout,
+        'widths',
         prefs.get(WIDTHS_PREF, {}),
       ) ?? {},
   );
@@ -565,15 +612,16 @@ const TrackTable = ({
     setLayout(next);
     prefs.set('library.layout', next);
     setHidden(
-      prefs.get(`library.layout.${next}.hidden`, defaultHidden[next] || []),
+      readLibraryLayoutPreference(next, 'hidden', LIBRARY_LAYOUTS[next].hidden),
     );
     setOrder(
-      prefs.get(
-        `library.layout.${next}.order`,
+      readLibraryLayoutPreference(
+        next,
+        'order',
         COLUMNS.map((c) => c.id),
       ),
     );
-    setColWidths(prefs.get(`library.layout.${next}.widths`, {}));
+    setColWidths(readLibraryLayoutPreference(next, 'widths', {}));
   };
 
   const reorder = (id, direction) => {
@@ -848,7 +896,7 @@ const TrackTable = ({
         summary={
           <>
             <span className="library-toolbar-muted">View</span>
-            <strong>{layout[0].toUpperCase() + layout.slice(1)}</strong>
+            <strong>{LIBRARY_LAYOUTS[layout].label}</strong>
           </>
         }
       >
@@ -857,7 +905,7 @@ const TrackTable = ({
           className="library-layout-choices"
           role="group"
         >
-          {['browse', 'prepare', 'export'].map((name) => (
+          {Object.entries(LIBRARY_LAYOUTS).map(([name, preset]) => (
             <button
               aria-pressed={layout === name}
               className="library-layout-choice"
@@ -866,14 +914,8 @@ const TrackTable = ({
               onClick={() => changeLayout(name)}
               type="button"
             >
-              <strong>{name[0].toUpperCase() + name.slice(1)}</strong>
-              <span>
-                {name === 'browse'
-                  ? 'Essential track information'
-                  : name === 'prepare'
-                    ? 'Analysis, tempo and key'
-                    : 'File formats and USB preparation'}
-              </span>
+              <strong>{preset.label}</strong>
+              <span>{preset.description}</span>
             </button>
           ))}
         </div>
@@ -939,18 +981,18 @@ const TrackTable = ({
               onClick={() => {
                 const next = COLUMNS.map((c) => c.id);
                 setOrder(next);
-                setHidden(defaultHidden[layout]);
+                setHidden(LIBRARY_LAYOUTS[layout].hidden);
                 setColWidths({});
                 prefs.set(`library.layout.${layout}.order`, next);
                 prefs.set(
                   `library.layout.${layout}.hidden`,
-                  defaultHidden[layout],
+                  LIBRARY_LAYOUTS[layout].hidden,
                 );
                 prefs.set(`library.layout.${layout}.widths`, {});
               }}
               type="button"
             >
-              Reset {layout} layout
+              Reset {LIBRARY_LAYOUTS[layout].label} layout
             </button>
           </div>
         )}

@@ -27,7 +27,63 @@
 //   ╰───────────────────────────────────────────╶──── ─ ─── ─  ── ──┈  ┈
 // </copyright>
 
-import { COLUMNS, fitColumns } from './TrackTable';
+import * as prefs from '../../../lib/prefs';
+import {
+  COLUMNS,
+  fitColumns,
+  LIBRARY_LAYOUTS,
+  normaliseLibraryLayout,
+  readLibraryLayoutPreference,
+} from './TrackTable';
+
+describe('library layouts', () => {
+  it('maps saved workflow layouts to general layouts', () => {
+    expect(normaliseLibraryLayout('browse')).toBe('standard');
+    expect(normaliseLibraryLayout('prepare')).toBe('compact');
+    expect(normaliseLibraryLayout('export')).toBe('detailed');
+    expect(normaliseLibraryLayout('unknown')).toBe('standard');
+  });
+
+  it('keeps saved column settings from the old layout until customised again', () => {
+    const read = jest
+      .spyOn(prefs, 'get')
+      .mockReturnValueOnce(['lufs'])
+      .mockReturnValueOnce(['lufs'])
+      .mockReturnValueOnce([])
+      .mockReturnValueOnce(['title', 'artist']);
+    expect(readLibraryLayoutPreference('detailed', 'hidden', [])).toEqual([
+      'lufs',
+    ]);
+    expect(readLibraryLayoutPreference('detailed', 'order', [])).toEqual([
+      'title',
+      'artist',
+    ]);
+    expect(read).toHaveBeenNthCalledWith(1, 'library.layout.export.hidden', []);
+    expect(read).toHaveBeenNthCalledWith(2, 'library.layout.detailed.hidden', [
+      'lufs',
+    ]);
+    read.mockRestore();
+  });
+
+  it('shows progressively more columns in general layouts', () => {
+    const visible = (layout) =>
+      COLUMNS.filter(
+        (column) => !LIBRARY_LAYOUTS[layout].hidden.includes(column.id),
+      ).map((column) => column.id);
+    expect(visible('compact')).toEqual([
+      'num',
+      'wave',
+      'title',
+      'artist',
+      'duration',
+      'love',
+    ]);
+    expect(visible('standard')).toEqual(
+      expect.arrayContaining(visible('compact')),
+    );
+    expect(visible('detailed')).toEqual(COLUMNS.map((column) => column.id));
+  });
+});
 
 // The table has no horizontal scroll, so any column still in the grid at a given width has to
 // genuinely fit in it. These are the widths that matter: a wide desktop, a laptop pane, and a
