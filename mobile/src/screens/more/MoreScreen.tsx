@@ -112,13 +112,11 @@ export default function MoreScreen({ navigation }: Props) {
       {remote && <View>
         <Text style={s.sectionTitle}>COMMUNITY & DIGGING</Text>
         <View style={s.group}>
-          {([{ target: 'BrowseTab', label: 'Browse shares', icon: 'folder-outline' }, { target: 'RoomsTab', label: 'Rooms', icon: 'chatbubbles-outline' }, { target: 'ChatTab', label: 'Private conversations', icon: 'chatbubble-outline' }] as const).map(item => (
-            <Pressable key={item.target} style={s.row} onPress={() => navigation.getParent<BottomTabNavigationProp<MainTabParamList>>()?.navigate(item.target)}>
-              <View style={s.iconWrap}><Ionicons color={colors.accent} name={item.icon} size={20} /></View>
-              <View style={s.rowText}><Text style={s.rowLabel}>{item.label}</Text></View>
-              <Ionicons color={colors.textDim} name="chevron-forward" size={16} />
-            </Pressable>
-          ))}
+          <Pressable accessibilityRole="button" style={s.row} onPress={() => navigation.getParent<BottomTabNavigationProp<MainTabParamList>>()?.navigate('BrowseTab')}>
+            <View style={s.iconWrap}><Ionicons color={colors.accent} name="folder-outline" size={20} /></View>
+            <View style={s.rowText}><Text style={s.rowLabel}>Browse shares</Text></View>
+            <Ionicons color={colors.textDim} name="chevron-forward" size={16} />
+          </Pressable>
         </View>
       </View>
       }

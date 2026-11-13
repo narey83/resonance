@@ -35,10 +35,11 @@ import { Alert, FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useDeferredFocusEffect } from '../../hooks/useDeferredEffect';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { useRoomStore } from '../../store/roomStore';
 import type { Room } from '../../api/rooms';
 import { useTheme } from '../../context/ThemeContext';
-import type { RoomsStackParamList } from '../../navigation/MainTabs';
+import type { MainTabParamList, RoomsStackParamList } from '../../navigation/MainTabs';
 import BottomSheet from '../../components/BottomSheet';
 
 type Props = NativeStackScreenProps<RoomsStackParamList, 'Rooms'>;
@@ -82,6 +83,17 @@ const JoinedRow = React.memo(function JoinedRow({ room, isFirst, isLast, s, colo
 export default function RoomsScreen({ navigation }: Props) {
   const { colors } = useTheme();
   const s = useMemo(() => makeStyles(colors), [colors]);
+  const tabs = navigation.getParent<BottomTabNavigationProp<MainTabParamList>>();
+
+  React.useLayoutEffect(() => {
+    navigation.setOptions({
+      headerLeft: () => (
+        <Pressable accessibilityRole="button" accessibilityLabel="Back to Chat" onPress={() => tabs?.navigate('ChatTab', { screen: 'Chat' })} hitSlop={8} style={{ marginRight: Spacing.sm }}>
+          <Ionicons color={colors.textPrimary} name="arrow-back" size={24} />
+        </Pressable>
+      ),
+    });
+  }, [navigation, tabs, colors.textPrimary]);
 
   const { joined, unread: mentions, isLoadingJoined, loadJoined, join } = useRoomStore();
   const [joining, setJoining]       = useState<string | null>(null);

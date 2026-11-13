@@ -7,7 +7,7 @@ function screen() {
   const state = [], joins = [];
   let hook = 0;
   const load = mobileModules({
-    react: { ...React, useMemo: fn => fn(), useCallback: fn => fn,
+    react: { ...React, useMemo: fn => fn(), useCallback: fn => fn, useLayoutEffect() {},
       useState: initial => { const i = hook++; if (!(i in state)) state[i] = initial; return [state[i], value => { state[i] = value; }]; } },
     'react-native': { View: 'View', Pressable: 'Pressable', FlatList: 'FlatList', Alert: { alert() {} }, StyleSheet: { create: styles => styles } },
     '@expo/vector-icons': { Ionicons: 'Icon' },
@@ -22,7 +22,7 @@ function screen() {
   const nodes = () => {
     hook = 0; const result = [];
     const visit = node => { if (!React.isValidElement(node)) return; result.push(node); React.Children.forEach(node.props.children, visit); };
-    visit(Screen({ navigation: { navigate() {} } })); return result;
+    visit(Screen({ navigation: { navigate() {}, getParent: () => ({ navigate() {} }) } })); return result;
   };
   return { nodes, joins, input: () => nodes().find(n => n.type === 'TextInput') };
 }

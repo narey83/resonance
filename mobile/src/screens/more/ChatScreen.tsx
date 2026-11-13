@@ -156,13 +156,18 @@ export default function ChatScreen({ navigation }: Props) {
 
   React.useLayoutEffect(() => {
     navigation.setOptions({
+      headerLeft: () => (
+        <Pressable accessibilityRole="button" accessibilityLabel="Back to More" onPress={() => tabs?.navigate('MoreTab')} hitSlop={8} style={{ marginRight: Spacing.sm }}>
+          <Ionicons color={colors.textPrimary} name="arrow-back" size={24} />
+        </Pressable>
+      ),
       headerRight: () => (
         <Pressable accessibilityRole="button" accessibilityLabel={section === 'private' ? 'New private message' : 'Browse chatrooms'} onPress={() => section === 'private' ? setComposing(true) : openRooms()} hitSlop={8}>
           <Ionicons color={colors.accent} name={section === 'private' ? 'create-outline' : 'add-circle-outline'} size={22} />
         </Pressable>
       ),
     });
-  }, [navigation, colors, section, openRooms]);
+  }, [navigation, colors, section, openRooms, tabs]);
 
   const openConversation = (username: string) => {
     navigation.navigate('ChatConversation', { username });
