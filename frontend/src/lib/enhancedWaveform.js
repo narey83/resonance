@@ -318,7 +318,7 @@ export const drawEnhanced = (ctx, data, options) => {
     for (const marker of phraseBarMarkers(data, phrases)) {
       const x = ((marker.time - start) / (end - start)) * width;
       if (x < 0 || x > width) continue;
-      const lineWidth = (marker.level === 2 ? 3 : 2) * scale;
+      const lineWidth = (marker.level === 2 ? 3 : 1) * scale;
       if (gridOutline) {
         ctx.globalAlpha = 1;
         ctx.fillStyle = gridOutline;

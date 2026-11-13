@@ -35,10 +35,18 @@ const WaveformToolbar = ({
     enabled && grid && !enhancedAvailable && basicGridState
       ? basicGridState.beatCount === 0
         ? 'No detected beat timing yet'
-        : basicGridState.barPhaseStatus === 'unresolved' && zoom === 1
-          ? 'Beat timing only · bar phase uncertain'
-          : null
+        : basicGridState.estimatedMarkerCount > 0
+          ? `Estimated 16/32 bars from ${basicGridState.estimatedFromBar ? 'first bar' : 'first beat'} · phase uncertain`
+          : basicGridState.barPhaseStatus === 'unresolved' && zoom === 1
+            ? 'Beat timing only · bar phase uncertain'
+            : null
       : null;
+  const showMarkerKey =
+    enabled &&
+    grid &&
+    !enhancedAvailable &&
+    (basicGridState?.markerCount > 0 ||
+      basicGridState?.estimatedMarkerCount > 0);
   return (
     <div
       aria-label="Waveform controls"
@@ -110,8 +118,8 @@ const WaveformToolbar = ({
             onClick={() => onGrid(!grid)}
             title={
               enhancedAvailable
-                ? 'Beat grid: estimated 16/32-bar lines appear when repeated section changes support their phase; count stays continuous across sections'
-                : 'Beat grid: observed beats; amber 16-bar and violet 32-bar lines appear only when analysis supports their phase'
+                ? 'Beat grid: thin amber 16-bar and violet 32-bar lines appear when repeated section changes support their phase; count stays continuous across sections'
+                : 'Beat grid: observed beats; thin amber 16-bar and violet 32-bar lines are labelled estimates when their phase is uncertain'
             }
             type="button"
           >
@@ -123,6 +131,12 @@ const WaveformToolbar = ({
               role="status"
             >
               {basicGridStatus}
+            </span>
+          )}
+          {showMarkerKey && (
+            <span className="mp-waveform-marker-key">
+              <span className="mp-waveform-marker-key--16">16 bars</span>
+              <span className="mp-waveform-marker-key--32">32 bars</span>
             </span>
           )}
           <button

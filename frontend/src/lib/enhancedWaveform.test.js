@@ -228,8 +228,8 @@ describe('enhanced waveform timeline', () => {
         vocals: false,
       },
     );
-    expect(ctx.fillRect.mock.calls).toContainEqual([159, 14, 2, 46]);
-    expect(ctx.fillRect.mock.calls).not.toContainEqual([319, 14, 2, 46]);
+    expect(ctx.fillRect.mock.calls).toContainEqual([159.5, 14, 1, 46]);
+    expect(ctx.fillRect.mock.calls).not.toContainEqual([319.5, 14, 1, 46]);
   });
 
   it('uses distinct marker colours for 16 and 32 bars', () => {
@@ -266,7 +266,7 @@ describe('enhanced waveform timeline', () => {
     expect(painted).toEqual(
       expect.arrayContaining([
         { args: [-1.5, 14, 3, 46], colour: 'violet' },
-        { args: [319, 14, 2, 46], colour: 'amber' },
+        { args: [319.5, 14, 1, 46], colour: 'amber' },
       ]),
     );
   });

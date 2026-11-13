@@ -1286,6 +1286,11 @@ fieldset.mp-processing-modal-body { border: 0; margin: 0; padding: 0; min-width:
 .mp-waveform-zoom { gap: 4px; }
 .mp-waveform-hint { font-size: 11px; }
 .mp-waveform-grid-status { max-width: 260px; color: var(--text-secondary, var(--text-muted)); font-size: 10px; line-height: 1.3; }
+.mp-waveform-marker-key { display: inline-flex; align-items: center; gap: 9px; color: var(--text-secondary, var(--text-muted)); font-size: 10px; white-space: nowrap; }
+.mp-waveform-marker-key > span { display: inline-flex; align-items: center; gap: 4px; }
+.mp-waveform-marker-key > span::before { content: ''; display: inline-block; height: 12px; background: var(--bar-marker-16); }
+.mp-waveform-marker-key--16::before { width: 1px; }
+.mp-waveform-marker-key > .mp-waveform-marker-key--32::before { width: 3px; background: var(--bar-marker-32); }
 .media-player-scrub-wrap { background: var(--player-bg, var(--bg-primary)); }
 .media-player-bar {
   display: grid;

@@ -42,6 +42,7 @@ import { drawEnhanced } from '../../lib/enhancedWaveform';
 import { formatSeconds } from '../../lib/util';
 import {
   beatGridSeconds,
+  estimatedPhraseBarMarkers,
   maxOf,
   resamplePeaks,
   visibleBeatTimes,
@@ -236,13 +237,25 @@ const WaveformSeekBar = ({
             ? data.basicThirtyTwoBarPhaseStatus === 'supported'
             : data.basicSixteenBarPhaseStatus === 'supported'),
       );
+      const estimatedBarMarkers =
+        !basicBarMarkers.length &&
+        data.basicSixteenBarPhaseStatus === 'unresolved' &&
+        data.basicThirtyTwoBarPhaseStatus === 'unresolved'
+          ? estimatedPhraseBarMarkers(
+              gridBeats,
+              data.analysisDuration,
+              barAnchorSeconds,
+            )
+          : [];
       peaksRef.current = {
         beatOffsetSeconds: beatAvailability.offsetSeconds,
         beatsKnown: beatAvailability.known,
         beats: beatAvailability.beats,
         gridBeats,
         barAnchorSeconds,
-        basicBarMarkers,
+        barMarkers: basicBarMarkers.length
+          ? basicBarMarkers
+          : estimatedBarMarkers,
         skippedInternalBeats: Number(data.basicSkippedInternalBeats) || 0,
         bpm: waveformBeatBpm(gridBeats),
         overall: new Float32Array(data.overallPeaks),
@@ -251,6 +264,9 @@ const WaveformSeekBar = ({
         path: track.path,
         beatCount: gridBeats?.length || 0,
         barPhaseStatus: data.basicBarPhaseStatus ?? null,
+        markerCount: basicBarMarkers.length,
+        estimatedMarkerCount: estimatedBarMarkers.length,
+        estimatedFromBar: Number.isFinite(barAnchorSeconds),
       });
       setAnalysisDuration(data.analysisDuration || null);
       setReady(true);
@@ -663,14 +679,14 @@ const WaveformSeekBar = ({
 
     if (showGrid && !enhancedRef.current?.available) {
       context.save();
-      for (const marker of peaks.basicBarMarkers) {
+      for (const marker of peaks.barMarkers) {
         if (marker.seconds < drawStart || marker.seconds >= drawEnd) continue;
         const x = timeToPixel(
           marker.seconds - drawStart,
           windowDuration,
           windowWidthPx,
         );
-        const lineWidth = (marker.level === 2 ? 3 : 2) * dprScale;
+        const lineWidth = (marker.level === 2 ? 3 : 1) * dprScale;
         context.globalAlpha = 0.95;
         context.fillStyle = marker.level === 2 ? colours.bar32 : colours.bar16;
         context.fillRect(x - lineWidth / 2, 0, lineWidth, waveformHeight);

@@ -152,14 +152,55 @@ describe('Waveform toolbar', () => {
 
     render({ beatCount: 732, barPhaseStatus: 'unresolved' }, 64);
     expect(container.querySelector('[role="status"]')).toBeNull();
+    render({
+      beatCount: 733,
+      barPhaseStatus: 'unresolved',
+      estimatedMarkerCount: 12,
+    });
+    expect(container.querySelector('[role="status"]').textContent).toBe(
+      'Estimated 16/32 bars from first beat · phase uncertain',
+    );
+    expect(container.querySelector('.mp-waveform-marker-key').textContent).toBe(
+      '16 bars32 bars',
+    );
+    render(
+      {
+        beatCount: 733,
+        barPhaseStatus: 'supported',
+        estimatedMarkerCount: 12,
+        estimatedFromBar: true,
+      },
+      64,
+    );
+    expect(container.querySelector('[role="status"]').textContent).toBe(
+      'Estimated 16/32 bars from first bar · phase uncertain',
+    );
     render({ beatCount: 732, barPhaseStatus: 'supported' });
     expect(container.querySelector('[role="status"]')).toBeNull();
+    expect(container.querySelector('.mp-waveform-marker-key')).toBeNull();
+    render({ beatCount: 732, barPhaseStatus: 'supported', markerCount: 12 });
+    expect(container.querySelector('.mp-waveform-marker-key')).not.toBeNull();
+    act(() => {
+      ReactDOM.render(
+        <WaveformToolbar
+          basicGridState={{ beatCount: 732, markerCount: 12 }}
+          enabled
+          enhancedAvailable
+          grid
+          height={70}
+          zoom={1}
+        />,
+        container,
+      );
+    });
+    expect(container.querySelector('.mp-waveform-marker-key')).toBeNull();
     render({ beatCount: 0, barPhaseStatus: 'unresolved' });
     expect(container.querySelector('[role="status"]').textContent).toBe(
       'No detected beat timing yet',
     );
     render({ beatCount: 0, barPhaseStatus: 'unresolved' }, 64, false);
     expect(container.querySelector('[role="status"]')).toBeNull();
+    expect(container.querySelector('.mp-waveform-marker-key')).toBeNull();
   });
   it('supports keyboard navigation and Escape in the styled dropdown', () => {
     expect.hasAssertions();

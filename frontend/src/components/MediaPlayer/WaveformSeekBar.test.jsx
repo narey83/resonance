@@ -28,6 +28,14 @@ const response = {
   overallPeaks: [0.1, 0.5, 0.3],
 };
 
+const recordedMarkerPaints = (painted) =>
+  painted
+    .filter(
+      ({ height, width, y }) =>
+        y === 0 && height === 26 && [1, 3].includes(width),
+    )
+    .map(({ colour, width, x }) => ({ x, width, colour }));
+
 describe('WaveformSeekBar waveform loading', () => {
   let container;
   let mockNow;
@@ -461,7 +469,7 @@ describe('WaveformSeekBar waveform loading', () => {
     expect(context.fillRect.mock.calls).toEqual(
       expect.arrayContaining([
         expect.arrayContaining([expect.any(Number), 0, 3, 26]),
-        expect.arrayContaining([expect.any(Number), 0, 2, 26]),
+        expect.arrayContaining([expect.any(Number), 0, 1, 26]),
       ]),
     );
     expect(markerPaints).toEqual(
@@ -476,7 +484,7 @@ describe('WaveformSeekBar waveform loading', () => {
         {
           x: expect.any(Number),
           y: 0,
-          width: 2,
+          width: 1,
           height: 26,
           colour: '#a25b00',
         },
@@ -490,6 +498,87 @@ describe('WaveformSeekBar waveform loading', () => {
       expect.arrayContaining([
         expect.arrayContaining([expect.any(Number), 0, 3, 26]),
       ]),
+    );
+  });
+
+  it('shows measured-beat 16/32 estimates only for unresolved Basic phase', async () => {
+    expect.hasAssertions();
+    const context = Object.fromEntries(
+      [
+        'beginPath',
+        'clearRect',
+        'clip',
+        'fillRect',
+        'fillText',
+        'lineTo',
+        'moveTo',
+        'rect',
+        'restore',
+        'save',
+        'setTransform',
+        'stroke',
+        'translate',
+      ].map((name) => [name, jest.fn()]),
+    );
+    const painted = [];
+    context.fillRect.mockImplementation((x, y, width, height) =>
+      painted.push({ x, y, width, height, colour: context.fillStyle }),
+    );
+    jest
+      .spyOn(HTMLCanvasElement.prototype, 'getContext')
+      .mockReturnValue(context);
+    const beats = Array.from({ length: 129 }, (_, index) => 0.09 + index * 0.5);
+    const unresolved = {
+      ...response,
+      analysisDuration: 70,
+      beats,
+      basicGridBeats: beats,
+      basicBarPhaseStatus: 'unresolved',
+      basicSixteenBarPhaseStatus: 'unresolved',
+      basicThirtyTwoBarPhaseStatus: 'unresolved',
+      basicBarMarkers: [],
+    };
+    const onBasicGridState = jest.fn();
+    const track = { path: '/music/uncertain.flac' };
+    analysisApi.getWaveform.mockResolvedValueOnce(unresolved);
+    await render(track, { onBasicGridState });
+    const canvas = container.querySelector('canvas');
+    Object.defineProperty(canvas, 'clientWidth', { value: 800 });
+    Object.defineProperty(canvas, 'clientHeight', { value: 40 });
+    act(() => window.requestAnimationFrame.mock.calls.at(-1)[0]());
+    expect(recordedMarkerPaints(painted)).toEqual([
+      { x: expect.any(Number), width: 3, colour: '#6948ad' },
+      { x: expect.any(Number), width: 1, colour: '#a25b00' },
+      { x: expect.any(Number), width: 3, colour: '#6948ad' },
+    ]);
+    expect(onBasicGridState).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        estimatedMarkerCount: 3,
+        estimatedFromBar: false,
+      }),
+    );
+
+    painted.splice(0);
+    await render(track, { onBasicGridState, showGrid: false });
+    act(() => window.requestAnimationFrame.mock.calls.at(-1)[0]());
+    expect(recordedMarkerPaints(painted)).toEqual([]);
+
+    analysisApi.getWaveform.mockResolvedValueOnce({
+      ...unresolved,
+      basicBarPhaseStatus: 'supported',
+      basicSixteenBarPhaseStatus: 'supported',
+      basicThirtyTwoBarPhaseStatus: 'supported',
+      basicBarMarkers: [{ seconds: beats[0], level: 2 }],
+    });
+    bumpRevision();
+    await render(track, { onBasicGridState, showGrid: true });
+    painted.splice(0);
+    act(() => window.requestAnimationFrame.mock.calls.at(-1)[0]());
+    expect(recordedMarkerPaints(painted)).toEqual([
+      { x: expect.any(Number), width: 3, colour: '#6948ad' },
+    ]);
+    expect(onBasicGridState).toHaveBeenLastCalledWith(
+      expect.objectContaining({ estimatedMarkerCount: 0 }),
     );
   });
 
@@ -617,7 +706,7 @@ describe('WaveformSeekBar waveform loading', () => {
     expect(strokeAlphas[0]).toBe(0.32);
     expect(context.fillRect.mock.calls).toEqual(
       expect.arrayContaining([
-        expect.arrayContaining([expect.any(Number), 0, 2, 26]),
+        expect.arrayContaining([expect.any(Number), 0, 1, 26]),
       ]),
     );
 
@@ -674,11 +763,14 @@ describe('WaveformSeekBar waveform loading', () => {
     });
     const track = { bpm: 145, path: '/music/vault-stories.flac' };
     await render(track, { onBasicGridState });
-    expect(onBasicGridState).toHaveBeenLastCalledWith({
-      path: track.path,
-      beatCount: basicGridBeats.length,
-      barPhaseStatus: 'unresolved',
-    });
+    expect(onBasicGridState).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        path: track.path,
+        beatCount: basicGridBeats.length,
+        barPhaseStatus: 'unresolved',
+        estimatedMarkerCount: 0,
+      }),
+    );
     const canvas = container.querySelector('canvas');
     Object.defineProperty(canvas, 'clientHeight', { value: 40 });
     for (const width of [800, 352]) {

@@ -439,6 +439,67 @@ export const waveformBeatBpm = (beats) => {
   return 60 / median;
 };
 
+// When musical phrase phase is unresolved, show a clearly labelled count from
+// an observed beat. These are navigation estimates, not analysed downbeats.
+// Walk measured intervals so a missed tick does not shift every later marker;
+// never place a marker in a gap or continue past a gap whose beat count is unknown.
+export const estimatedPhraseBarMarkers = (beats, duration, originSeconds) => {
+  if (
+    !Array.isArray(beats) ||
+    beats.length < 2 ||
+    !Number.isFinite(duration) ||
+    duration <= 0 ||
+    beats.some(
+      (beat, index) =>
+        !Number.isFinite(beat) ||
+        beat < 0 ||
+        (index > 0 && beat <= beats[index - 1]),
+    )
+  )
+    return [];
+  // Long 8-beat spans overestimate tempo when ticks are repeatedly missed.
+  // Use the shorter adjacent intervals, as the backend ordinal walker does.
+  const intervals = beats
+    .slice(1)
+    .map((beat, index) => beat - beats[index])
+    .sort((left, right) => left - right)
+    .slice(0, Math.max(4, Math.floor(((beats.length - 1) * 3) / 4)));
+  const middle = Math.floor(intervals.length / 2);
+  const period =
+    intervals.length % 2
+      ? intervals[middle]
+      : (intervals[middle - 1] + intervals[middle]) / 2;
+  if (period < 0.25 || period > 1.5) return [];
+
+  const origin = Number.isFinite(originSeconds)
+    ? beats.findIndex(
+        (time) =>
+          Math.abs(time - originSeconds) <= Math.min(0.05, period * 0.2),
+      )
+    : 0;
+  if (origin < 0 || beats[origin] >= duration) return [];
+
+  const markers = [{ seconds: beats[origin], level: 2 }];
+  let ordinal = 0;
+  for (let index = origin + 1; index < beats.length; index++) {
+    const time = beats[index];
+    if (time >= duration) break;
+    const ratio = (time - beats[index - 1]) / period;
+    let step = 1;
+    if (ratio < 0.65 || ratio > 1.35) {
+      step = Math.round(ratio);
+      if (step < 2 || step > 4 || Math.abs(ratio - step) > 0.2) break;
+    }
+
+    ordinal += step;
+    if (ordinal % 128 === 0) markers.push({ seconds: time, level: 2 });
+    else if (ordinal % 64 === 0) markers.push({ seconds: time, level: 1 });
+  }
+
+  // A lone opening marker suggests a phrase that has not been observed.
+  return markers.length > 1 ? markers : [];
+};
+
 // Thin a detected timeline by beat index without replacing its timing with BPM.
 export const visibleBeatTimes = (beats, start, end, stride = 1, anchor = 0) =>
   beats.filter(

@@ -31,6 +31,7 @@ import {
   beatGridPhase,
   beatGridSeconds,
   compareBeats,
+  estimatedPhraseBarMarkers,
   expectedBeats,
   firstGridLineAt,
   resamplePeaks,
@@ -44,6 +45,71 @@ import {
 // 128bpm: 0.469s a beat. The scales below are what the player's seek bar
 // actually works at — a 5 minute track across ~900px is 3 pixels a second.
 const BEAT = 60 / 128;
+const measured = (count, start = 0.09) =>
+  Array.from({ length: count }, (_, index) => start + index * 0.5);
+
+describe('estimatedPhraseBarMarkers', () => {
+  it('counts 16 and 32 bars from measured beats with distinct levels', () => {
+    expect(estimatedPhraseBarMarkers(measured(129), 65)).toEqual([
+      { seconds: 0.09, level: 2 },
+      { seconds: 32.09, level: 1 },
+      { seconds: 64.09, level: 2 },
+    ]);
+  });
+
+  it('keeps the count after a missed beat and omits a missed boundary', () => {
+    const skippedBeforeBoundary = measured(129).filter(
+      (_, index) => index !== 61,
+    );
+    expect(estimatedPhraseBarMarkers(skippedBeforeBoundary, 65)[1]).toEqual({
+      seconds: 32.09,
+      level: 1,
+    });
+
+    const skippedBoundary = measured(129).filter((_, index) => index !== 64);
+    expect(estimatedPhraseBarMarkers(skippedBoundary, 65)).toEqual([
+      { seconds: 0.09, level: 2 },
+      { seconds: 64.09, level: 2 },
+    ]);
+  });
+
+  it('keeps the count when a detector misses a tick repeatedly', () => {
+    const repeatedMisses = measured(160).filter((_, index) => index % 8 !== 7);
+    expect(estimatedPhraseBarMarkers(repeatedMisses, 80)).toEqual([
+      { seconds: 0.09, level: 2 },
+      { seconds: 32.09, level: 1 },
+      { seconds: 64.09, level: 2 },
+    ]);
+  });
+
+  it('never extrapolates before a delayed start or beyond an unknown silent gap', () => {
+    const late = measured(129, 12.09);
+    expect(estimatedPhraseBarMarkers(late, 77.5)[0].seconds).toBe(12.09);
+
+    const gap = [...measured(80), ...measured(80, 48.09)];
+    expect(estimatedPhraseBarMarkers(gap, 90)).toEqual([
+      { seconds: 0.09, level: 2 },
+      { seconds: 32.09, level: 1 },
+    ]);
+  });
+
+  it('uses a supported bar origin after a pickup and clips at analysis duration', () => {
+    expect(estimatedPhraseBarMarkers(measured(130), 64.5, 0.59)).toEqual([
+      { seconds: 0.59, level: 2 },
+      { seconds: 32.59, level: 1 },
+    ]);
+    expect(estimatedPhraseBarMarkers(measured(129), 64)).toEqual([
+      { seconds: 0.09, level: 2 },
+      { seconds: 32.09, level: 1 },
+    ]);
+  });
+
+  it('omits a lone opening marker and rejects invalid beat timelines', () => {
+    expect(estimatedPhraseBarMarkers(measured(20), 20)).toEqual([]);
+    expect(estimatedPhraseBarMarkers([0.1, 0.1, 0.6], 10)).toEqual([]);
+    expect(estimatedPhraseBarMarkers(measured(129), 65, 5)).toEqual([]);
+  });
+});
 
 describe('beatGridSeconds', () => {
   it('keeps a line per beat once there is room for one', () => {
