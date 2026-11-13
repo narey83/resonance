@@ -48,7 +48,7 @@ const BEAT = 60 / 128;
 const measured = (count, start = 0.09) =>
   Array.from({ length: count }, (_, index) => start + index * 0.5);
 describe('countedBeatMarkers', () => {
-  it('counts 16 observed beats for thin markers and 32 for thick markers', () => {
+  it('counts 16 beat periods for thin markers and 32 for thick markers', () => {
     expect(countedBeatMarkers(measured(65), 33)).toEqual([
       { seconds: 8.09, level: 1 },
       { seconds: 16.09, level: 2 },
@@ -57,7 +57,7 @@ describe('countedBeatMarkers', () => {
     ]);
   });
 
-  it('counts a missed tick without moving later measured boundaries', () => {
+  it('keeps the same clock after a missed tick or boundary', () => {
     const beats = measured(65).filter((_, index) => index !== 13);
     expect(countedBeatMarkers(beats, 33)[0]).toEqual({
       seconds: 8.09,
@@ -65,19 +65,37 @@ describe('countedBeatMarkers', () => {
     });
     const missingBoundary = measured(65).filter((_, index) => index !== 16);
     expect(countedBeatMarkers(missingBoundary, 33)[0]).toEqual({
+      seconds: 8.09,
+      level: 1,
+    });
+    expect(countedBeatMarkers(missingBoundary, 33)[1]).toEqual({
       seconds: 16.09,
       level: 2,
     });
   });
 
-  it('stops across silent gaps instead of inventing beats', () => {
+  it('continues through silence and half-time detection without gaps', () => {
     const before = measured(40);
-    expect(countedBeatMarkers([...before, ...measured(40, 40.09)], 61)).toEqual(
-      [
-        { seconds: 8.09, level: 1 },
-        { seconds: 16.09, level: 2 },
-      ],
-    );
+    const after = measured(40, 40.09);
+    const markers = countedBeatMarkers([...before, ...after], 61);
+    expect(markers).toEqual([
+      { seconds: 8.09, level: 1 },
+      { seconds: 16.09, level: 2 },
+      { seconds: 24.09, level: 1 },
+      { seconds: 32.09, level: 2 },
+      { seconds: 40.09, level: 1 },
+      { seconds: 48.09, level: 2 },
+      { seconds: 56.09, level: 1 },
+    ]);
+
+    const halfTime = [
+      ...measured(40),
+      ...Array.from({ length: 21 }, (_, index) => 20.09 + index),
+      ...measured(39, 40.59),
+    ];
+    expect(
+      countedBeatMarkers(halfTime, 60).map((marker) => marker.seconds),
+    ).toEqual([8.09, 16.09, 24.09, 32.09, 40.09, 48.09, 56.09]);
   });
 
   it('uses the first measured beat even with a delayed opening', () => {
@@ -89,6 +107,7 @@ describe('countedBeatMarkers', () => {
 
   it('rejects invalid timelines and never draws beyond duration', () => {
     expect(countedBeatMarkers([0.1, 0.1, 0.6], 10)).toEqual([]);
+    expect(countedBeatMarkers(measured(15), 60)).toEqual([]);
     expect(countedBeatMarkers(measured(33), 8)).toEqual([]);
   });
 });

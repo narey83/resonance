@@ -145,7 +145,7 @@ describe('WaveformSeekBar waveform loading', () => {
     analysisApi.getWaveform.mockResolvedValueOnce(first);
     await render(track, { onReady });
     const originalMarkers = paintedMarkers();
-    expect(originalMarkers).toHaveLength(2);
+    expect(originalMarkers.length).toBeGreaterThan(2);
     onReady.mockClear();
 
     let fail;
@@ -167,7 +167,7 @@ describe('WaveformSeekBar waveform loading', () => {
     bumpRevision();
     await render(track, { onReady });
     expect(paintedMarkers()).not.toEqual(originalMarkers);
-    expect(paintedMarkers()).toHaveLength(2);
+    expect(paintedMarkers()).toHaveLength(originalMarkers.length);
     expect(waveformPreview.primeWaveformCache).toHaveBeenLastCalledWith(
       track.path,
       corrected,
@@ -646,7 +646,7 @@ describe('WaveformSeekBar waveform loading', () => {
     expect(beatXs[0]).toBeCloseTo((0.2 / (180 / 64)) * 800, 3);
   });
 
-  it('uses a supported Basic bar phase for coarse guides without inventing phrase accents', async () => {
+  it('draws regular beat-count guides independently of Basic bar phase', async () => {
     expect.hasAssertions();
     const context = Object.fromEntries(
       [
@@ -695,7 +695,7 @@ describe('WaveformSeekBar waveform loading', () => {
     act(() => window.requestAnimationFrame.mock.calls.at(-1)[0]());
     expect(context.moveTo.mock.calls.length).toBeGreaterThan(1);
     expect(strokeAlphas[0]).toBe(1);
-    expect(context.fillRect.mock.calls).not.toEqual(
+    expect(context.fillRect.mock.calls).toEqual(
       expect.arrayContaining([
         expect.arrayContaining([expect.any(Number), 0, 3, 26]),
       ]),
