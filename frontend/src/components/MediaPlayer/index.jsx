@@ -184,6 +184,7 @@ const MediaPlayer = () => {
   } = usePlayer();
   const activity = useLibraryActivity();
   const audioRef = useRef(null);
+  const pendingInitialSeekRef = useRef(null);
   const auditionTempoRef = useRef(ORIGINAL_AUDITION_TEMPO);
   const playbackPausedRef = useRef(true);
   const playerRef = useRef(null);
@@ -630,6 +631,7 @@ const MediaPlayer = () => {
 
     let cancelled = false;
     const audio = audioRef.current;
+    pendingInitialSeekRef.current = null;
     const token = isPassthroughEnabled() ? null : getToken();
     const requested = playbackRequest !== lastPlaybackRequestRef.current;
     lastPlaybackRequestRef.current = playbackRequest;
@@ -655,6 +657,15 @@ const MediaPlayer = () => {
     setLoading(requested);
 
     const onTimeUpdate = () => setCurrentTime(audio.currentTime);
+    const onLoadedMetadata = () => {
+      const pending = pendingInitialSeekRef.current;
+      if (!pending || pending.identity !== (track.path || track.filename))
+        return;
+
+      audio.currentTime = pending.time;
+      pendingInitialSeekRef.current = null;
+    };
+
     const onDurationChange = () => setDuration(audio.duration || 0);
     const onProgress = () => {
       if (audio.buffered.length > 0) {
@@ -693,6 +704,7 @@ const MediaPlayer = () => {
     };
 
     audio.addEventListener('timeupdate', onTimeUpdate);
+    audio.addEventListener('loadedmetadata', onLoadedMetadata);
     audio.addEventListener('durationchange', onDurationChange);
     audio.addEventListener('progress', onProgress);
     audio.addEventListener('ended', onEnded);
@@ -749,14 +761,19 @@ const MediaPlayer = () => {
         pendingSeekRef.current &&
         pendingSeekRef.current.identity === resumeIdentity
       ) {
-        audio.currentTime = pendingSeekRef.current.time;
+        pendingInitialSeekRef.current = pendingSeekRef.current;
+        audio.currentTime = pendingInitialSeekRef.current.time;
         pendingSeekRef.current = null;
         pendingResumeRef.current = null;
       } else if (
         pendingResumeRef.current &&
         pendingResumeRef.current.path === resumeIdentity
       ) {
-        audio.currentTime = pendingResumeRef.current.time;
+        pendingInitialSeekRef.current = {
+          identity: resumeIdentity,
+          time: pendingResumeRef.current.time,
+        };
+        audio.currentTime = pendingInitialSeekRef.current.time;
         pendingResumeRef.current = null;
       }
 
@@ -781,6 +798,7 @@ const MediaPlayer = () => {
       audio.removeAttribute('src');
       audio.load();
       audio.removeEventListener('timeupdate', onTimeUpdate);
+      audio.removeEventListener('loadedmetadata', onLoadedMetadata);
       audio.removeEventListener('durationchange', onDurationChange);
       audio.removeEventListener('progress', onProgress);
       audio.removeEventListener('ended', onEnded);
@@ -833,7 +851,17 @@ const MediaPlayer = () => {
     }
 
     const audio = audioRef.current;
-    if (audio) audio.currentTime = time;
+    if (!audio) return;
+
+    const identity = track.path || track.filename;
+    if (!audio.getAttribute('src')) {
+      pendingSeekRef.current = { identity, time };
+    } else if (audio.readyState < 1) {
+      pendingInitialSeekRef.current = { identity, time };
+    }
+
+    audio.currentTime = time;
+    setCurrentTime(time);
   };
 
   const handleSeek = (event) => {

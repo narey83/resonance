@@ -450,6 +450,49 @@ describe('player startup and playback intent', () => {
     expect(player.isPlaying).toBe(true);
   });
 
+  it('keeps the latest scrub position while a new track signs and loads', async () => {
+    expect.hasAssertions();
+    await render();
+    let finishSigning;
+    ensureSigned.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishSigning = resolve;
+        }),
+    );
+    await act(async () => player.playQueue(tracks));
+    const audio = container.querySelector('audio');
+    const scrubber = container.querySelector('[aria-label="Seek"]');
+    jest.spyOn(scrubber, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      width: 180,
+    });
+    expect(audio.getAttribute('src')).toBeNull();
+    await act(async () => Simulate.click(scrubber, { clientX: 60 }));
+    await act(async () => Simulate.click(scrubber, { clientX: 90 }));
+    await act(async () => finishSigning());
+    expect(audio.currentTime).toBe(90);
+    audio.currentTime = 0;
+    await act(async () => audio.dispatchEvent(new Event('loadedmetadata')));
+    expect(audio.currentTime).toBe(90);
+  });
+
+  it('keeps a scrub made after source assignment through metadata loading', async () => {
+    expect.hasAssertions();
+    await render();
+    await act(async () => player.playQueue(tracks));
+    const audio = container.querySelector('audio');
+    const scrubber = container.querySelector('[aria-label="Seek"]');
+    jest.spyOn(scrubber, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      width: 180,
+    });
+    await act(async () => Simulate.click(scrubber, { clientX: 75 }));
+    audio.currentTime = 0;
+    await act(async () => audio.dispatchEvent(new Event('loadedmetadata')));
+    expect(audio.currentTime).toBe(75);
+  });
+
   it('keeps a rejected manual play paused and allows a later retry', async () => {
     expect.hasAssertions();
     await restore();
