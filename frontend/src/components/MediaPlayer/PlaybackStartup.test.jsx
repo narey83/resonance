@@ -359,6 +359,38 @@ describe('player startup and playback intent', () => {
     ).toBe(true);
   });
 
+  it('keeps output controls discoverable when Cast is unavailable', async () => {
+    expect.hasAssertions();
+    await restore();
+    const output = container.querySelector(
+      '[aria-label="Choose audio output"]',
+    );
+    expect(output.textContent).toContain('Output');
+    act(() => Simulate.click(output));
+    expect(output.getAttribute('aria-expanded')).toBe('true');
+    expect(
+      container.querySelector('.media-player-cast-unavailable').textContent,
+    ).toContain('Google Cast is unavailable');
+  });
+
+  it('shows connected device controls and routes play through Cast', async () => {
+    expect.hasAssertions();
+    cast.available = true;
+    cast.connected = true;
+    cast.deviceName = 'Living Room';
+    await restore();
+    const output = container.querySelector(
+      '[aria-label="Output: Living Room"]',
+    );
+    expect(output.textContent).toContain('Living Room');
+    act(() => Simulate.click(output));
+    expect(container.querySelector('.media-player-cast').textContent).toContain(
+      'Living Room',
+    );
+    act(() => Simulate.click(container.querySelector('[title="Play cast"]')));
+    expect(cast.castTogglePlay).toHaveBeenCalledTimes(1);
+  });
+
   it('plays manual selections, ended transitions, repeat, and queue navigation', async () => {
     expect.hasAssertions();
     await render();

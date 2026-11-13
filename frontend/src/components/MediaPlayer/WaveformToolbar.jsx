@@ -45,6 +45,7 @@ const WaveformToolbar = ({
       </button>
       {enabled && (
         <>
+          <span className="mp-waveform-group-label">VIEW</span>
           <div
             aria-label="Waveform zoom"
             className="mp-waveform-zoom"
@@ -106,6 +107,11 @@ const WaveformToolbar = ({
               size={12}
             />
           </span>
+          <span
+            aria-hidden="true"
+            className="mp-waveform-divider"
+          />
+          <span className="mp-waveform-group-label">OVERLAYS</span>
           <button
             aria-pressed={grid}
             onClick={() => onGrid(!grid)}

@@ -230,7 +230,7 @@ export const useCast = () => {
         return;
       }
 
-      console.log('[Cast] loading media:', streamUrl, contentType);
+      console.log('[Cast] loading media:', contentType);
       const mediaInfo = new chrome.cast.media.MediaInfo(streamUrl, contentType);
       const meta = new chrome.cast.media.MusicTrackMediaMetadata();
       meta.title = title ?? '';

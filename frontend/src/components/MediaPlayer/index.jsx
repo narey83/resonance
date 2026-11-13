@@ -867,9 +867,9 @@ const MediaPlayer = () => {
     const streamPath = getStreamPath();
     if (!streamPath || !track) return;
     const startTime = audioRef.current?.currentTime ?? 0;
-    const absoluteUrl = await castApi.getAbsoluteStreamUrl(streamPath);
-    const contentType = getContentType(track.filename);
     try {
+      const absoluteUrl = await castApi.getAbsoluteStreamUrl(streamPath);
+      const contentType = getContentType(track.filename);
       playbackPausedRef.current = false;
       await googleCast.castMedia(absoluteUrl, {
         ...getTrackMeta(),
@@ -1064,7 +1064,10 @@ const MediaPlayer = () => {
     >
       {/* ── Cast panel ──────────────────────────────────────── */}
       {showCast && (
-        <div className="media-player-cast">
+        <div
+          className="media-player-cast"
+          id="player-cast-panel"
+        >
           <div className="media-player-cast-header">
             <Cast
               size={13}
@@ -1117,11 +1120,47 @@ const MediaPlayer = () => {
                 )}
               </div>
             )}
+            {!googleCast.available && (
+              <p className="media-player-cast-unavailable">
+                Google Cast is unavailable in this browser. Open Resonance in a
+                Cast-enabled Chrome or Brave window to choose a device.
+              </p>
+            )}
+            {googleCast.connected && (
+              <div
+                aria-label="Cast playback controls"
+                className="media-player-cast-controls"
+              >
+                <button
+                  onClick={handlePrev}
+                  title="Previous track"
+                  type="button"
+                >
+                  <SkipBack size={18} />
+                </button>
+                <button
+                  onClick={togglePlay}
+                  title={effectivePlaying ? 'Pause cast' : 'Play cast'}
+                  type="button"
+                >
+                  {effectivePlaying ? <Pause size={18} /> : <Play size={18} />}
+                </button>
+                <button
+                  disabled={!hasQueue}
+                  onClick={nextTrack}
+                  title="Next track"
+                  type="button"
+                >
+                  <SkipForward size={18} />
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
 
       {/* ── Seekable scrubber ───────────────────────────────── */}
+      {waveformToolbar}
       <div className="media-player-scrub-wrap">
         {seekerEnabled &&
           (playerMetadata.hasWaveform === true ||
@@ -1187,7 +1226,6 @@ const MediaPlayer = () => {
           )}
         </div>
       </div>
-      {waveformToolbar}
       {showShortcuts && (
         <div
           className="media-player-shortcuts-panel"
@@ -1234,7 +1272,14 @@ const MediaPlayer = () => {
 
           <div className="media-player-info">
             <div className="mp-deck-caption">
-              PREVIEW DECK <span>{playing ? 'PLAYING' : 'PAUSED'}</span>
+              PREVIEW DECK{' '}
+              <span>
+                {googleCast.connected
+                  ? `CASTING · ${googleCast.deviceName}`
+                  : effectivePlaying
+                    ? 'PLAYING'
+                    : 'PAUSED'}
+              </span>
               <TrackAnalysisBadge
                 active={analysisActive && waveformReadyPath === track.path}
                 metadata={playerMetadata}
@@ -1433,10 +1478,17 @@ const MediaPlayer = () => {
           </button>
 
           <button
+            aria-controls="player-cast-panel"
+            aria-expanded={showCast}
+            aria-label={
+              googleCast.connected
+                ? `Output: ${googleCast.deviceName}`
+                : 'Choose audio output'
+            }
             className={
               showCast || googleCast.connected
-                ? 'media-player-btn media-player-ctrl-btn--active hover-fx'
-                : 'media-player-btn hover-fx'
+                ? 'media-player-btn media-player-output media-player-ctrl-btn--active hover-fx'
+                : 'media-player-btn media-player-output hover-fx'
             }
             onClick={handleOpenCast}
             title={
@@ -1447,6 +1499,9 @@ const MediaPlayer = () => {
             type="button"
           >
             <Cast size={18} />
+            <span>
+              {googleCast.connected ? googleCast.deviceName : 'Output'}
+            </span>
           </button>
 
           <button
