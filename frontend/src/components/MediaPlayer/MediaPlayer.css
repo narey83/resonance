@@ -452,43 +452,13 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* ── Audio processing menu ───────────────────────────────────────── */
+/* ── Studio menu ──────────────────────────────────────────────────── */
 .mp-processing {
   display: flex;
   align-items: center;
 }
 
-.mp-processing-btn {
-  display: flex;
-  align-items: center;
-  height: 20px;
-  padding: 0 8px;
-  border-radius: 5px;
-  font-size: 11px;
-  font-weight: 500;
-  white-space: nowrap;
-  color: var(--player-text-dim, rgba(255, 255, 255, 0.4));
-  background: rgba(0, 0, 0, 0.35);
-  border: none;
-  cursor: pointer;
-  transition: background var(--dur-fast, 120ms) var(--ease-standard, ease),
-              color var(--dur-fast, 120ms) var(--ease-standard, ease);
-}
-
-.mp-processing-btn:hover {
-  color: #fff;
-  background: rgba(0, 0, 0, 0.55);
-}
-
-.mp-processing-btn--active {
-  color: #fff;
-  background: var(--art-accent, var(--player-fill, #4d9fff));
-}
-
-/* The overlay/modal stay in the DOM and are hidden via display:none rather
-   than unmounted — each processor (see PerformanceMode.jsx) owns a live Web
-   Audio processing chain that must keep running while the modal is closed,
-   not just while it happens to be visible. */
+/* Keep the modal mounted while hidden so closing it does not reset Studio. */
 .mp-processing-overlay {
   position: fixed;
   inset: 0;
@@ -506,10 +476,10 @@
 .mp-processing-modal {
   display: flex;
   flex-direction: column;
-  width: 820px;
+  width: 1120px;
   max-width: calc(100vw - 32px);
-  height: 600px;
-  max-height: calc(100vh - 64px);
+  height: 760px;
+  max-height: calc(var(--app-viewport-height, 100vh) - 32px);
   background: var(--player-bg, #252836);
   border: 1px solid var(--player-border, rgba(255, 255, 255, 0.1));
   border-radius: 10px;
@@ -1182,7 +1152,6 @@
 fieldset.mp-processing-modal-body { border: 0; margin: 0; padding: 0; min-width: 0; }
 .mp-processing-modal-body:disabled { opacity: .6; }
 .mp-processing-row button.mp-processing-row-name { border: 0; background: transparent; color: inherit; font: inherit; text-align: left; flex: 1; padding: 3px 0; cursor: pointer; }
-.mp-processing-btn--active { color: var(--on-accent, #fff); }
 .mp-processing-modal-header { flex-wrap: wrap; }
 @media (max-width: 600px) {
   .mp-processing-modal-body { flex-direction: column; }
@@ -1192,18 +1161,73 @@ fieldset.mp-processing-modal-body { border: 0; margin: 0; padding: 0; min-width:
   .mp-processing-master { padding: 10px 12px; }
 }
 
-.mp-processing-modal { max-width: calc(100% - 32px); max-height: calc(var(--app-viewport-height, 100vh) - 64px); }
+.mp-processing-modal { max-width: calc(100% - 32px); }
+.mp-processing-classic { display: flex; flex: 1; min-height: 0; flex-direction: column; }
+.mp-processing-classic[hidden], .mp-processing-studio[hidden] { display: none; }
+.mp-processing-studio { flex: 1; min-height: 0; overflow-y: auto; color: var(--player-text); }
+.mp-processing-mode, .mp-studio-row, .mp-studio-tabs { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mp-processing-mode button, .mp-studio-panel button { border: 1px solid var(--player-border); background: var(--player-surface-bg); color: var(--player-text); border-radius: 6px; padding: 8px 11px; cursor: pointer; }
+.mp-processing-mode button[aria-selected='true'], .mp-studio-panel button[aria-pressed='true'], .mp-studio-tabs button[aria-selected='true'] { border-color: var(--accent); color: var(--accent); }
+.mp-studio-panel button:disabled { opacity: .5; cursor: default; }
+.mp-studio-panel { display: grid; grid-template-columns: minmax(280px, .85fr) minmax(0, 1.15fr); font-size: 13px; }
+.mp-studio-overview, .mp-studio-details { display: grid; align-content: start; gap: 14px; min-width: 0; padding: 20px; }
+.mp-studio-overview { border-right: 1px solid var(--player-border); }
+.mp-studio-intro > span, .mp-studio-heading { color: var(--accent); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; }
+.mp-studio-intro h2 { font-size: 28px; margin: 6px 0; color: var(--player-text); }
+.mp-studio-intro p, .mp-studio-note { color: var(--player-text-muted); line-height: 1.5; margin: 0; }
+.mp-studio-row h3 { margin: 0 auto 0 0; }
+.mp-studio-row label { margin-right: auto; }
+.mp-studio-row input[type='checkbox'], .mp-studio-module input[type='checkbox'] { accent-color: var(--accent); }
+.mp-studio-presets { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.mp-studio-presets button { min-height: 46px; }
+.mp-studio-slider { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(100px, 2fr) 54px; gap: 12px; align-items: center; padding: 9px 0; }
+.mp-studio-slider input { min-width: 0; width: 100%; accent-color: var(--accent); }
+.mp-studio-slider output { text-align: right; font-variant-numeric: tabular-nums; color: var(--player-text-muted); }
+.mp-studio-panel [role='tabpanel'] { display: grid; gap: 8px; }
+.mp-studio-panel h3 { margin: 12px 0 0; font-size: 16px; }
+.mp-studio-module, .mp-studio-save { border: 1px solid var(--player-border); border-radius: 8px; padding: 14px; display: grid; gap: 8px; }
+.mp-studio-save input { width: 100%; box-sizing: border-box; padding: 10px; color: var(--player-text); background: var(--player-surface-bg); border: 1px solid var(--player-border); border-radius: 6px; }
+.mp-studio-warning { margin: 10px 16px; padding: 12px; color: var(--player-text); border: 1px solid var(--danger, #f85149); border-radius: 6px; line-height: 1.5; }
+.mp-studio-warning div { display: flex; gap: 8px; margin-top: 10px; }
+@media (max-width: 600px) {
+  .mp-studio-panel { grid-template-columns: 1fr; }
+  .mp-studio-overview, .mp-studio-details { padding: 12px; }
+  .mp-studio-overview { border-right: 0; border-bottom: 1px solid var(--player-border); }
+  .mp-studio-slider { grid-template-columns: 1fr 54px; }
+  .mp-studio-slider span { grid-column: 1 / -1; }
+  .mp-studio-intro h2 { font-size: 23px; }
+}
 
-/* A launcher stays readable even when processing is bypassed. */
+/* Match Queue and Output sizing; the outline and text identify rack state. */
 .mp-processing-btn {
-  min-height: 28px; height: auto; padding: 5px 10px;
-  color: var(--text-primary); background: var(--bg-elevated);
-  border: 1px solid var(--border); font-size: 11px;
+  --studio-outline: #788b9d;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  height: 38px;
+  padding: 7px 10px;
+  border: 2px solid var(--studio-outline);
+  border-radius: 8px;
+  color: var(--player-text, var(--text-primary));
+  background: var(--player-surface-bg, var(--bg-surface));
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--dur-fast, 120ms) ease, border-color var(--dur-fast, 120ms) ease;
 }
-.mp-processing-btn:hover { color: var(--text-primary); background: var(--bg-primary); }
-.mp-processing-btn--active, .mp-processing-btn--active:hover {
-  background: var(--accent); border-color: var(--accent); color: var(--on-accent, #fff);
+.mp-processing-btn--on { --studio-outline: #168860; }
+.mp-processing-btn--bypassed { --studio-outline: #bb7b16; }
+.mp-processing-btn:hover {
+  color: var(--player-text, var(--text-primary));
+  background: color-mix(in srgb, var(--studio-outline) 10%, var(--player-surface-bg, var(--bg-surface)));
 }
+.mp-processing-btn:focus-visible { outline: 2px solid var(--studio-outline); outline-offset: 2px; }
+.mp-processing-btn-state { color: var(--studio-outline); font-size: 10px; font-weight: 700; }
+:root:is(.dark,.dim,.amoled,.midnight,.violet,.ember) .mp-processing-btn--off { --studio-outline: #a5b5c4; }
+:root:is(.dark,.dim,.amoled,.midnight,.violet,.ember) .mp-processing-btn--on { --studio-outline: #48d6a5; }
+:root:is(.dark,.dim,.amoled,.midnight,.violet,.ember) .mp-processing-btn--bypassed { --studio-outline: #f6bd62; }
 .mp-processing-overlay { --art-accent: var(--accent); }
 .mp-processing-row--selected button.mp-processing-row-name { color: var(--on-accent, #fff); }
 :root:not(:is(.dark,.dim,.amoled)) .mp-processing-overlay {

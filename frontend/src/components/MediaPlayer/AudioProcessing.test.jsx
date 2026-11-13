@@ -5,7 +5,6 @@ import React from 'react';
 import ReactDOM from 'react-dom';
 import { act, Simulate } from 'react-dom/test-utils';
 
-const mockLifecycle = { mounted: jest.fn(), disposed: jest.fn() };
 jest.mock('../../lib/mediaAudioGraph', () => ({
   getMediaAudioGraph: jest.fn(),
 }));
@@ -13,36 +12,14 @@ jest.mock('../../lib/prefs', () => ({
   get: jest.fn((_key, fallback) => fallback),
   set: jest.fn(),
 }));
-jest.mock('./PerformanceMode', () => {
-  const reactForMock = jest.requireActual('react');
-  return () => {
-    reactForMock.useEffect(() => {
-      mockLifecycle.mounted();
-      return () => mockLifecycle.disposed();
-    }, []);
-    return null;
-  };
-});
-// Jest hoists the module factories above imports, so this mock must be hoisted too.
-// eslint-disable-next-line func-style
-function mockEmptyProcessor() {
-  return null;
-}
 
-jest.mock('./EqView', () => mockEmptyProcessor);
-jest.mock('./CompressorView', () => mockEmptyProcessor);
-jest.mock('./LimiterView', () => mockEmptyProcessor);
-jest.mock('./SaturationView', () => mockEmptyProcessor);
-jest.mock('./StereoView', () => mockEmptyProcessor);
-jest.mock('./FilterView', () => mockEmptyProcessor);
-
-describe('shared processing controls across documents', () => {
+describe('Studio in the player', () => {
   let container;
   let frame;
   let launcherTarget;
   let modalTarget;
-  let audioRef;
   let graph;
+  let audioRef;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -52,24 +29,11 @@ describe('shared processing controls across documents', () => {
     launcherTarget = frame.contentDocument.createElement('div');
     modalTarget = frame.contentDocument.createElement('div');
     frame.contentDocument.body.append(launcherTarget, modalTarget);
-    audioRef = { current: document.createElement('audio') };
-    let listener;
-    let bypassed = true;
     graph = {
-      processing: {
-        subscribe: jest.fn((callback) => {
-          listener = callback;
-          callback(bypassed);
-          return jest.fn();
-        }),
-        setBypassed: jest.fn((value) => {
-          bypassed = value;
-          listener(value);
-        }),
-      },
-      dsp: { performance: { setAdvanced: jest.fn() } },
+      studio: { configure: jest.fn(), setMode: jest.fn().mockResolvedValue() },
     };
     getMediaAudioGraph.mockReturnValue(graph);
+    audioRef = { current: document.createElement('audio') };
   });
 
   afterEach(() => {
@@ -87,76 +51,167 @@ describe('shared processing controls across documents', () => {
           audioRef={audioRef}
           launcherTarget={inPlayerWindow ? launcherTarget : null}
           modalTarget={inPlayerWindow ? modalTarget : null}
-          targetLufs={-9}
         />,
         container,
       );
     });
   };
 
-  it('moves the existing rack between windows without disposing processors or resetting controls', async () => {
+  it('replaces Processing and keeps Studio state when the player moves windows', async () => {
     expect.hasAssertions();
     await render();
     const dialog = modalTarget.querySelector('[role="dialog"]');
-    act(() => Simulate.click(launcherTarget.querySelector('button')));
+    expect(dialog.getAttribute('aria-label')).toBe('Resonance Studio');
+    expect(dialog.textContent).not.toContain('Audio Processing');
+    expect(
+      launcherTarget.querySelector('button').getAttribute('aria-label'),
+    ).toBe('Studio: Off');
+    expect(
+      launcherTarget
+        .querySelector('button')
+        .classList.contains('mp-processing-btn--off'),
+    ).toBe(true);
+    await act(async () =>
+      Simulate.click(launcherTarget.querySelector('button')),
+    );
+    expect(graph.studio.setMode).toHaveBeenCalledWith(true);
     expect(dialog.classList.contains('mp-processing-overlay--hidden')).toBe(
       false,
     );
-    const enable = dialog.querySelector(
-      '[aria-label="Enable audio processing"]',
+    act(() =>
+      Simulate.change(
+        dialog.querySelector('[aria-label="Studio processing rack"]'),
+        { target: { checked: true } },
+      ),
     );
-    act(() => Simulate.change(enable));
-    act(() => Simulate.click(dialog.querySelector('.mp-processing-unlock')));
-    expect(enable.checked).toBe(true);
-    expect(container.querySelector('button').textContent).toBe('Processing');
-    expect(launcherTarget.querySelector('button').textContent).toBe(
-      'Processing',
+    expect(graph.studio.configure).toHaveBeenLastCalledWith(
+      expect.objectContaining({ enabled: true }),
     );
-    expect(graph.processing.setBypassed).toHaveBeenCalledWith(false);
-    expect(prefs.set).toHaveBeenCalledWith(
-      'mediaPlayer.processingAdvanced',
-      true,
-    );
-
-    await render(false);
-    expect(dialog.ownerDocument).toBe(document);
-    expect(document.querySelector('[role="dialog"]')).toBe(dialog);
-    expect(enable.checked).toBe(true);
     expect(
-      dialog
-        .querySelector('.mp-processing-unlock')
-        .getAttribute('aria-pressed'),
-    ).toBe('true');
-    await render();
-    expect(modalTarget.querySelector('[role="dialog"]')).toBe(dialog);
-    expect(mockLifecycle.mounted).toHaveBeenCalledTimes(1);
-    expect(mockLifecycle.disposed).not.toHaveBeenCalled();
-    expect(graph.processing.subscribe).toHaveBeenCalledTimes(1);
+      launcherTarget.querySelector('button').getAttribute('aria-label'),
+    ).toBe('Studio: On');
+    expect(
+      launcherTarget
+        .querySelector('button')
+        .classList.contains('mp-processing-btn--on'),
+    ).toBe(true);
+    expect(prefs.set).toHaveBeenCalledWith(
+      'mediaPlayer.studio.v1',
+      expect.any(Object),
+    );
+    await render(false);
+    expect(document.querySelector('[role="dialog"]')).toBe(dialog);
+    expect(
+      dialog.querySelector('[aria-label="Studio processing rack"]').checked,
+    ).toBe(true);
   });
 
-  it('Escape closes processing in its document without handling unrelated window keys', async () => {
+  it('changes output profiles and keeps their rack values separate', async () => {
     expect.hasAssertions();
     await render();
-    act(() => Simulate.click(launcherTarget.querySelector('button')));
-    const windowKey = jest.fn();
-    frame.contentWindow.addEventListener('keydown', windowKey);
+    const dialog = modalTarget.querySelector('[role="dialog"]');
+    act(() =>
+      Simulate.click(
+        [...dialog.querySelectorAll('button')].find(
+          (button) => button.textContent === 'Warm pressing',
+        ),
+      ),
+    );
+    expect(graph.studio.configure).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        enabled: true,
+        values: expect.arrayContaining([0.22]),
+      }),
+    );
+    act(() =>
+      Simulate.click(
+        [...dialog.querySelectorAll('button')].find(
+          (button) => button.textContent === 'Speakers',
+        ),
+      ),
+    );
+    expect(graph.studio.configure).toHaveBeenLastCalledWith(
+      expect.objectContaining({ enabled: false }),
+    );
+    act(() =>
+      Simulate.click(
+        [...dialog.querySelectorAll('button')].find(
+          (button) => button.textContent === 'Headphones',
+        ),
+      ),
+    );
+    expect(graph.studio.configure).toHaveBeenLastCalledWith(
+      expect.objectContaining({ enabled: true }),
+    );
+  });
+
+  it('keeps A/B temporary and requires confirmation for wider ranges', async () => {
+    expect.hasAssertions();
+    await render();
+    const dialog = modalTarget.querySelector('[role="dialog"]');
+    const button = (label) =>
+      [...dialog.querySelectorAll('button')].find(
+        (item) => item.textContent === label,
+      );
+    act(() => Simulate.click(button('Warm pressing')));
+    act(() => Simulate.click(button('B / Processed')));
+    expect(graph.studio.configure).toHaveBeenLastCalledWith(
+      expect.objectContaining({ bypass: true }),
+    );
+    expect(
+      launcherTarget.querySelector('button').getAttribute('aria-label'),
+    ).toBe('Studio: Bypassed');
+    expect(
+      launcherTarget
+        .querySelector('button')
+        .classList.contains('mp-processing-btn--bypassed'),
+    ).toBe(true);
+    act(() => Simulate.click(button('Push it')));
+    expect(dialog.textContent).toContain('This can get ugly.');
+    act(() => Simulate.click(button('Keep it controlled')));
+    act(() => Simulate.click(button('Mastering')));
+    const exciter = dialog.querySelector('[aria-label="Harmonic exciter"]');
+    expect(exciter.max).toBe('0.35');
+    act(() => Simulate.click(button('Push it')));
+    act(() => Simulate.click(button('Push it — I accept')));
+    expect(exciter.max).toBe('1');
+    act(() => Simulate.click(button('Return to controlled')));
+    expect(exciter.max).toBe('0.35');
+  });
+
+  it('closes with Escape in the portal document', async () => {
+    expect.hasAssertions();
+    await render();
+    await act(async () =>
+      Simulate.click(launcherTarget.querySelector('button')),
+    );
+    const dialog = modalTarget.querySelector('[role="dialog"]');
     act(() => {
-      frame.contentDocument.activeElement.dispatchEvent(
+      dialog.dispatchEvent(
         new frame.contentWindow.KeyboardEvent('keydown', {
           key: 'Escape',
           bubbles: true,
         }),
       );
     });
+    expect(dialog.classList.contains('mp-processing-overlay--hidden')).toBe(
+      true,
+    );
+  });
+
+  it('reports worklet startup failure while retaining the Studio controls', async () => {
+    expect.hasAssertions();
+    graph.studio.setMode.mockRejectedValue(new Error('Worklet unavailable'));
+    await render();
+    await act(async () =>
+      Simulate.click(launcherTarget.querySelector('button')),
+    );
+    const dialog = modalTarget.querySelector('[role="dialog"]');
+    expect(dialog.querySelector('[role="alert"]').textContent).toBe(
+      'Worklet unavailable',
+    );
     expect(
-      modalTarget
-        .querySelector('[role="dialog"]')
-        .classList.contains('mp-processing-overlay--hidden'),
-    ).toBe(true);
-    expect(
-      launcherTarget.querySelector('button').getAttribute('aria-expanded'),
-    ).toBe('false');
-    expect(windowKey).not.toHaveBeenCalled();
-    frame.contentWindow.removeEventListener('keydown', windowKey);
+      dialog.querySelector('[aria-label="Studio processing rack"]'),
+    ).not.toBeNull();
   });
 });

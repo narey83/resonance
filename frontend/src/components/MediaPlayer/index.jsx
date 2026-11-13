@@ -1638,10 +1638,7 @@ const MediaPlayer = () => {
               </div>
 
               {!googleCast.connected && track && (
-                <AudioProcessing
-                  audioRef={audioRef}
-                  targetLufs={trackLoudness?.integratedLufs ?? null}
-                >
+                <AudioProcessing audioRef={audioRef}>
                   <PlaybackSyncMonitor
                     audioRef={audioRef}
                     compensated={syncCompensated}
