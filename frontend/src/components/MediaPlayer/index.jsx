@@ -80,7 +80,14 @@ import {
   VolumeX,
   X,
 } from 'lucide-react';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
+import ReactDOM from 'react-dom';
 
 const RESUME_POSITION_KEY = 'resonance-player-position';
 
@@ -287,6 +294,82 @@ const MediaPlayer = () => {
     analyseMissing: waveformReadyPath === track?.path,
   });
   const [showCast, setShowCast] = useState(false);
+  const castButtonRef = useRef(null);
+  const castPanelRef = useRef(null);
+  const positionCastPanel = useCallback(() => {
+    const button = castButtonRef.current;
+    const panel = castPanelRef.current;
+    if (!button || !panel) return;
+    const rect = button.getBoundingClientRect();
+    const width = Math.min(320, window.innerWidth - 24);
+    const left = Math.max(
+      12,
+      Math.min(rect.right - width, window.innerWidth - width - 12),
+    );
+    const above = rect.top - 12;
+    const below = window.innerHeight - rect.bottom - 12;
+    const placeAbove = above >= 160 || above >= below;
+    Object.assign(panel.style, {
+      left: `${left}px`,
+      width: `${width}px`,
+      top: placeAbove ? '' : `${rect.bottom + 28}px`,
+      bottom: placeAbove ? `${window.innerHeight - rect.top + 28}px` : '',
+      maxHeight: `${Math.max(80, (placeAbove ? above : below) - 8)}px`,
+      visibility: 'visible',
+    });
+  }, []);
+  useLayoutEffect(() => {
+    if (!showCast || !track) return undefined;
+    positionCastPanel();
+    let frame;
+    if (typeof requestAnimationFrame === 'function') {
+      const followUntil = performance.now() + 750;
+      const followDock = () => {
+        positionCastPanel();
+        if (performance.now() < followUntil)
+          frame = requestAnimationFrame(followDock);
+      };
+
+      frame = requestAnimationFrame(followDock);
+    }
+
+    const dock = playerRef.current?.closest('.media-player-dock');
+    const observer =
+      dock && typeof ResizeObserver === 'function'
+        ? new ResizeObserver(positionCastPanel)
+        : null;
+    if (observer) observer.observe(dock);
+
+    const closeOutside = (event) => {
+      if (
+        !castButtonRef.current?.contains(event.target) &&
+        !castPanelRef.current?.contains(event.target)
+      )
+        setShowCast(false);
+    };
+
+    const closeOnEscape = (event) => {
+      if (event.key !== 'Escape') return;
+      setShowCast(false);
+      castButtonRef.current?.focus();
+    };
+
+    window.addEventListener('resize', positionCastPanel);
+    window.addEventListener('scroll', positionCastPanel, true);
+    document.addEventListener('pointerdown', closeOutside);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      if (frame !== undefined) cancelAnimationFrame(frame);
+      observer?.disconnect();
+      window.removeEventListener('resize', positionCastPanel);
+      window.removeEventListener('scroll', positionCastPanel, true);
+      document.removeEventListener('pointerdown', closeOutside);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [positionCastPanel, showCast, track]);
+  useEffect(() => {
+    if (!track) setShowCast(false);
+  }, [track]);
   useEffect(() => {
     repeatRef.current = repeat;
   }, [repeat]);
@@ -993,6 +1076,7 @@ const MediaPlayer = () => {
   };
 
   const handleClose = () => {
+    setShowCast(false);
     playbackPausedRef.current = true;
     const audio = audioRef.current;
     if (audio) {
@@ -1062,108 +1146,109 @@ const MediaPlayer = () => {
       ? toCamelot(playerMetadata.key) ?? playerMetadata.key
       : playerMetadata.key;
 
+  const castPanel = (
+    <div
+      aria-label="Audio output"
+      className="media-player-cast"
+      id="player-cast-panel"
+      ref={castPanelRef}
+      role="dialog"
+      style={{ visibility: 'hidden' }}
+    >
+      <div className="media-player-cast-header">
+        <Cast
+          size={13}
+          strokeWidth={1.75}
+        />
+        <span>Cast to Device</span>
+        <button
+          className="media-player-btn media-player-cast-close hover-fx"
+          onClick={() => setShowCast(false)}
+          title="Close"
+          type="button"
+        >
+          <X size={13} />
+        </button>
+      </div>
+
+      <div className="media-player-cast-body">
+        {/* Google Cast section */}
+        {googleCast.available && (
+          <div className="media-player-cast-section">
+            <div className="media-player-cast-section-label">Google Cast</div>
+            {googleCast.connected ? (
+              <div className="media-player-cast-google-active">
+                <Cast size={13} />
+                <span>{googleCast.deviceName}</span>
+                <button
+                  className="media-player-cast-stop hover-fx"
+                  onClick={handleStopCast}
+                  type="button"
+                >
+                  Stop
+                </button>
+              </div>
+            ) : (
+              <button
+                className="media-player-cast-device media-player-cast-google-btn hover-fx"
+                onClick={handleGoogleCast}
+                type="button"
+              >
+                <Cast
+                  size={14}
+                  strokeWidth={1.5}
+                />
+                <span className="media-player-cast-device-name">
+                  Open device picker…
+                </span>
+              </button>
+            )}
+          </div>
+        )}
+        {!googleCast.available && (
+          <p className="media-player-cast-unavailable">
+            Google Cast is unavailable in this browser. Open Resonance in a
+            Cast-enabled Chrome or Brave window to choose a device.
+          </p>
+        )}
+        {googleCast.connected && (
+          <div
+            aria-label="Cast playback controls"
+            className="media-player-cast-controls"
+          >
+            <button
+              onClick={handlePrev}
+              title="Previous track"
+              type="button"
+            >
+              <SkipBack size={18} />
+            </button>
+            <button
+              onClick={togglePlay}
+              title={effectivePlaying ? 'Pause cast' : 'Play cast'}
+              type="button"
+            >
+              {effectivePlaying ? <Pause size={18} /> : <Play size={18} />}
+            </button>
+            <button
+              disabled={!hasQueue}
+              onClick={nextTrack}
+              title="Next track"
+              type="button"
+            >
+              <SkipForward size={18} />
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   const dockContent = (
     <div
       className="media-player"
       ref={playerRef}
     >
-      {/* ── Cast panel ──────────────────────────────────────── */}
-      {showCast && (
-        <div
-          className="media-player-cast"
-          id="player-cast-panel"
-        >
-          <div className="media-player-cast-header">
-            <Cast
-              size={13}
-              strokeWidth={1.75}
-            />
-            <span>Cast to Device</span>
-            <button
-              className="media-player-btn media-player-cast-close hover-fx"
-              onClick={() => setShowCast(false)}
-              title="Close"
-              type="button"
-            >
-              <X size={13} />
-            </button>
-          </div>
-
-          <div className="media-player-cast-body">
-            {/* Google Cast section */}
-            {googleCast.available && (
-              <div className="media-player-cast-section">
-                <div className="media-player-cast-section-label">
-                  Google Cast
-                </div>
-                {googleCast.connected ? (
-                  <div className="media-player-cast-google-active">
-                    <Cast size={13} />
-                    <span>{googleCast.deviceName}</span>
-                    <button
-                      className="media-player-cast-stop hover-fx"
-                      onClick={handleStopCast}
-                      type="button"
-                    >
-                      Stop
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    className="media-player-cast-device media-player-cast-google-btn hover-fx"
-                    onClick={handleGoogleCast}
-                    type="button"
-                  >
-                    <Cast
-                      size={14}
-                      strokeWidth={1.5}
-                    />
-                    <span className="media-player-cast-device-name">
-                      Open device picker…
-                    </span>
-                  </button>
-                )}
-              </div>
-            )}
-            {!googleCast.available && (
-              <p className="media-player-cast-unavailable">
-                Google Cast is unavailable in this browser. Open Resonance in a
-                Cast-enabled Chrome or Brave window to choose a device.
-              </p>
-            )}
-            {googleCast.connected && (
-              <div
-                aria-label="Cast playback controls"
-                className="media-player-cast-controls"
-              >
-                <button
-                  onClick={handlePrev}
-                  title="Previous track"
-                  type="button"
-                >
-                  <SkipBack size={18} />
-                </button>
-                <button
-                  onClick={togglePlay}
-                  title={effectivePlaying ? 'Pause cast' : 'Play cast'}
-                  type="button"
-                >
-                  {effectivePlaying ? <Pause size={18} /> : <Play size={18} />}
-                </button>
-                <button
-                  disabled={!hasQueue}
-                  onClick={nextTrack}
-                  title="Next track"
-                  type="button"
-                >
-                  <SkipForward size={18} />
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* ── Seekable scrubber ───────────────────────────────── */}
       {waveformToolbar}
       <div className="media-player-scrub-wrap">
@@ -1445,6 +1530,7 @@ const MediaPlayer = () => {
           <button
             aria-controls="player-cast-panel"
             aria-expanded={showCast}
+            aria-haspopup="dialog"
             aria-label={
               googleCast.connected
                 ? `Output: ${googleCast.deviceName}`
@@ -1456,6 +1542,7 @@ const MediaPlayer = () => {
                 : 'media-player-btn media-player-output hover-fx'
             }
             onClick={handleOpenCast}
+            ref={castButtonRef}
             title={
               googleCast.connected
                 ? `Casting to ${googleCast.deviceName}`
@@ -1543,7 +1630,12 @@ const MediaPlayer = () => {
     </div>
   );
   dockContentRef.current = dockContent;
-  return renderDock(dockContent);
+  return (
+    <>
+      {renderDock(dockContent)}
+      {showCast && ReactDOM.createPortal(castPanel, document.body)}
+    </>
+  );
 };
 
 // Rendered by App with no props and no context, but App re-renders on every

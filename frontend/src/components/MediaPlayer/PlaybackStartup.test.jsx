@@ -371,9 +371,18 @@ describe('player startup and playback intent', () => {
     expect(output.textContent).toContain('Output');
     act(() => Simulate.click(output));
     expect(output.getAttribute('aria-expanded')).toBe('true');
+    const panel = document.querySelector('#player-cast-panel');
+    expect(panel.parentElement).toBe(document.body);
     expect(
-      container.querySelector('.media-player-cast-unavailable').textContent,
+      panel.querySelector('.media-player-cast-unavailable').textContent,
     ).toContain('Google Cast is unavailable');
+    act(() => {
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', { bubbles: true, key: 'Escape' }),
+      );
+    });
+    expect(document.querySelector('#player-cast-panel')).toBeNull();
+    expect(output.getAttribute('aria-expanded')).toBe('false');
   });
 
   it('shows connected device controls and routes play through Cast', async () => {
@@ -387,10 +396,10 @@ describe('player startup and playback intent', () => {
     );
     expect(output.textContent).toContain('Living Room');
     act(() => Simulate.click(output));
-    expect(container.querySelector('.media-player-cast').textContent).toContain(
+    expect(document.querySelector('.media-player-cast').textContent).toContain(
       'Living Room',
     );
-    act(() => Simulate.click(container.querySelector('[title="Play cast"]')));
+    act(() => Simulate.click(document.querySelector('[title="Play cast"]')));
     expect(cast.castTogglePlay).toHaveBeenCalledTimes(1);
   });
 
