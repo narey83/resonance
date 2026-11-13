@@ -31,6 +31,7 @@ import { getAlbumTracks } from '../../services/albumTracks';
 import { Text, TextInput } from '../../components/Typography';
 import SmartCratesTab from './SmartCratesTab';
 import NewLibraryBadge from '../../components/NewLibraryBadge';
+import NewTrackIcon from '../../components/NewTrackIcon';
 import { isRecentlyIndexed } from '../../lib/recentLibraryItems';
 import { LocalPlaylists, LocalPlaylistPicker } from '../../components/LocalPlaylists';
 
@@ -178,7 +179,7 @@ function NewItemIcon({ labelled = true }: { labelled?: boolean }) {
       accessible={labelled}
       style={labelled ? { marginLeft: 6 } : undefined}
     >
-      <Ionicons name="sparkles" size={14} color={c.accent} />
+      <NewTrackIcon size={14} color={c.accent} />
     </View>
   );
 }
