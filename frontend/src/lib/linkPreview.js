@@ -31,19 +31,26 @@ import api from './api';
 
 // Keyed by URL so the same link posted in multiple messages — or the same
 // message re-rendered on every poll tick — only ever triggers one fetch.
-// Holds either the in-flight promise or its resolved (possibly null) result.
+// Holds in-flight promises and successful results. Failed previews expire so a
+// temporary network/API failure does not hide a card for the whole browser session.
 const cache = new Map();
+const missTtl = 30_000;
 
 export const getPreview = ({ url }) => {
   if (!url) return Promise.resolve(null);
-  if (cache.has(url)) return Promise.resolve(cache.get(url));
+  const cached = cache.get(url);
+  if (cached && cached.expires > Date.now()) return cached.promise;
+  cache.delete(url);
 
   const promise = api
     .get('/linkpreview', { params: { url } })
     .then((response) => response.data)
     .catch(() => null);
 
-  cache.set(url, promise);
-  promise.then((result) => cache.set(url, result));
+  const entry = { promise, expires: Number.POSITIVE_INFINITY };
+  cache.set(url, entry);
+  promise.then((result) => {
+    entry.expires = result ? Number.POSITIVE_INFINITY : Date.now() + missTtl;
+  });
   return promise;
 };

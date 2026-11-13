@@ -35,6 +35,7 @@ namespace resonance.LinkPreview.API.Controllers
     using System.Net;
     using System.Net.Http;
     using System.Text;
+    using System.Text.Json;
     using System.Text.RegularExpressions;
     using System.Threading.Tasks;
     using Asp.Versioning;
@@ -67,6 +68,7 @@ namespace resonance.LinkPreview.API.Controllers
         private static readonly Regex MetaTagRegex = new(@"<meta\s[^>]*>", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex TitleTagRegex = new(@"<title[^>]*>([\s\S]*?)</title>", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         private static readonly Regex AttrRegex = new(@"([\w:-]+)\s*=\s*(?:""([^""]*)""|'([^']*)')", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        private static readonly Regex YouTubeVideoIdRegex = new(@"^[A-Za-z0-9_-]{11}$", RegexOptions.Compiled);
 
         public LinkPreviewController(IHttpClientFactory httpClientFactory)
         {
@@ -151,6 +153,26 @@ namespace resonance.LinkPreview.API.Controllers
         private async Task<LinkPreviewResponse> FetchPreview(Uri uri)
         {
             using var http = HttpClientFactory.CreateClient(HttpClientName);
+            if (TryGetYouTubeVideoId(uri, out var videoId))
+            {
+                try
+                {
+                    var youtubePreview = await FetchYouTubePreview(http, uri, videoId);
+                    if (youtubePreview is not null)
+                    {
+                        return youtubePreview;
+                    }
+                }
+                catch (HttpRequestException)
+                {
+                    // The ordinary page scraper may still find usable metadata.
+                }
+                catch (JsonException)
+                {
+                    // A malformed oEmbed response must not suppress the page fallback.
+                }
+            }
+
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
             using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
 
@@ -213,6 +235,73 @@ namespace resonance.LinkPreview.API.Controllers
                 Description = Truncate(description, 400),
                 ImageUrl = absoluteImage,
                 SiteName = Truncate(siteName, 100),
+            };
+        }
+
+        private bool TryGetYouTubeVideoId(Uri uri, out string videoId)
+        {
+            videoId = null;
+            var host = uri.Host.ToLowerInvariant();
+            if (host is "youtu.be" or "www.youtu.be")
+            {
+                videoId = uri.AbsolutePath.Trim('/');
+            }
+            else if (host is "youtube.com" or "www.youtube.com" or "m.youtube.com")
+            {
+                var path = uri.AbsolutePath.Trim('/');
+                if (path == "watch")
+                {
+                    videoId = uri.Query.TrimStart('?').Split('&')
+                        .Select(part => part.Split('=', 2))
+                        .Where(part => part.Length == 2 && part[0] == "v")
+                        .Select(part => Uri.UnescapeDataString(part[1]))
+                        .FirstOrDefault();
+                }
+                else if (path.StartsWith("shorts/", StringComparison.Ordinal) ||
+                         path.StartsWith("live/", StringComparison.Ordinal) ||
+                         path.StartsWith("embed/", StringComparison.Ordinal))
+                {
+                    videoId = path.Split('/').ElementAtOrDefault(1);
+                }
+            }
+
+            return videoId is not null && YouTubeVideoIdRegex.IsMatch(videoId);
+        }
+
+        private async Task<LinkPreviewResponse> FetchYouTubePreview(HttpClient http, Uri originalUri, string videoId)
+        {
+            var watchUrl = $"https://www.youtube.com/watch?v={videoId}";
+            var oembedUrl = $"https://www.youtube.com/oembed?url={Uri.EscapeDataString(watchUrl)}&format=json";
+            using var request = new HttpRequestMessage(HttpMethod.Get, oembedUrl);
+            using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+            if (!response.IsSuccessStatusCode ||
+                response.Content.Headers.ContentType?.MediaType != "application/json")
+            {
+                return null;
+            }
+
+            using var document = JsonDocument.Parse(await ReadCapped(response, 16 * 1_024));
+            var root = document.RootElement;
+            if (!root.TryGetProperty("title", out var titleValue) || titleValue.ValueKind != JsonValueKind.String)
+            {
+                return null;
+            }
+
+            var title = titleValue.GetString();
+            if (string.IsNullOrWhiteSpace(title))
+            {
+                return null;
+            }
+
+            var image = root.TryGetProperty("thumbnail_url", out var thumbnail) && thumbnail.ValueKind == JsonValueKind.String
+                ? thumbnail.GetString() : null;
+            return new LinkPreviewResponse
+            {
+                Url = originalUri.ToString(),
+                Title = Truncate(title, 200),
+                SiteName = "YouTube",
+                ImageUrl = Uri.TryCreate(image, UriKind.Absolute, out var imageUri) && imageUri.Scheme == Uri.UriSchemeHttps
+                    ? imageUri.ToString() : null,
             };
         }
     }
