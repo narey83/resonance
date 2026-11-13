@@ -1,4 +1,6 @@
-import WaveformToolbar from './WaveformToolbar';
+import WaveformToolbar, {
+  normalizeWaveformMarkerInterval,
+} from './WaveformToolbar';
 import React from 'react';
 import ReactDOM from 'react-dom';
 import { act, Simulate } from 'react-dom/test-utils';
@@ -22,6 +24,7 @@ describe('Waveform toolbar', () => {
       onHeight: jest.fn(),
       onZoom: jest.fn(),
       onGrid: jest.fn(),
+      onMarkerInterval: jest.fn(),
       onVocals: jest.fn(),
       onPhrases: jest.fn(),
     };
@@ -80,6 +83,43 @@ describe('Waveform toolbar', () => {
     expect(handlers.onPhrases).toHaveBeenCalledWith('off');
     expect(handlers.onGrid).toHaveBeenCalledWith(false);
     expect(container.textContent).not.toContain('Compact');
+  });
+  it('selects Off, 16, 32 or 64 beats and normalizes saved values', () => {
+    const onMarkerInterval = jest.fn();
+    act(() => {
+      ReactDOM.render(
+        <WaveformToolbar
+          enabled
+          grid
+          height={70}
+          markerInterval={32}
+          onMarkerInterval={onMarkerInterval}
+          zoom={1}
+        />,
+        container,
+      );
+    });
+    const trigger = container.querySelector(
+      '[aria-label="Beat marker interval"]',
+    );
+    expect(trigger.textContent).toContain('32 beats');
+    act(() => Simulate.click(trigger));
+    expect(
+      [
+        ...document.querySelectorAll('.mp-dropdown-options [role="option"]'),
+      ].map((option) => option.textContent),
+    ).toEqual(['Markers off', '16 beats', '32 beats', '64 beats']);
+    act(() =>
+      Simulate.click(
+        [
+          ...document.querySelectorAll('.mp-dropdown-options [role="option"]'),
+        ].find((option) => option.textContent === 'Markers off'),
+      ),
+    );
+    expect(onMarkerInterval).toHaveBeenCalledWith(0);
+    expect(normalizeWaveformMarkerInterval('64')).toBe(64);
+    expect(normalizeWaveformMarkerInterval(0)).toBe(0);
+    expect(normalizeWaveformMarkerInterval('invalid')).toBe(32);
   });
   it('greys out enhanced controls for Basic tracks and restores saved choices', () => {
     expect.hasAssertions();
@@ -158,7 +198,7 @@ describe('Waveform toolbar', () => {
       estimatedMarkerCount: 12,
     });
     expect(container.querySelector('[role="status"]').textContent).toBe(
-      '16/32 beat count from first measured beat · estimated',
+      '32 beat count from first measured beat · estimated',
     );
     expect(container.querySelector('.mp-waveform-marker-key')).toBeNull();
     render(
@@ -171,7 +211,7 @@ describe('Waveform toolbar', () => {
       64,
     );
     expect(container.querySelector('[role="status"]').textContent).toBe(
-      '16/32 beat count from first measured beat · estimated',
+      '32 beat count from first measured beat · estimated',
     );
     render({ beatCount: 732, barPhaseStatus: 'supported' });
     expect(container.querySelector('[role="status"]')).toBeNull();

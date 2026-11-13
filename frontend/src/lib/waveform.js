@@ -81,7 +81,7 @@ export const beatGridSeconds = (bpm, pixelsPerSecond, minSpacing) => {
   const secondsPerBeat = 60 / bpm;
   // 1 beat, 1 bar, 1 phrase — all multiples of a beat, so whatever survives is
   // still anchored to the same grid.
-  for (const beats of [1, 4, 16]) {
+  for (const beats of [1, 4, 16, 32, 64, 128]) {
     if (secondsPerBeat * beats * pixelsPerSecond >= minSpacing) {
       return secondsPerBeat * beats;
     }
@@ -439,14 +439,13 @@ export const waveformBeatBpm = (beats) => {
   return 60 / median;
 };
 
-// Basic's coarse guides count from the first measured beat. They are
-// navigation estimates, not analysed downbeats or arrangement boundaries.
-// Use measured ticks when available and interpolate through missing ticks, so
-// a changing tempo does not pull later markers away from the beat grid.
-export const countedBeatMarkers = (beats, duration) => {
+// Fill missing beat ordinals between measured ticks. This keeps every guide
+// on one numbered timeline while following local tempo changes in the audio.
+// Do not extend the grid beyond the last observed beat into an unmeasured tail.
+export const completedBeatTimeline = (beats, duration) => {
   if (
     !Array.isArray(beats) ||
-    beats.length < 16 ||
+    beats.length < 2 ||
     !Number.isFinite(duration) ||
     duration <= 0 ||
     beats.some(
@@ -471,42 +470,48 @@ export const countedBeatMarkers = (beats, duration) => {
       : (intervals[middle - 1] + intervals[middle]) / 2;
   if (period < 0.25 || period > 1.5) return [];
 
-  const origin = beats[0];
-  if (origin >= duration) return [];
-  const ordinals = [0];
+  if (beats[0] >= duration) return [];
+  const timeline = [beats[0]];
   for (let index = 1; index < beats.length; index++) {
     const elapsed = beats[index] - beats[index - 1];
-    ordinals.push(
-      ordinals[index - 1] + Math.max(1, Math.round(elapsed / period)),
-    );
+    const count = Math.max(1, Math.round(elapsed / period));
+    for (let tick = 1; tick <= count; tick++) {
+      const time =
+        tick === count
+          ? beats[index]
+          : beats[index - 1] + (elapsed * tick) / count;
+      if (time >= duration) return timeline;
+      timeline.push(time);
+    }
   }
 
-  const markers = [];
-  let nextBeat = 1;
-  for (let ordinal = 16; ; ordinal += 16) {
-    while (nextBeat < ordinals.length && ordinals[nextBeat] < ordinal)
-      nextBeat++;
-    let seconds;
-    if (nextBeat < ordinals.length) {
-      seconds =
-        ordinals[nextBeat] === ordinal
-          ? beats[nextBeat]
-          : beats[nextBeat - 1] +
-            ((ordinal - ordinals[nextBeat - 1]) /
-              (ordinals[nextBeat] - ordinals[nextBeat - 1])) *
-              (beats[nextBeat] - beats[nextBeat - 1]);
-    } else {
-      seconds = beats.at(-1) + (ordinal - ordinals.at(-1)) * period;
-    }
+  return timeline;
+};
 
-    if (seconds >= duration) break;
+// Basic's coarse guides count from the first measured beat. They are
+// navigation estimates, not analysed downbeats or arrangement boundaries.
+export const countedBeatMarkers = (beats, duration) => {
+  if (!Array.isArray(beats) || beats.length < 16) return [];
+  const timeline = completedBeatTimeline(beats, duration);
+  const markers = [];
+  for (let ordinal = 16; ordinal < timeline.length; ordinal += 16)
     markers.push({
-      seconds,
+      seconds: timeline[ordinal],
       level: ordinal % 32 === 0 ? 2 : 1,
     });
-  }
 
   return markers;
+};
+
+// Keep the selected count on the measured beat timeline. The full 16-beat
+// sequence supplies stable ordinals even when individual beat ticks are missed.
+export const selectCountedBeatMarkers = (markers, interval) => {
+  if (!Array.isArray(markers) || ![16, 32, 64].includes(interval)) return [];
+  const stride = interval / 16;
+  const level = interval === 64 ? 3 : stride;
+  return markers
+    .filter((_, index) => (index + 1) % stride === 0)
+    .map(({ seconds }) => ({ seconds, level }));
 };
 
 // Thin a detected timeline by beat index without replacing its timing with BPM.

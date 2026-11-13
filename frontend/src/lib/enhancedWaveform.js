@@ -242,6 +242,8 @@ export const drawEnhanced = (ctx, data, options) => {
     gridColour = 'rgba(30,80,200,0.65)',
     gridOutline = null,
     detailGrid = false,
+    downbeatGrid = true,
+    markers: markerOverride,
     labelColour = '#17202c',
     barMarkerColours = {},
     labelBackground = '#ffffff',
@@ -293,9 +295,9 @@ export const drawEnhanced = (ctx, data, options) => {
         ctx.fillRect(span.x, y, span.width, 3 * scale);
     }
 
-  const markers = grid ? phraseBarMarkers(data, phrases) : [];
+  const markers = grid ? markerOverride ?? phraseBarMarkers(data, phrases) : [];
   let previous = Number.NEGATIVE_INFINITY;
-  for (const time of (grid ? data.downbeats : []) || []) {
+  for (const time of (grid && downbeatGrid ? data.downbeats : []) || []) {
     const x = ((time - start) / (end - start)) * width;
     if (x < 0 || x > width || x - previous < 8 * scale) continue;
     previous = x;
@@ -305,7 +307,9 @@ export const drawEnhanced = (ctx, data, options) => {
       markers.some(
         (marker) =>
           Math.abs(((marker.time - start) / (end - start)) * width - x) <=
-          ((marker.level === 2 ? 1.5 : 0.5) + (detailGrid ? 2 : 0.5)) * scale,
+          ((marker.level === 3 ? 2 : marker.level === 2 ? 1.5 : 0.5) +
+            (detailGrid ? 2 : 0.5)) *
+            scale,
       )
     )
       continue;
@@ -329,7 +333,8 @@ export const drawEnhanced = (ctx, data, options) => {
     for (const marker of markers) {
       const x = ((marker.time - start) / (end - start)) * width;
       if (x < 0 || x > width) continue;
-      const lineWidth = (marker.level === 2 ? 3 : 1) * scale;
+      const lineWidth =
+        (marker.level === 3 ? 4 : marker.level === 2 ? 3 : 1) * scale;
       if (gridOutline) {
         ctx.globalAlpha = 1;
         ctx.fillStyle = gridOutline;

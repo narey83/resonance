@@ -65,7 +65,10 @@ import PlaybackSyncMonitor from './PlaybackSyncMonitor';
 import TrackAnalysisBadge, { playerAnalysisLevel } from './TrackAnalysisBadge';
 import WaveformResizeHandle from './WaveformResizeHandle';
 import WaveformSeekBar from './WaveformSeekBar';
-import WaveformToolbar, { normalizeWaveformZoom } from './WaveformToolbar';
+import WaveformToolbar, {
+  normalizeWaveformMarkerInterval,
+  normalizeWaveformZoom,
+} from './WaveformToolbar';
 import {
   Cast,
   Heart,
@@ -275,6 +278,11 @@ const MediaPlayer = () => {
   );
   const [showBeatGrid, setShowBeatGrid] = useState(() =>
     prefs.get('mediaPlayer.beatGrid', true),
+  );
+  const [markerInterval, setMarkerInterval] = useState(() =>
+    normalizeWaveformMarkerInterval(
+      prefs.get('mediaPlayer.beatMarkerInterval', 32),
+    ),
   );
   const [showVocals, setShowVocals] = useState(() =>
     prefs.get('mediaPlayer.vocals', true),
@@ -901,6 +909,7 @@ const MediaPlayer = () => {
       enhancedAvailable={enhancedAvailable}
       grid={showBeatGrid}
       height={seekerHeight}
+      markerInterval={markerInterval}
       onGrid={(value) => {
         setShowBeatGrid(value);
         prefs.set('mediaPlayer.beatGrid', value);
@@ -908,6 +917,10 @@ const MediaPlayer = () => {
       onHeight={(value) => {
         setSeekerHeight(value);
         prefs.set('mediaPlayer.seekerHeight', value);
+      }}
+      onMarkerInterval={(value) => {
+        setMarkerInterval(value);
+        prefs.set('mediaPlayer.beatMarkerInterval', value);
       }}
       onPhrases={(value) => {
         setPhraseMode(value);
@@ -1308,6 +1321,7 @@ const MediaPlayer = () => {
                 enhancedAvailable={enhancedAvailable}
                 getCurrentTime={getCurrentTime}
                 height={seekerHeight}
+                markerInterval={markerInterval}
                 onAnalysing={setMiniWaveformAnalysing}
                 onBasicGridState={setBasicGridState}
                 onReady={() => {}}

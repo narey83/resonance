@@ -32,7 +32,7 @@ const recordedMarkerPaints = (painted) =>
   painted
     .filter(
       ({ height, width, y }) =>
-        y === 0 && height === 26 && [1, 3].includes(width),
+        y === 0 && height === 26 && [1, 3, 4].includes(width),
     )
     .map(({ colour, width, x }) => ({ x, width, colour }));
 
@@ -145,7 +145,7 @@ describe('WaveformSeekBar waveform loading', () => {
     analysisApi.getWaveform.mockResolvedValueOnce(first);
     await render(track, { onReady });
     const originalMarkers = paintedMarkers();
-    expect(originalMarkers.length).toBeGreaterThan(2);
+    expect(originalMarkers).toHaveLength(2);
     onReady.mockClear();
 
     let fail;
@@ -458,6 +458,7 @@ describe('WaveformSeekBar waveform loading', () => {
       .mockReturnValue(context);
     analysisApi.getWaveform.mockResolvedValue({
       ...response,
+      analysisDuration: 33,
       basicGridBeats: Array.from(
         { length: 65 },
         (_, index) => 0.2 + index * 0.5,
@@ -473,30 +474,27 @@ describe('WaveformSeekBar waveform loading', () => {
     Object.defineProperty(canvas, 'clientWidth', { value: 800 });
     Object.defineProperty(canvas, 'clientHeight', { value: 40 });
     act(() => window.requestAnimationFrame.mock.calls.at(-1)[0]());
-    expect(context.fillRect.mock.calls).toEqual(
-      expect.arrayContaining([
-        expect.arrayContaining([expect.any(Number), 0, 3, 26]),
-        expect.arrayContaining([expect.any(Number), 0, 1, 26]),
-      ]),
+    expect(recordedMarkerPaints(markerPaints)).toEqual(
+      Array.from({ length: 2 }, () => ({
+        x: expect.any(Number),
+        width: 3,
+        colour: '#6948ad',
+      })),
     );
-    expect(markerPaints).toEqual(
-      expect.arrayContaining([
-        {
-          x: expect.any(Number),
-          y: 0,
-          width: 3,
-          height: 26,
-          colour: '#6948ad',
-        },
-        {
-          x: expect.any(Number),
-          y: 0,
-          width: 1,
-          height: 26,
-          colour: '#a25b00',
-        },
-      ]),
-    );
+
+    markerPaints.splice(0);
+    await render(track, { markerInterval: 64, showGrid: true });
+    act(() => window.requestAnimationFrame.mock.calls.at(-1)[0]());
+    expect(recordedMarkerPaints(markerPaints)).toEqual([
+      { x: expect.any(Number), width: 4, colour: '#087e8b' },
+    ]);
+    expect(analysisApi.getWaveform).toHaveBeenCalledTimes(1);
+
+    markerPaints.splice(0);
+    await render(track, { markerInterval: 0, showGrid: true });
+    act(() => window.requestAnimationFrame.mock.calls.at(-1)[0]());
+    expect(recordedMarkerPaints(markerPaints)).toEqual([]);
+    expect(container.querySelector('.mp-waveform-marker-key')).toBeNull();
 
     await render(track, { showGrid: false });
     context.fillRect.mockClear();
@@ -545,6 +543,7 @@ describe('WaveformSeekBar waveform loading', () => {
       { path: '/music/basic-marker.flac', bpm: 120 },
       {
         getCurrentTime: () => 8.7,
+        markerInterval: 16,
         zoom: 16,
       },
     );
@@ -562,7 +561,7 @@ describe('WaveformSeekBar waveform loading', () => {
     expect(context.moveTo.mock.calls.length).toBeGreaterThan(0);
   });
 
-  it('shows measured-beat 16/32 estimates on Basic regardless of bar phase', async () => {
+  it('shows the selected measured-beat interval regardless of Basic bar phase', async () => {
     expect.hasAssertions();
     const context = Object.fromEntries(
       [
@@ -607,11 +606,14 @@ describe('WaveformSeekBar waveform loading', () => {
     Object.defineProperty(canvas, 'clientWidth', { value: 800 });
     Object.defineProperty(canvas, 'clientHeight', { value: 40 });
     act(() => window.requestAnimationFrame.mock.calls.at(-1)[0]());
-    expect(recordedMarkerPaints(painted)).toHaveLength(8);
-    expect(recordedMarkerPaints(painted).slice(0, 2)).toEqual([
-      { x: expect.any(Number), width: 1, colour: '#a25b00' },
-      { x: expect.any(Number), width: 3, colour: '#6948ad' },
-    ]);
+    expect(recordedMarkerPaints(painted)).toHaveLength(4);
+    expect(recordedMarkerPaints(painted)).toEqual(
+      Array.from({ length: 4 }, () => ({
+        x: expect.any(Number),
+        width: 3,
+        colour: '#6948ad',
+      })),
+    );
     expect(onBasicGridState).toHaveBeenLastCalledWith(
       expect.objectContaining({
         estimatedMarkerCount: 8,
@@ -621,7 +623,7 @@ describe('WaveformSeekBar waveform loading', () => {
     expect(
       container.querySelector('.mp-waveform-seeker .mp-waveform-marker-key')
         .textContent,
-    ).toBe('16 beats32 beats');
+    ).toBe('32 beats · estimated');
 
     painted.splice(0);
     await render(track, { onBasicGridState, showGrid: false });
@@ -640,14 +642,14 @@ describe('WaveformSeekBar waveform loading', () => {
     await render(track, { onBasicGridState, showGrid: true });
     painted.splice(0);
     act(() => window.requestAnimationFrame.mock.calls.at(-1)[0]());
-    expect(recordedMarkerPaints(painted)).toHaveLength(8);
+    expect(recordedMarkerPaints(painted)).toHaveLength(4);
     expect(onBasicGridState).toHaveBeenLastCalledWith(
       expect.objectContaining({ estimatedMarkerCount: 8 }),
     );
     expect(container.querySelector('.mp-waveform-marker-key')).not.toBeNull();
 
     await render(track, { enhancedAvailable: true, onBasicGridState });
-    expect(container.querySelector('.mp-waveform-marker-key')).toBeNull();
+    expect(container.querySelector('.mp-waveform-marker-key')).not.toBeNull();
   });
 
   it('draws observed beats but no coarse bar phase when Basic markers are absent', async () => {
@@ -687,10 +689,8 @@ describe('WaveformSeekBar waveform loading', () => {
     Object.defineProperty(canvas, 'clientWidth', { value: 800 });
     Object.defineProperty(canvas, 'clientHeight', { value: 40 });
     act(() => window.requestAnimationFrame.mock.calls.at(-1)[0]());
-    // The sparse overview uses actual beat timestamps, without claiming one
-    // of them starts a bar.
-    expect(context.moveTo.mock.calls.length).toBeGreaterThan(1);
-    expect(context.globalAlpha).toBe(0.32);
+    // Normal view has no thin beat guides; no bar phase is implied.
+    expect(context.moveTo).toHaveBeenCalledTimes(1);
 
     await render(track, { zoom: 64 });
     context.moveTo.mockClear();
@@ -742,16 +742,15 @@ describe('WaveformSeekBar waveform loading', () => {
     };
     analysisApi.getWaveform.mockResolvedValueOnce(barOnly);
     const track = { bpm: 120, path: '/music/bar-only.flac' };
-    await render(track);
+    await render(track, { markerInterval: 16 });
     const canvas = container.querySelector('canvas');
     Object.defineProperty(canvas, 'clientWidth', { value: 800 });
     Object.defineProperty(canvas, 'clientHeight', { value: 40 });
     act(() => window.requestAnimationFrame.mock.calls.at(-1)[0]());
-    expect(context.moveTo.mock.calls.length).toBeGreaterThan(1);
-    expect(strokeAlphas[0]).toBe(1);
+    expect(context.moveTo).toHaveBeenCalledTimes(1);
     expect(context.fillRect.mock.calls).toEqual(
       expect.arrayContaining([
-        expect.arrayContaining([expect.any(Number), 0, 3, 26]),
+        expect.arrayContaining([expect.any(Number), 0, 1, 26]),
       ]),
     );
 
@@ -766,20 +765,19 @@ describe('WaveformSeekBar waveform loading', () => {
       basicBarMarkers: [{ seconds: 0.2, level: 1 }],
     });
     bumpRevision();
-    await render(track);
+    await render(track, { markerInterval: 16 });
     context.moveTo.mockClear();
     context.fillRect.mockClear();
     strokeAlphas.splice(0);
     act(() => window.requestAnimationFrame.mock.calls.at(-1)[0]());
-    expect(context.moveTo.mock.calls.length).toBeGreaterThan(1);
-    expect(strokeAlphas[0]).toBe(0.32);
+    expect(context.moveTo).toHaveBeenCalledTimes(1);
     expect(context.fillRect.mock.calls).toEqual(
       expect.arrayContaining([
         expect.arrayContaining([expect.any(Number), 0, 1, 26]),
       ]),
     );
 
-    await render(track, { zoom: 64 });
+    await render(track, { markerInterval: 16, zoom: 64 });
     context.moveTo.mockClear();
     strokeAlphas.splice(0);
     act(() => window.requestAnimationFrame.mock.calls.at(-1)[0]());
@@ -787,7 +785,7 @@ describe('WaveformSeekBar waveform loading', () => {
     expect(strokeAlphas[0]).toBe(1);
   });
 
-  it('keeps sampled Basic beat guides visible at desktop and phone overview widths', async () => {
+  it('hides Normal beat guides and spaces them evenly at desktop and phone detail widths', async () => {
     expect.hasAssertions();
     const context = Object.fromEntries(
       [
@@ -831,7 +829,7 @@ describe('WaveformSeekBar waveform loading', () => {
       overallPeaks: Array.from({ length: 2_048 }, () => 0.5),
     });
     const track = { bpm: 145, path: '/music/vault-stories.flac' };
-    await render(track, { onBasicGridState });
+    await render(track, { onBasicGridState, markerInterval: 0 });
     expect(onBasicGridState).toHaveBeenLastCalledWith(
       expect.objectContaining({
         path: track.path,
@@ -850,26 +848,36 @@ describe('WaveformSeekBar waveform loading', () => {
       context.moveTo.mockClear();
       strokeAlphas.splice(0);
       act(() => window.requestAnimationFrame.mock.calls.at(-1)[0]());
+      expect(context.moveTo).toHaveBeenCalledTimes(1);
+    }
+
+    await render(track, { zoom: 64, onBasicGridState, markerInterval: 0 });
+    for (const width of [800, 352]) {
+      Object.defineProperty(canvas, 'clientWidth', {
+        configurable: true,
+        value: width,
+      });
+      context.moveTo.mockClear();
+      strokeAlphas.splice(0);
+      act(() => window.requestAnimationFrame.mock.calls.at(-1)[0]());
       const guideXs = context.moveTo.mock.calls.slice(0, -1).map(([x]) => x);
-      // Coloured phrase markers replace nearby guide strokes at narrow widths.
+      // With markers off, every guide follows the numbered beat timeline.
       expect(guideXs.length).toBeGreaterThan(5);
-      expect(strokeAlphas[0]).toBe(0.32);
+      expect(strokeAlphas[0]).toBe(1);
       for (const x of guideXs)
         expect(
           basicGridBeats.some(
-            (time) => Math.abs(time - (x / width) * duration) < 0.001,
+            (time) => Math.abs(time - (x / width) * (duration / 64)) < 0.001,
           ),
         ).toBe(true);
     }
 
-    await render(track, { zoom: 64, onBasicGridState });
-    context.moveTo.mockClear();
-    strokeAlphas.splice(0);
-    act(() => window.requestAnimationFrame.mock.calls.at(-1)[0]());
-    expect(context.moveTo.mock.calls.length).toBeGreaterThan(1);
-    expect(strokeAlphas[0]).toBe(1);
-
-    await render(track, { zoom: 64, showGrid: false, onBasicGridState });
+    await render(track, {
+      zoom: 64,
+      showGrid: false,
+      onBasicGridState,
+      markerInterval: 0,
+    });
     context.moveTo.mockClear();
     act(() => window.requestAnimationFrame.mock.calls.at(-1)[0]());
     expect(context.moveTo).toHaveBeenCalledTimes(1);

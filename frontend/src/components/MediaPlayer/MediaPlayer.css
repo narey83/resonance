@@ -56,6 +56,7 @@
 .media-player {
   --bar-marker-16: #a25b00;
   --bar-marker-32: #6948ad;
+  --bar-marker-64: #087e8b;
   position: relative;
   /* Queries below size against the player itself, not the viewport — the queue
      panel is a sibling, so the bar is ~275px narrower than the window when open. */
@@ -71,6 +72,7 @@
 :root:is(.dark,.dim,.amoled,.midnight,.violet,.ember) .media-player {
   --bar-marker-16: #ffbd59;
   --bar-marker-32: #dda5ff;
+  --bar-marker-64: #69d7dc;
 }
 
 /* ── Seekable top scrubber ──────────────────────────────────────── */
@@ -1292,6 +1294,7 @@ fieldset.mp-processing-modal-body { border: 0; margin: 0; padding: 0; min-width:
 .mp-waveform-marker-key > span::before { content: ''; display: inline-block; height: 12px; background: var(--bar-marker-16); }
 .mp-waveform-marker-key--16::before { width: 1px; }
 .mp-waveform-marker-key > .mp-waveform-marker-key--32::before { width: 3px; background: var(--bar-marker-32); }
+.mp-waveform-marker-key > .mp-waveform-marker-key--64::before { width: 4px; background: var(--bar-marker-64); }
 .media-player-scrub-wrap { background: var(--player-bg, var(--bg-primary)); }
 .media-player-bar {
   display: grid;

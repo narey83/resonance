@@ -3,6 +3,12 @@ import { AudioWaveform, Minus, Plus } from 'lucide-react';
 import React from 'react';
 
 export const WAVEFORM_ZOOMS = [1, 16, 32, 64, 128, 256];
+export const WAVEFORM_MARKER_INTERVALS = [0, 16, 32, 64];
+
+export const normalizeWaveformMarkerInterval = (value) => {
+  const interval = Number(value);
+  return WAVEFORM_MARKER_INTERVALS.includes(interval) ? interval : 32;
+};
 
 // Keep preferences saved with the previous steps on a selectable zoom level.
 export const normalizeWaveformZoom = (value) => {
@@ -20,8 +26,10 @@ const WaveformToolbar = ({
   enhancedAvailable = false,
   grid,
   height,
+  markerInterval = 32,
   onGrid,
   onHeight,
+  onMarkerInterval,
   onPhrases,
   onToggle,
   onVocals,
@@ -35,8 +43,9 @@ const WaveformToolbar = ({
     enabled && grid && !enhancedAvailable && basicGridState
       ? basicGridState.beatCount === 0
         ? 'No detected beat timing yet'
-        : basicGridState.estimatedMarkerCount > 0
-          ? '16/32 beat count from first measured beat · estimated'
+        : markerInterval > 0 &&
+            basicGridState.estimatedMarkerCount >= markerInterval / 16
+          ? `${markerInterval} beat count from first measured beat · estimated`
           : basicGridState.barPhaseStatus === 'unresolved' && zoom === 1
             ? 'Beat timing only · bar phase uncertain'
             : null
@@ -110,15 +119,21 @@ const WaveformToolbar = ({
           <button
             aria-pressed={grid}
             onClick={() => onGrid(!grid)}
-            title={
-              enhancedAvailable
-                ? 'Beat grid: thin amber 16-bar and violet 32-bar lines appear when repeated section changes support their phase; count stays continuous across sections'
-                : 'Beat grid: observed beats; thin amber 16-bar and violet 32-bar lines are labelled estimates when their phase is uncertain'
-            }
+            title="Beat guides appear when zoomed in; count markers estimate intervals from the first measured beat"
             type="button"
           >
             Beat grid
           </button>
+          <PlayerDropdown
+            disabled={!grid}
+            label="Beat marker interval"
+            onChange={onMarkerInterval}
+            options={WAVEFORM_MARKER_INTERVALS.map((value) => ({
+              value,
+              label: value === 0 ? 'Markers off' : `${value} beats`,
+            }))}
+            value={markerInterval}
+          />
           {basicGridStatus && (
             <span
               className="mp-waveform-grid-status"

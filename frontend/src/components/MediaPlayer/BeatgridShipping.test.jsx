@@ -3,7 +3,11 @@
 import fixtures from '../../lib/__fixtures__/beatgrid-15.json';
 import { getWaveform } from '../../lib/analysis';
 import api from '../../lib/api';
-import { beatGridSeconds, waveformBeatBpm } from '../../lib/waveform';
+import {
+  completedBeatTimeline,
+  countedBeatMarkers,
+  selectCountedBeatMarkers,
+} from '../../lib/waveform';
 import WaveformSeekBar from './WaveformSeekBar';
 import { WAVEFORM_ZOOMS } from './WaveformToolbar';
 import fs from 'node:fs';
@@ -59,6 +63,11 @@ describe('docked beatgrid shipping matrix', () => {
       };
       const data = fixture.enhanced;
       const duration = fixture.waveform.analysisDuration;
+      const beatTimeline = completedBeatTimeline(data.beats, duration);
+      const countMarkers = selectCountedBeatMarkers(
+        countedBeatMarkers(data.beats, duration),
+        32,
+      );
       getWaveform.mockResolvedValue({
         ...fixture.waveform,
         overallPeaks: Array.from(
@@ -143,13 +152,18 @@ describe('docked beatgrid shipping matrix', () => {
             const grid = ctx.moveTo.mock.calls
               .slice(0, -1)
               .map((call) => call[0]);
-            const caps = ctx.fillRect.mock.calls.filter(
-              (call) =>
-                call[2] === 8 * Math.max(1, Math.round(size.dpr)) &&
-                call[3] === 5 * Math.max(1, Math.round(size.dpr)),
-            );
+            if (zoom === 1) expect(grid).toEqual([]);
             const pixelWidth = Math.round(size.width * size.dpr);
+            const pixelHeight = Math.round(size.height * size.dpr);
             const dprScale = Math.max(1, Math.round(size.dpr));
+            const markerRects = ctx.fillRect.mock.calls.filter(
+              ([, y, width, height]) =>
+                y === 14 * dprScale &&
+                width === 3 * dprScale &&
+                height === Math.max(0, pixelHeight - 30 * dprScale),
+            );
+            if (zoom === 1)
+              expect(markerRects).toHaveLength(countMarkers.length);
             const barWidth = Math.max(
               dprScale,
               Math.ceil(
@@ -165,34 +179,26 @@ describe('docked beatgrid shipping matrix', () => {
               Math.min(duration - span, clock - span / 2),
             );
             const scale = (slots * barWidth) / span;
-            const step = beatGridSeconds(
-              waveformBeatBpm(data.beats),
-              scale,
-              8 * Math.max(1, Math.round(size.dpr)),
-            );
-            // At detailed zoom every bar marker must sit on an actual rendered beat.
-            if (
-              step &&
-              Math.round(step / (60 / waveformBeatBpm(data.beats))) === 1
-            ) {
-              for (const cap of caps) {
-                const x = cap[0] + 3 * Math.max(1, Math.round(size.dpr));
-                expect(
-                  Math.min(...grid.map((g) => Math.abs(g - x))),
-                ).toBeLessThan(0.000_001);
-              }
+            // The selected 32-beat markers remain on the same measured
+            // timeline at every viewport size and seek position.
+            for (const marker of markerRects) {
+              const time =
+                start + (marker[0] + 1.5 * dprScale + offset) / scale;
+              expect(
+                Math.min(
+                  ...countMarkers.map((candidate) =>
+                    Math.abs(candidate.seconds - time),
+                  ),
+                ),
+              ).toBeLessThan(0.000_001);
             }
 
-            // Sparse overview lines must count from the downbeat, not an arbitrary first beat.
-            const stride = Math.round(
-              step / (60 / waveformBeatBpm(data.beats)),
-            );
-            const reference = stride >= 4 ? data.downbeats : data.beats;
-            // All beat lines must resolve to saved timestamps, never an average-BPM sequence.
+            // Detail guides stay on the numbered measured timeline, including
+            // ticks recovered between surrounding detected beats.
             for (const x of grid) {
               const time = start + (x + offset) / scale;
               expect(
-                Math.min(...reference.map((t) => Math.abs(t - time))),
+                Math.min(...beatTimeline.map((t) => Math.abs(t - time))),
               ).toBeLessThan(0.000_001);
             }
 

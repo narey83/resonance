@@ -31,10 +31,12 @@ import {
   beatGridPhase,
   beatGridSeconds,
   compareBeats,
+  completedBeatTimeline,
   countedBeatMarkers,
   expectedBeats,
   firstGridLineAt,
   resamplePeaks,
+  selectCountedBeatMarkers,
   visibleBeats,
   visibleBeatTimes,
   visibleSampledBeatTimes,
@@ -136,6 +138,59 @@ describe('countedBeatMarkers', () => {
   });
 });
 
+describe('completedBeatTimeline', () => {
+  it('keeps an even ordinal grid across a missed tick and a silent gap', () => {
+    const measuredWithGap = [
+      ...measured(33).filter((_, index) => index !== 13),
+      ...measured(33, 32.09),
+    ];
+    const timeline = completedBeatTimeline(measuredWithGap, 49);
+    expect(timeline[13]).toBeCloseTo(6.59, 6);
+    expect(timeline[64]).toBeCloseTo(32.09, 6);
+    expect(visibleBeatTimes(timeline, 0, 49, 4).slice(0, 5)).toEqual([
+      0.09, 2.09, 4.09, 6.09, 8.09,
+    ]);
+    expect(
+      timeline
+        .slice(0, 65)
+        .every((time, index) => Math.abs(time - (0.09 + index * 0.5)) < 1e-6),
+    ).toBe(true);
+  });
+
+  it('keeps measured timing when tempo gradually changes', () => {
+    const beats = [0.09];
+    for (let index = 1; index <= 128; index++)
+      beats.push(beats[index - 1] + 0.5 + index * 0.000_3);
+    const timeline = completedBeatTimeline(beats, beats.at(-1) + 0.1);
+    expect(timeline[128]).toBeCloseTo(beats[128], 6);
+    expect(timeline[128] - (0.09 + 128 * 0.5)).toBeGreaterThan(2);
+  });
+
+  it('does not extend beyond the last measured beat', () => {
+    expect(completedBeatTimeline(measured(4), 180)).toEqual(measured(4));
+  });
+});
+
+describe('selectCountedBeatMarkers', () => {
+  it('shows only the chosen interval and preserves measured timing after a missed beat', () => {
+    const beats = measured(129).filter((_, index) => index !== 31);
+    const candidates = countedBeatMarkers(beats, 65);
+    expect(selectCountedBeatMarkers(candidates, 16)).toHaveLength(8);
+    expect(selectCountedBeatMarkers(candidates, 32)).toEqual([
+      { seconds: 16.09, level: 2 },
+      { seconds: 32.09, level: 2 },
+      { seconds: 48.09, level: 2 },
+      { seconds: 64.09, level: 2 },
+    ]);
+    expect(selectCountedBeatMarkers(candidates, 64)).toEqual([
+      { seconds: 32.09, level: 3 },
+      { seconds: 64.09, level: 3 },
+    ]);
+    expect(selectCountedBeatMarkers(candidates, 0)).toEqual([]);
+    expect(selectCountedBeatMarkers(candidates, 12)).toEqual([]);
+  });
+});
+
 describe('beatGridSeconds', () => {
   it('keeps a line per beat once there is room for one', () => {
     expect(beatGridSeconds(128, 60, 8)).toBeCloseTo(BEAT);
@@ -148,8 +203,9 @@ describe('beatGridSeconds', () => {
     expect(beatGridSeconds(128, 3, 8)).toBeCloseTo(BEAT * 16);
   });
 
-  it('gives up when even a phrase would not be legible', () => {
-    expect(beatGridSeconds(128, 0.5, 8)).toBe(0);
+  it('widens further to keep overview guides evenly spaced on a small viewport', () => {
+    expect(beatGridSeconds(128, 0.5, 8)).toBeCloseTo(BEAT * 64);
+    expect(beatGridSeconds(128, 0.05, 8)).toBe(0);
   });
 
   it('always returns a whole number of beats, to stay on the grid', () => {

@@ -314,6 +314,56 @@ describe('enhanced waveform timeline', () => {
     expect(painted).toContainEqual({ args: [0, 14, 1, 38], colour: 'grid' });
   });
 
+  it('uses the selected count marker instead of phrase accents and allows Off', () => {
+    const painted = [];
+    const ctx = {
+      fillRect: jest.fn((...args) =>
+        painted.push({ args, colour: ctx.fillStyle }),
+      ),
+      restore: jest.fn(),
+      save: jest.fn(),
+    };
+    const data = {
+      available: true,
+      downbeats: [0, 2, 4, 6],
+      djPhrases: [],
+    };
+    const options = {
+      start: 0,
+      end: 8,
+      width: 80,
+      height: 60,
+      grid: true,
+      phrases: 'off',
+      vocals: false,
+      barMarkerColours: { 3: 'teal' },
+    };
+    drawEnhanced(ctx, data, {
+      ...options,
+      markers: [{ time: 2, level: 3 }],
+    });
+    expect(painted).toContainEqual({
+      args: [18, 14, 4, 46],
+      colour: 'teal',
+    });
+    expect(painted).not.toContainEqual({
+      args: [20, 14, 1, 38],
+      colour: 'rgba(30,80,200,0.65)',
+    });
+    painted.splice(0);
+    drawEnhanced(ctx, data, { ...options, markers: [] });
+    expect(painted.some(({ colour }) => colour === 'teal')).toBe(false);
+    painted.splice(0);
+    drawEnhanced(ctx, data, {
+      ...options,
+      downbeatGrid: false,
+      markers: [],
+    });
+    expect(
+      painted.some(({ colour }) => colour === 'rgba(30,80,200,0.65)'),
+    ).toBe(false);
+  });
+
   it('clips spanning vocal regions to the zoom window', () => {
     expect(
       visibleSpans([{ startSeconds: 5, endSeconds: 15 }], 10, 20, 100),

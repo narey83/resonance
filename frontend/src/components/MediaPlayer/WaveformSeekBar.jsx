@@ -38,15 +38,16 @@ import {
   timeToPixel,
 } from '../../lib/analysisTimeline';
 import api from '../../lib/api';
-import { drawEnhanced, phraseBarMarkers } from '../../lib/enhancedWaveform';
+import { drawEnhanced } from '../../lib/enhancedWaveform';
 import { formatSeconds } from '../../lib/util';
 import {
   beatGridSeconds,
+  completedBeatTimeline,
   countedBeatMarkers,
   maxOf,
   resamplePeaks,
+  selectCountedBeatMarkers,
   visibleBeatTimes,
-  visibleSampledBeatTimes,
   waveColours,
   waveformBeatBpm,
 } from '../../lib/waveform';
@@ -66,9 +67,9 @@ const BASIC_REFRESH_MS = 15_000;
 // Falls back to nothing (caller renders the plain bar) when no peak data exists.
 const WaveformSeekBar = ({
   duration,
-  enhancedAvailable = false,
   getCurrentTime,
   height = 40,
+  markerInterval = 32,
   onAnalysing,
   onBasicGridState,
   onReady,
@@ -135,6 +136,7 @@ const WaveformSeekBar = ({
   // Refreshing the same track keeps ready=true, so duration needs its own
   // state update to move the seek scale and timeline to a corrected timebase.
   const [analysisDuration, setAnalysisDuration] = useState(null);
+  const enhancedMarkerCacheRef = useRef(null);
   const [hoverFraction, setHoverFraction] = useState(null);
   const draggingRef = useRef(false);
 
@@ -192,6 +194,33 @@ const WaveformSeekBar = ({
     duration,
   );
 
+  const getGridData = (independent, peaks, timelineDuration) => {
+    let candidates = peaks?.barMarkers || [];
+    let timeline = peaks?.gridTimeline || [];
+    if (Array.isArray(independent?.beats) && independent.beats.length) {
+      const cached = enhancedMarkerCacheRef.current;
+      if (
+        cached?.beats !== independent.beats ||
+        cached.duration !== timelineDuration
+      ) {
+        enhancedMarkerCacheRef.current = {
+          beats: independent.beats,
+          duration: timelineDuration,
+          markers: countedBeatMarkers(independent.beats, timelineDuration),
+          timeline: completedBeatTimeline(independent.beats, timelineDuration),
+        };
+      }
+
+      candidates = enhancedMarkerCacheRef.current.markers;
+      timeline = enhancedMarkerCacheRef.current.timeline;
+    }
+
+    return {
+      markers: selectCountedBeatMarkers(candidates, markerInterval),
+      timeline,
+    };
+  };
+
   useEffect(() => {
     const sameTrack = peaksPathRef.current === track?.path;
     const refreshing = sameTrack && Boolean(peaksRef.current);
@@ -240,6 +269,7 @@ const WaveformSeekBar = ({
         beatsKnown: beatAvailability.known,
         beats: beatAvailability.beats,
         gridBeats,
+        gridTimeline: completedBeatTimeline(gridBeats, data.analysisDuration),
         barAnchorSeconds,
         barMarkers: beatCountMarkers,
         skippedInternalBeats: Number(data.basicSkippedInternalBeats) || 0,
@@ -339,6 +369,7 @@ const WaveformSeekBar = ({
       surface: token('--bg-primary', '#11171c'),
       bar16: token('--bar-marker-16', '#a25b00'),
       bar32: token('--bar-marker-32', '#6948ad'),
+      bar64: token('--bar-marker-64', '#087e8b'),
       // Band palette and blend mode come from the theme, shared with the library
       // row previews — the colours are only legible if the blend matches the
       // panel they sit on, so the two travel together.
@@ -531,30 +562,25 @@ const WaveformSeekBar = ({
     // Colours come from the active theme's tokens rather than fixed hexes, so
     // light and AMOLED each get a palette that suits the panel they're drawn on.
     const colours = getColours(canvas);
+    const independent = enhancedRef.current?.available
+      ? enhancedRef.current
+      : null;
+    const { markers, timeline } = getGridData(
+      independent,
+      peaks,
+      waveformDuration,
+    );
 
-    // Draw from detected beats only; a BPM tag cannot establish beat or bar phase.
-    // Coarser lines use the saved downbeat candidate when one is available.
+    // Draw from the completed measured-beat timeline; a BPM tag alone cannot
+    // establish beat phase. Use a whole-beat stride to keep overview guides even.
     const drawBeatGrid = () => {
-      const independent = enhancedRef.current?.available
-        ? enhancedRef.current
-        : null;
       const detectedBeats = independent?.beats || peaks.gridBeats;
-      if (!showGrid || !detectedBeats?.length) return;
+      if (!showGrid || zoom === 1 || !timeline.length) return;
       // One line per beat at zoom 1 is a line every pixel or two — a second
       // comb at almost exactly the waveform's own period, which is where the
       // crawling Moiré came from. Widen to bar/phrase lines, or drop the grid.
-      const lineSeconds = beatGridSeconds(
-        independent
-          ? waveformBeatBpm(independent.beats)
-          : Number(track?.bpm) > 0
-            ? Number(track.bpm)
-            : peaks.bpm,
-        pixelsPerSecond,
-        8 * dprScale,
-      );
-      // Detected beats are a timeline, not a constant-tempo estimate. Rebuilding
-      // them from median BPM accumulates error against the saved downbeats.
       const bpm = waveformBeatBpm(detectedBeats);
+      const lineSeconds = beatGridSeconds(bpm, pixelsPerSecond, 8 * dprScale);
       const stride =
         lineSeconds && bpm
           ? Math.max(1, Math.round(lineSeconds / (60 / bpm)))
@@ -569,43 +595,29 @@ const WaveformSeekBar = ({
           : stride > 1
             ? -1
             : 0;
-      // If a bar phase is unresolved, a saved beat timeline still supports a
-      // subtle beat grid. Sample actual ticks by screen spacing, never by a
-      // musical stride that would invent bar phase or propagate a missed beat.
+      // A bar phase is not needed to display beat positions. Keep unresolved
+      // Basic guides subtle, while their ordinal spacing remains regular.
       const sampledBasic =
         !independent &&
         (!stride ||
           (stride > 1 && (anchor < 0 || peaks.skippedInternalBeats > 0)));
-      const times = sampledBasic
-        ? visibleSampledBeatTimes(
-            detectedBeats,
-            drawStart,
-            drawEnd,
-            pixelsPerSecond,
-            12 * dprScale,
-          )
-        : stride
-          ? visibleBeatTimes(detectedBeats, drawStart, drawEnd, stride, anchor)
-          : [];
+      const times = stride
+        ? visibleBeatTimes(timeline, drawStart, drawEnd, stride)
+        : [];
       if (!times.length) return;
 
       context.save();
       const detailGrid = zoom > 1 && !sampledBasic;
-      const markers = independent
-        ? phraseBarMarkers(independent, phraseMode).map((marker) => ({
-            seconds: marker.time,
-            level: marker.level,
-          }))
-        : peaks.barMarkers;
       context.globalAlpha = sampledBasic ? 0.32 : 1;
       for (const time of times) {
-        // A phrase marker replaces the beat line at that position. Drawing both
+        // A count marker replaces the beat line at that position. Drawing both
         // makes a dark edge behind the coloured marker, especially when zoomed.
         if (
           markers.some(
             (marker) =>
               Math.abs(time - marker.seconds) * pixelsPerSecond <=
-              ((marker.level === 2 ? 1.5 : 0.5) + (detailGrid ? 1.5 : 0.5)) *
+              ((marker.level === 3 ? 2 : marker.level === 2 ? 1.5 : 0.5) +
+                (detailGrid ? 1.5 : 0.5)) *
                 dprScale,
           )
         )
@@ -670,11 +682,20 @@ const WaveformSeekBar = ({
       height: waveformHeight - 2 * dprScale,
       grid: showGrid,
       labelColour: colours.text,
-      barMarkerColours: { 1: colours.bar16, 2: colours.bar32 },
+      barMarkerColours: {
+        1: colours.bar16,
+        2: colours.bar32,
+        3: colours.bar64,
+      },
+      markers: markers.map((marker) => ({
+        time: marker.seconds,
+        level: marker.level,
+      })),
       labelBackground: colours.surface,
       gridColour: zoom > 1 ? colours.text : colours.grid,
       gridOutline: zoom > 1 ? colours.surface : null,
       detailGrid: zoom > 1,
+      downbeatGrid: false,
       phrases: phraseMode,
       vocals: showVocals,
       scale: dprScale,
@@ -682,16 +703,22 @@ const WaveformSeekBar = ({
 
     if (showGrid && !enhancedRef.current?.available) {
       context.save();
-      for (const marker of peaks.barMarkers) {
+      for (const marker of markers) {
         if (marker.seconds < drawStart || marker.seconds >= drawEnd) continue;
         const x = timeToPixel(
           marker.seconds - drawStart,
           windowDuration,
           windowWidthPx,
         );
-        const lineWidth = (marker.level === 2 ? 3 : 1) * dprScale;
+        const lineWidth =
+          (marker.level === 3 ? 4 : marker.level === 2 ? 3 : 1) * dprScale;
         context.globalAlpha = 0.95;
-        context.fillStyle = marker.level === 2 ? colours.bar32 : colours.bar16;
+        context.fillStyle =
+          marker.level === 3
+            ? colours.bar64
+            : marker.level === 2
+              ? colours.bar32
+              : colours.bar16;
         context.fillRect(x - lineWidth / 2, 0, lineWidth, waveformHeight);
       }
 
@@ -848,15 +875,19 @@ const WaveformSeekBar = ({
         </div>
       )}
       {showGrid &&
-        !enhancedAvailable &&
-        peaksRef.current?.barMarkers?.length > 0 && (
+        getGridData(
+          enhanced?.available ? enhanced : null,
+          peaksRef.current,
+          waveformDuration,
+        ).markers.length > 0 && (
           <span
             aria-label="Beat grid marker legend"
             className="mp-waveform-marker-key"
             role="group"
           >
-            <span className="mp-waveform-marker-key--16">16 beats</span>
-            <span className="mp-waveform-marker-key--32">32 beats</span>
+            <span className={`mp-waveform-marker-key--${markerInterval}`}>
+              {markerInterval} beats · estimated
+            </span>
           </span>
         )}
       <canvas
