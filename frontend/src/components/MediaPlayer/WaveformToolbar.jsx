@@ -111,8 +111,8 @@ const WaveformToolbar = ({
             onClick={() => onGrid(!grid)}
             title={
               enhancedAvailable
-                ? 'Beat grid with 16/32-bar accents aligned to arrangement sections'
-                : 'Beat grid with estimated 16/32-bar accents from the backend bass attack or first detected beat'
+                ? 'Beat grid: amber 16-bar lines, violet 32-bar lines; aligned to arrangement sections'
+                : 'Beat grid: amber 16-bar lines, violet 32-bar lines; estimated anchors from backend analysis'
             }
             type="button"
           >

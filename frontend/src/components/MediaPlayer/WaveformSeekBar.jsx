@@ -230,6 +230,8 @@ const WaveformSeekBar = ({
       dim: token('--player-text-dim', 'rgba(128,128,128,0.3)'),
       text: token('--text-primary', '#e7eef2'),
       surface: token('--bg-primary', '#11171c'),
+      bar16: token('--bar-marker-16', '#a25b00'),
+      bar32: token('--bar-marker-32', '#6948ad'),
       // Band palette and blend mode come from the theme, shared with the library
       // row previews — the colours are only legible if the blend matches the
       // panel they sit on, so the two travel together.
@@ -535,6 +537,7 @@ const WaveformSeekBar = ({
       height: waveformHeight - 2 * dprScale,
       grid: showGrid,
       labelColour: colours.text,
+      barMarkerColours: { 1: colours.bar16, 2: colours.bar32 },
       labelBackground: colours.surface,
       gridColour: zoom > 1 ? colours.text : colours.grid,
       gridOutline: zoom > 1 ? colours.surface : null,
@@ -554,8 +557,8 @@ const WaveformSeekBar = ({
           windowWidthPx,
         );
         const lineWidth = (marker.level === 2 ? 3 : 2) * dprScale;
-        context.globalAlpha = marker.level === 2 ? 0.9 : 0.55;
-        context.fillStyle = colours.text;
+        context.globalAlpha = 0.95;
+        context.fillStyle = marker.level === 2 ? colours.bar32 : colours.bar16;
         context.fillRect(x - lineWidth / 2, 0, lineWidth, waveformHeight);
       }
 

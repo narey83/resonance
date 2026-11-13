@@ -63,6 +63,19 @@ const tracks = ['first', 'second'].map((name) => ({
   length: 180,
 }));
 
+const key = async (name, options = {}, target = document) => {
+  await act(async () => {
+    target.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        bubbles: true,
+        cancelable: true,
+        key: name,
+        ...options,
+      }),
+    );
+  });
+};
+
 describe('player startup and playback intent', () => {
   let container;
   let player;
@@ -111,6 +124,7 @@ describe('player startup and playback intent', () => {
 
   beforeEach(() => {
     sessionStorage.clear();
+    localStorage.removeItem('mediaPlayer.keyNotation');
     jest.clearAllMocks();
     mockMetadataRecord = {};
     mockWaveformOnAnalysing = null;
@@ -176,6 +190,64 @@ describe('player startup and playback intent', () => {
     expect(container.querySelector('.mp-expanded')).toBeNull();
     expect(container.querySelector('[title="Show queue"]')).not.toBeNull();
     expect(container.querySelector('[title="Close player"]')).not.toBeNull();
+  });
+
+  it('switches the key badge between musical and Camelot notation', async () => {
+    expect.hasAssertions();
+    mockMetadataRecord = { key: 'C#' };
+    await restore();
+    const keyBadge = container.querySelector('.mp-track-key');
+    expect(keyBadge.textContent).toContain('C# MUSICAL');
+    await act(async () => Simulate.click(keyBadge));
+    expect(keyBadge.textContent).toContain('3B CAMELOT');
+    expect(localStorage.getItem('mediaPlayer.keyNotation')).toBe('camelot');
+    await act(async () => Simulate.click(keyBadge));
+    expect(keyBadge.textContent).toContain('C# MUSICAL');
+  });
+
+  it('controls playback, seeking, mute and queue from the keyboard', async () => {
+    expect.hasAssertions();
+    await restore();
+    expect(
+      container.querySelector('[aria-label="Keyboard shortcuts"]'),
+    ).not.toBeNull();
+    await key(' ');
+    expect(play).toHaveBeenCalledTimes(1);
+    const audio = container.querySelector('audio');
+    audio.currentTime = 20;
+    await key('ArrowRight');
+    expect(audio.currentTime).toBe(25);
+    await key('ArrowLeft', { shiftKey: true });
+    expect(audio.currentTime).toBe(0);
+    await key('m');
+    expect(audio.muted).toBe(true);
+    await key(' ');
+    expect(pause).toHaveBeenCalledWith();
+    await key('n');
+    expect(player.track).toEqual(tracks[1]);
+    await key('p');
+    expect(player.track).toEqual(tracks[0]);
+  });
+
+  it('leaves form fields, modifier keys and modal dialogs in control of their keys', async () => {
+    expect.hasAssertions();
+    await restore();
+    const input = document.createElement('input');
+    container.append(input);
+    await key(' ', {}, input);
+    await key('m', {}, input);
+    await key(' ', { ctrlKey: true });
+    const modal = document.createElement('div');
+    modal.setAttribute('aria-modal', 'true');
+    container.append(modal);
+    await key(' ');
+    expect(play).not.toHaveBeenCalled();
+    expect(container.querySelector('audio').muted).toBe(false);
+    modal.style.display = 'none';
+    await key('m');
+    expect(container.querySelector('audio').muted).toBe(true);
+    modal.remove();
+    input.remove();
   });
 
   it('stays paused when a saved queue arrives after asynchronous validation', async () => {

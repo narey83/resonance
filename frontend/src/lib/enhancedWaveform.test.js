@@ -92,6 +92,40 @@ describe('enhanced waveform timeline', () => {
     expect(ctx.fillRect.mock.calls).not.toContainEqual([319, 14, 2, 46]);
   });
 
+  it('uses distinct marker colours for 16 and 32 bars', () => {
+    const painted = [];
+    const ctx = {
+      fillRect: jest.fn((...args) =>
+        painted.push({ args, colour: ctx.fillStyle }),
+      ),
+      restore: jest.fn(),
+      save: jest.fn(),
+    };
+    drawEnhanced(
+      ctx,
+      {
+        available: true,
+        downbeats: Array.from({ length: 34 }, (_, index) => index * 2),
+      },
+      {
+        start: 0,
+        end: 70,
+        width: 700,
+        height: 60,
+        grid: true,
+        phrases: 'off',
+        vocals: false,
+        barMarkerColours: { 1: 'amber', 2: 'violet' },
+      },
+    );
+    expect(painted).toEqual(
+      expect.arrayContaining([
+        { args: [-1.5, 14, 3, 46], colour: 'violet' },
+        { args: [319, 14, 2, 46], colour: 'amber' },
+      ]),
+    );
+  });
+
   it('clips spanning vocal regions to the zoom window', () => {
     expect(
       visibleSpans([{ startSeconds: 5, endSeconds: 15 }], 10, 20, 100),

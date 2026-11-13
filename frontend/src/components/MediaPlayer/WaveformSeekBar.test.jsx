@@ -165,6 +165,10 @@ describe('WaveformSeekBar waveform loading', () => {
         'translate',
       ].map((name) => [name, jest.fn()]),
     );
+    const markerPaints = [];
+    context.fillRect.mockImplementation((x, y, width, height) => {
+      markerPaints.push({ x, y, width, height, colour: context.fillStyle });
+    });
     jest
       .spyOn(HTMLCanvasElement.prototype, 'getContext')
       .mockReturnValue(context);
@@ -185,6 +189,24 @@ describe('WaveformSeekBar waveform loading', () => {
       expect.arrayContaining([
         expect.arrayContaining([expect.any(Number), 0, 3, 26]),
         expect.arrayContaining([expect.any(Number), 0, 2, 26]),
+      ]),
+    );
+    expect(markerPaints).toEqual(
+      expect.arrayContaining([
+        {
+          x: expect.any(Number),
+          y: 0,
+          width: 3,
+          height: 26,
+          colour: '#6948ad',
+        },
+        {
+          x: expect.any(Number),
+          y: 0,
+          width: 2,
+          height: 26,
+          colour: '#a25b00',
+        },
       ]),
     );
 

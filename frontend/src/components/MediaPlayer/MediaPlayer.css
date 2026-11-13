@@ -54,6 +54,8 @@
 
 /* ── Outer shell ────────────────────────────────────────────────── */
 .media-player {
+  --bar-marker-16: #a25b00;
+  --bar-marker-32: #6948ad;
   position: relative;
   /* Queries below size against the player itself, not the viewport — the queue
      panel is a sibling, so the bar is ~275px narrower than the window when open. */
@@ -65,6 +67,14 @@
   box-shadow: inset 0 1px 0 var(--glass-highlight, transparent);
   user-select: none;
   flex-shrink: 0;
+}
+.media-player-shortcuts-panel { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 4px 16px; padding: 8px 16px; border-top: 1px solid var(--border); background: var(--bg-surface); color: var(--text-primary); font-size: 11px; }
+.media-player-shortcuts-panel strong { font-weight: 600; }
+.media-player-shortcuts-panel div { display: flex; justify-content: space-between; gap: 10px; }
+.media-player-shortcuts-panel kbd { color: var(--text-secondary); font: inherit; white-space: nowrap; }
+:root:is(.dark,.dim,.amoled,.midnight,.violet,.ember) .media-player {
+  --bar-marker-16: #ffbd59;
+  --bar-marker-32: #dda5ff;
 }
 
 /* ── Seekable top scrubber ──────────────────────────────────────── */
@@ -1133,8 +1143,12 @@
 @keyframes mp-analysis-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .mp-analysis-badge-spinner { animation: none; } }
 .mp-track-metrics { display: flex; flex-wrap:wrap; gap: 8px; margin-top: 5px; }
-.mp-track-metrics span { padding: 2px 7px; border: 1px solid var(--border); border-radius: 4px; font-size: 8px; letter-spacing: .06em; color: var(--text-muted); }
+.mp-track-metrics :is(span,button) { padding: 2px 7px; border: 1px solid var(--border); border-radius: 4px; font-size: 8px; letter-spacing: .06em; color: var(--text-muted); }
 .mp-track-metrics b { color: var(--text-primary); font-size: 11px; font-variant-numeric: tabular-nums; margin-right: 3px; }
+.mp-track-metrics button { background: transparent; cursor: pointer; }
+.mp-track-metrics button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.mp-track-metrics button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mp-track-metrics button:disabled { cursor: default; }
 .mp-vocal-legend { display: flex; align-items: center; gap: 5px; }
 .mp-vocal-legend i { width: 6px; height: 6px; background: #008c95; border-radius: 2px; }
 .mp-vocal-legend i:nth-of-type(2) { background: #db9018; }

@@ -44,6 +44,7 @@ import {
   applyAmbientColour,
   clearAmbientColour,
 } from '../../lib/ambientColour';
+import { toCamelot } from '../../lib/camelot';
 import * as castApi from '../../lib/cast';
 import { getLocalStreamUrl } from '../../lib/files';
 import { peekMediaAudioGraph } from '../../lib/mediaAudioGraph';
@@ -68,6 +69,7 @@ import WaveformToolbar, { normalizeWaveformZoom } from './WaveformToolbar';
 import {
   Cast,
   Heart,
+  Keyboard,
   ListMusic,
   Pause,
   Play,
@@ -159,7 +161,7 @@ const MediaPlayer = () => {
   const {
     auditionTempo,
     hasQueue,
-    next,
+    next: nextTrack,
     pendingSeekRef,
     playbackRequest,
     prev,
@@ -245,6 +247,9 @@ const MediaPlayer = () => {
   const [error, setError] = useState(null);
   const [statusMessage, setStatusMessage] = useState(null);
   const [repeat, setRepeat] = useState(false);
+  const [keyNotation, setKeyNotation] = useState(() =>
+    prefs.get('mediaPlayer.keyNotation', 'standard'),
+  );
 
   const [scrubHover, setScrubHover] = useState(null);
   // Reused pref key from when this was a single 3-way cycle (bar/waveform/
@@ -283,6 +288,7 @@ const MediaPlayer = () => {
     analyseMissing: waveformReadyPath === track?.path,
   });
   const [showCast, setShowCast] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
   useEffect(() => {
     repeatRef.current = repeat;
   }, [repeat]);
@@ -534,8 +540,8 @@ const MediaPlayer = () => {
     if (state !== 'IDLE' || !castWasPlayingRef.current) return;
 
     castWasPlayingRef.current = false;
-    next();
-  }, [googleCast.castPlayerState, googleCast.connected, next]);
+    nextTrack();
+  }, [googleCast.castPlayerState, googleCast.connected, nextTrack]);
 
   useEffect(() => {
     setPlaying(false);
@@ -584,7 +590,7 @@ const MediaPlayer = () => {
       }
 
       setPlaying(false);
-      next();
+      nextTrack();
     };
 
     const onError = () => {
@@ -701,7 +707,7 @@ const MediaPlayer = () => {
       audio.removeEventListener('waiting', onWaiting);
       audio.removeEventListener('playing', onPlaying);
     };
-  }, [next, pendingSeekRef, playbackRequest, track]);
+  }, [nextTrack, pendingSeekRef, playbackRequest, track]);
 
   const togglePlay = async () => {
     if (!playing) playbackPausedRef.current = false;
@@ -911,7 +917,75 @@ const MediaPlayer = () => {
     if (audioRef.current) audioRef.current.muted = newMuted;
   };
 
+  // Keep shortcuts with the audio owner so they work across library views.
+  // Browser/form controls retain their own keyboard behaviour.
+  useEffect(() => {
+    if (!track) return undefined;
+    const onPlayerKeyDown = (event) => {
+      if (
+        event.defaultPrevented ||
+        event.isComposing ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        [
+          ...document.querySelectorAll('[aria-modal="true"], dialog[open]'),
+        ].some((modal) => getComputedStyle(modal).display !== 'none')
+      )
+        return;
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        target.closest(
+          'input, textarea, select, button, a, summary, [contenteditable], [role="textbox"], [role="slider"], [role="button"]',
+        )
+      )
+        return;
+
+      const key = event.key.toLowerCase();
+      const isToggle = key === ' ' || key === 'spacebar' || key === 'm';
+      if (event.repeat && (isToggle || key === 'n' || key === 'p')) return;
+      if (key === ' ' || key === 'spacebar') {
+        if (error) return;
+        event.preventDefault();
+        void togglePlay();
+      } else if (key === 'arrowleft' || key === 'arrowright') {
+        const maxTime =
+          googleCast.connected && googleCast.castDuration > 0
+            ? googleCast.castDuration
+            : duration > 0
+              ? duration
+              : track.length || 0;
+        if (!maxTime) return;
+        const direction = key === 'arrowright' ? 1 : -1;
+        const step = event.shiftKey ? 30 : 5;
+        event.preventDefault();
+        seekTo(
+          Math.max(0, Math.min(maxTime, getCurrentTime() + direction * step)),
+        );
+      } else if (key === 'm') {
+        event.preventDefault();
+        toggleMute();
+      } else if (key === 'n' && hasQueue) {
+        event.preventDefault();
+        nextTrack();
+      } else if (key === 'p') {
+        event.preventDefault();
+        handlePrev();
+      }
+    };
+
+    document.addEventListener('keydown', onPlayerKeyDown);
+    return () => document.removeEventListener('keydown', onPlayerKeyDown);
+  });
+
   const toggleRepeat = () => setRepeat((r) => !r);
+
+  const toggleKeyNotation = () => {
+    const nextNotation = keyNotation === 'standard' ? 'camelot' : 'standard';
+    setKeyNotation(nextNotation);
+    prefs.set('mediaPlayer.keyNotation', nextNotation);
+  };
 
   const handleClose = () => {
     playbackPausedRef.current = true;
@@ -978,6 +1052,10 @@ const MediaPlayer = () => {
   const integratedLufs = Number.isFinite(trackLoudness?.integratedLufs)
     ? trackLoudness.integratedLufs.toFixed(1)
     : '—';
+  const displayKey =
+    keyNotation === 'camelot'
+      ? toCamelot(playerMetadata.key) ?? playerMetadata.key
+      : playerMetadata.key;
 
   const dockContent = (
     <div
@@ -1110,6 +1188,34 @@ const MediaPlayer = () => {
         </div>
       </div>
       {waveformToolbar}
+      {showShortcuts && (
+        <div
+          className="media-player-shortcuts-panel"
+          id="player-shortcuts-panel"
+        >
+          <strong>Player shortcuts</strong>
+          <div>
+            <kbd>Space</kbd>
+            <span>Play / pause</span>
+          </div>
+          <div>
+            <kbd>← / →</kbd>
+            <span>Seek 5 seconds</span>
+          </div>
+          <div>
+            <kbd>Shift + ← / →</kbd>
+            <span>Seek 30 seconds</span>
+          </div>
+          <div>
+            <kbd>M</kbd>
+            <span>Mute / unmute</span>
+          </div>
+          <div>
+            <kbd>N / P</kbd>
+            <span>Next / previous</span>
+          </div>
+        </div>
+      )}
 
       {/* ── Main bar ─────────────────────────────────────────── */}
       <div className="media-player-bar">
@@ -1155,9 +1261,18 @@ const MediaPlayer = () => {
               <span>
                 <b>{playerMetadata.bpm || '—'}</b> BPM
               </span>
-              <span>
-                <b>{playerMetadata.key || '—'}</b> KEY
-              </span>
+              <button
+                aria-label={`${displayKey || 'Unknown'} key in ${keyNotation === 'standard' ? 'musical' : 'Camelot'} notation. Show ${keyNotation === 'standard' ? 'Camelot' : 'musical'} notation`}
+                aria-pressed={keyNotation === 'camelot'}
+                className="mp-track-key"
+                disabled={!playerMetadata.key}
+                onClick={toggleKeyNotation}
+                title={`Click to show ${keyNotation === 'standard' ? 'Camelot' : 'musical'} key notation`}
+                type="button"
+              >
+                <b>{displayKey || '—'}</b>{' '}
+                {keyNotation === 'standard' ? 'MUSICAL' : 'CAMELOT'}
+              </button>
               <span title="Integrated track loudness">
                 <b>{integratedLufs}</b> LUFS
               </span>
@@ -1211,6 +1326,7 @@ const MediaPlayer = () => {
             </button>
 
             <button
+              aria-keyshortcuts="P"
               className="media-player-btn media-player-ctrl-btn hover-fx"
               onClick={handlePrev}
               title="Previous track"
@@ -1220,6 +1336,7 @@ const MediaPlayer = () => {
             </button>
 
             <button
+              aria-keyshortcuts="Space"
               className="media-player-btn media-player-play-btn"
               disabled={Boolean(error)}
               onClick={togglePlay}
@@ -1236,9 +1353,10 @@ const MediaPlayer = () => {
             </button>
 
             <button
+              aria-keyshortcuts="N"
               className="media-player-btn media-player-ctrl-btn hover-fx"
               disabled={!hasQueue}
-              onClick={next}
+              onClick={nextTrack}
               title="Next track"
               type="button"
             >
@@ -1291,6 +1409,17 @@ const MediaPlayer = () => {
         {/* ── Right controls ── */}
         <div className="media-player-right">
           <button
+            aria-controls="player-shortcuts-panel"
+            aria-expanded={showShortcuts}
+            aria-label="Keyboard shortcuts"
+            className="media-player-btn hover-fx"
+            onClick={() => setShowShortcuts((open) => !open)}
+            title="Keyboard shortcuts"
+            type="button"
+          >
+            <Keyboard size={18} />
+          </button>
+          <button
             className={
               queuePanelOpen
                 ? 'media-player-btn media-player-ctrl-btn--active hover-fx'
@@ -1321,6 +1450,7 @@ const MediaPlayer = () => {
           </button>
 
           <button
+            aria-keyshortcuts="M"
             className="media-player-btn hover-fx"
             onClick={toggleMute}
             title={

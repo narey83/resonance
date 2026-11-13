@@ -160,6 +160,7 @@ export const drawEnhanced = (ctx, data, options) => {
     gridOutline = null,
     detailGrid = false,
     labelColour = '#17202c',
+    barMarkerColours = {},
     labelBackground = '#ffffff',
   } = options;
   const timeline = djTimeline(data);
@@ -246,8 +247,8 @@ export const drawEnhanced = (ctx, data, options) => {
         );
       }
 
-      ctx.globalAlpha = marker.level === 2 ? 0.9 : 0.55;
-      ctx.fillStyle = labelColour;
+      ctx.globalAlpha = 0.95;
+      ctx.fillStyle = barMarkerColours[marker.level] || labelColour;
       ctx.fillRect(x - lineWidth / 2, 14 * scale, lineWidth, lineHeight);
     }
 
