@@ -65,6 +65,15 @@ const QUALITIES = [
 ];
 const extensionOf = (path = '') => path.split('.').at(-1).toLowerCase();
 const targetExtension = (format) => (format === 'aac' ? 'm4a' : format);
+const folderFileTypes = (fileTypes) =>
+  Object.entries(fileTypes || {})
+    .filter(([, count]) => count > 0)
+    .sort(
+      ([typeA, countA], [typeB, countB]) =>
+        countB - countA || typeA.localeCompare(typeB),
+    )
+    .map(([type, count]) => `${type.toUpperCase()} ${count}`)
+    .join(' · ');
 const errorMessage = (error) =>
   typeof error?.response?.data === 'string'
     ? error.response.data
@@ -363,6 +372,7 @@ const Converter = () => {
               filtered.map((folder) => {
                 const wholeFolder = selectedFolders.has(folder.path);
                 const tracks = folderTracks[folder.path] || [];
+                const fileTypes = folderFileTypes(folder.fileTypes);
                 return (
                   <div
                     className="converter-folder"
@@ -390,8 +400,18 @@ const Converter = () => {
                         <Folder size={16} />
                         <span>{folder.name || folder.path}</span>
                       </button>
-                      <span className="converter-count">
-                        {folder.trackCount} tracks
+                      <span className="converter-folder-summary">
+                        <span className="converter-count">
+                          {folder.trackCount} tracks
+                        </span>
+                        {fileTypes && (
+                          <span
+                            className="converter-folder-file-types"
+                            title={fileTypes}
+                          >
+                            {fileTypes}
+                          </span>
+                        )}
                       </span>
                     </div>
                     {expanded.has(folder.path) && (

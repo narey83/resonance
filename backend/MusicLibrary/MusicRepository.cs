@@ -999,28 +999,73 @@ namespace resonance.MusicLibrary
             var where = conditions.Count > 0 ? "WHERE " + string.Join(" AND ", conditions) : string.Empty;
             cmd.CommandText = $@"
                 SELECT directory,
+                       extension,
                        COUNT(*) AS track_count,
                        MIN(CASE WHEN has_artwork = 1 THEN path ELSE NULL END) AS cover_path,
                        MAX(has_artwork) AS has_art,
                        MIN(indexed_at) AS indexed_at
                 FROM {T} {where}
-                GROUP BY directory
-                ORDER BY directory";
+                GROUP BY directory, extension
+                ORDER BY directory, extension";
             var results = new List<MusicFolder>();
-            using var r = cmd.ExecuteReader();
-            while (r.Read())
+            string directory = null;
+            string coverPath = null;
+            var trackCount = 0;
+            var hasArtwork = false;
+            var indexedAt = long.MaxValue;
+            var fileTypes = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            void AddFolder()
             {
-                var path = MusicPath.ToAbsolute(r.GetString(0));
+                if (directory == null)
+                {
+                    return;
+                }
+
+                var path = MusicPath.ToAbsolute(directory);
                 var name = System.IO.Path.GetFileName(path);
                 results.Add(new MusicFolder(
                     Path: path,
                     Name: string.IsNullOrEmpty(name) ? path : name,
-                    TrackCount: r.GetInt32(1),
-                    CoverPath: r.IsDBNull(2) ? null : MusicPath.ToAbsolute(r.GetString(2)),
-                    HasArtwork: r.GetInt32(3) != 0,
-                    IndexedAt: r.GetInt64(4)));
+                    TrackCount: trackCount,
+                    CoverPath: coverPath == null ? null : MusicPath.ToAbsolute(coverPath),
+                    HasArtwork: hasArtwork,
+                    IndexedAt: indexedAt)
+                {
+                    FileTypes = fileTypes,
+                });
             }
 
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                var nextDirectory = r.GetString(0);
+                if (directory != nextDirectory)
+                {
+                    AddFolder();
+                    directory = nextDirectory;
+                    coverPath = null;
+                    trackCount = 0;
+                    hasArtwork = false;
+                    indexedAt = long.MaxValue;
+                    fileTypes = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                }
+
+                var count = r.GetInt32(2);
+                trackCount += count;
+                var extension = r.GetString(1).TrimStart('.').ToUpperInvariant();
+                extension = string.IsNullOrEmpty(extension) ? "OTHER" : extension;
+                fileTypes[extension] = fileTypes.TryGetValue(extension, out var previous) ? previous + count : count;
+                var candidateCoverPath = r.IsDBNull(3) ? null : r.GetString(3);
+                if (candidateCoverPath != null && (coverPath == null || string.CompareOrdinal(candidateCoverPath, coverPath) < 0))
+                {
+                    coverPath = candidateCoverPath;
+                }
+
+                hasArtwork |= r.GetInt32(4) != 0;
+                indexedAt = Math.Min(indexedAt, r.GetInt64(5));
+            }
+
+            AddFolder();
             return results;
         }
 

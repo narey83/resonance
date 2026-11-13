@@ -119,6 +119,8 @@ namespace resonance.MusicLibrary
 
     public record MusicFolder(string Path, string Name, int TrackCount, string CoverPath, bool HasArtwork, long IndexedAt)
     {
+        public IReadOnlyDictionary<string, int> FileTypes { get; init; } = new Dictionary<string, int>();
+
         public string Sig { get; init; }
 
         public long Exp { get; init; }

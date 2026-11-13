@@ -119,6 +119,26 @@ public class WorkspaceTests : IDisposable
     }
 
     [Fact]
+    public void FolderFileTypesCountDirectTracksAndRespectFilters()
+    {
+        Add("parent/one.mp3");
+        repository.Upsert(Add("parent/two.flac") with { Extension = "FLAC" });
+        repository.Upsert(Add("parent/three.flac") with { Extension = ".flac" });
+        repository.Upsert(Add("parent/child/four.wav") with { Extension = "wav" });
+
+        var folders = repository.GetFolders();
+        var parent = folders.Single(folder => folder.Name == "parent");
+        Assert.Equal(3, parent.TrackCount);
+        Assert.Equal(1, parent.FileTypes["MP3"]);
+        Assert.Equal(2, parent.FileTypes["FLAC"]);
+        Assert.Equal(1, folders.Single(folder => folder.Name == "child").FileTypes["WAV"]);
+
+        var matching = Assert.Single(repository.GetFolders(search: "two.flac"));
+        Assert.Equal(1, matching.TrackCount);
+        Assert.Equal(1, matching.FileTypes["FLAC"]);
+    }
+
+    [Fact]
     public void ExactFolderWindowsExcludeDescendantsWhileExistingRecursiveQueriesArePreserved()
     {
         Add("parent/one.mp3");

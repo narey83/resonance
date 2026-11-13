@@ -31,7 +31,12 @@ describe('Converter workflow', () => {
   beforeEach(() => {
     container = document.createElement('div');
     getFolders.mockResolvedValue([
-      { path: '/music', name: 'Library', trackCount: 2 },
+      {
+        path: '/music',
+        name: 'Library',
+        trackCount: 2,
+        fileTypes: { FLAC: 1, M4A: 1 },
+      },
     ]);
     getTracks.mockResolvedValue({
       tracks: [
@@ -101,6 +106,14 @@ describe('Converter workflow', () => {
       (item) => item.textContent.includes('Two'),
     );
     expect(row.textContent).toContain('skipped');
+  });
+  it('shows the folder file types before tracks are expanded', async () => {
+    expect.hasAssertions();
+    await render();
+    expect(
+      container.querySelector('.converter-folder-file-types').textContent,
+    ).toBe('FLAC 1 · M4A 1');
+    expect(getTracks).not.toHaveBeenCalled();
   });
   it('reports start failures without losing the reviewed selection', async () => {
     expect.hasAssertions();
