@@ -161,7 +161,10 @@ const WaveformSeekBar = ({
         beatOffsetSeconds: beatAvailability.offsetSeconds,
         beatsKnown: beatAvailability.known,
         beats: beatAvailability.beats,
-        basicBarMarkers: basicBarMarkers(beatAvailability.beats),
+        basicBarMarkers: basicBarMarkers(
+          beatAvailability.beats,
+          data.downbeatOffsetSeconds,
+        ),
         bpm: waveformBeatBpm(beatAvailability.beats),
         overall: new Float32Array(data.overallPeaks),
       };
@@ -424,10 +427,8 @@ const WaveformSeekBar = ({
     // light and AMOLED each get a palette that suits the panel they're drawn on.
     const colours = getColours(canvas);
 
-    // Beat grid, anchored to the first REAL detected beat. Drawn only when beat analysis
-    // actually exists for this track (peaks.beatsKnown) — a BPM tag alone (track?.bpm) is not
-    // beat analysis, and previously drew a confident-looking grid anchored at a fabricated
-    // phase of 0 for tracks that had never had real beat detection run at all.
+    // Draw from detected beats only; a BPM tag cannot establish beat or bar phase.
+    // Coarser lines use the saved downbeat candidate when one is available.
     const drawBeatGrid = () => {
       const independent = enhancedRef.current?.available
         ? enhancedRef.current
@@ -458,9 +459,17 @@ const WaveformSeekBar = ({
       if (detectedBeats?.length > 1) {
         const bpm = waveformBeatBpm(detectedBeats);
         const stride = Math.max(1, Math.round(lineSeconds / (60 / bpm)));
-        const firstDownbeat = independent?.downbeats?.[0];
+        const firstDownbeat =
+          independent?.downbeats?.[0] ?? peaks.basicBarMarkers[0]?.time;
         const anchor =
-          stride > 1 ? Math.max(0, detectedBeats.indexOf(firstDownbeat)) : 0;
+          stride > 1
+            ? Math.max(
+                0,
+                detectedBeats.findIndex(
+                  (time) => Math.abs(time - firstDownbeat) < 0.05,
+                ),
+              )
+            : 0;
         times.push(
           ...visibleBeatTimes(
             detectedBeats,

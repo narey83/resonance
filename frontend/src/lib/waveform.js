@@ -178,17 +178,23 @@ export const visibleBeats = (beats, fromSeconds, toSeconds) => {
   return out;
 };
 
-// Basic analysis has beat times but no saved downbeats or arrangement sections.
-// In common 4/4, 64 beats span 16 bars. Keep accents on the detected ticks so
-// tempo changes do not shift them away from the visible beat grid.
-export const basicBarMarkers = (beats) => {
+// Basic analysis has a tentative downbeat phase, but no arrangement sections.
+// Anchor to its saved candidate when it matches one of the first four beats;
+// otherwise fall back to the first tick. In 4/4, 64 beats span 16 bars.
+export const basicBarMarkers = (beats, downbeatOffsetSeconds) => {
   if (!beats?.length) return [];
+  const downbeatIndex = Number.isFinite(downbeatOffsetSeconds)
+    ? beats
+        .slice(0, 4)
+        .findIndex((time) => Math.abs(time - downbeatOffsetSeconds) < 0.05)
+    : -1;
+  const anchor = Math.max(0, downbeatIndex);
   const markers = [];
-  for (let index = 0; index < beats.length; index += 64) {
+  for (let index = anchor; index < beats.length; index += 64) {
     const time = beats[index];
     if (!Number.isFinite(time) || (index > 0 && time <= beats[index - 1]))
       return [];
-    markers.push({ time, level: index % 128 === 0 ? 2 : 1 });
+    markers.push({ time, level: (index - anchor) % 128 === 0 ? 2 : 1 });
   }
 
   return markers;

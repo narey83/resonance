@@ -59,10 +59,24 @@ describe('basicBarMarkers', () => {
     ]);
   });
 
+  it('anchors Basic accents to a saved downbeat candidate after a pickup', () => {
+    const beats = Array.from({ length: 131 }, (_, index) => 0.4 + index * 0.43);
+    expect(basicBarMarkers(beats, beats[2])).toEqual([
+      { time: beats[2], level: 2 },
+      { time: beats[66], level: 1 },
+      { time: beats[130], level: 2 },
+    ]);
+    expect(visibleBeatTimes(beats, 0, 100, 4, 2)).toContain(beats[2]);
+    expect(visibleBeatTimes(beats, 0, 100, 4, 2)).not.toContain(beats[0]);
+  });
+
   it('omits accents without detected beats', () => {
     expect(basicBarMarkers(null)).toEqual([]);
     expect(basicBarMarkers([])).toEqual([]);
     expect(basicBarMarkers([Number.NaN])).toEqual([]);
+    expect(basicBarMarkers([0.4, 0.8, 1.2], 100)).toEqual([
+      { time: 0.4, level: 2 },
+    ]);
   });
 });
 
