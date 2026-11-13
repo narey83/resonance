@@ -48,6 +48,7 @@ export default function DiscoveryScreen() {
   const [albums, setAlbums] = useState<MusicAlbum[]>([]);
   const [history, setHistory] = useState<PlayRecord[]>([]);
   const [recent, setRecent] = useState<MusicTrack[]>([]);
+  const [historyFeature, setHistoryFeature] = useState<{ loaded: boolean; track: MusicTrack | null; hasHistory: boolean }>({ loaded: false, track: null, hasHistory: false });
   const [fresh, setFresh] = useState<MusicTrack[]>([]);
   const [activeSearches, setActiveSearches] = useState<searches.Search[]>([]);
   const [source, setSource] = useState<MusicTrack | null>(null);
@@ -96,6 +97,9 @@ export default function DiscoveryScreen() {
       loadDiscoveryPlayback({
         current, tracks: setTracks, albums: setAlbums, fresh: setFresh,
         history: setHistory, recent: setRecent,
+        historyFeature: feature => setHistoryFeature(previous => feature
+          ? { loaded: true, ...feature }
+          : previous.loaded ? previous : { loaded: true, track: null, hasHistory: false }),
         libraryError: () => setError('Could not refresh the library. Downloaded crates remain available in Offline.'),
       }),
       searches.getAll().then(rows => { if (current()) setActiveSearches(rows); }),
@@ -143,7 +147,8 @@ export default function DiscoveryScreen() {
     const last = playStats.get(track.path)?.lastPlayedAt;
     return last != null && refreshedAt - last > 90 * 86400000;
   }).slice(0, 6);
-  const featured = player.track ?? recent.find(track => track.path === history[0]?.path) ?? fresh[0] ?? tracks[0] ?? null;
+  const featured = historyFeature.track
+    ?? (!historyFeature.loaded || historyFeature.hasHistory ? null : player.track ?? fresh[0] ?? tracks[0] ?? null);
   const statusMessage = error || offline.error || syncError;
   const statusLabel = error ? 'Library refresh unavailable' : offline.error ? 'Check offline downloads' : syncError?.includes('404') ? 'Notes sync needs a server update' : 'Notes waiting to sync';
   function art(track: MusicTrack, size = 48) {
@@ -183,7 +188,7 @@ export default function DiscoveryScreen() {
       {working && <ActivityIndicator color={colors.accent} />}
       {section === 'For you' && <>
         {featured ? <View style={s.feature}>
-          <View style={s.featureTop}><Text style={s.eyebrow}>{player.track ? 'ON THE DECK' : recent.some(track => track.path === featured.path) ? 'LAST PLAYED' : 'FROM THE COLLECTION'}</Text><Text style={s.catalogueCode}>{featured.filename.split('.').pop()?.toUpperCase() ?? 'AUDIO'}</Text></View>
+          <View style={s.featureTop}><Text style={s.eyebrow}>{historyFeature.track ? 'LAST PLAYED' : player.track?.path === featured.path ? 'ON THE DECK' : 'FROM THE COLLECTION'}</Text><Text style={s.catalogueCode}>{featured.filename.split('.').pop()?.toUpperCase() ?? 'AUDIO'}</Text></View>
           <View style={s.featureBody}>
             <Pressable accessibilityRole="button" accessibilityLabel={`Play ${getTrackTitle(featured)}`} style={s.featureArt} onPress={() => { haptics.light(); player.playTrack(featured); }}>
               {featured.hasArtwork ? <Image source={{ uri: getArtworkUrl(featured.path, PLAYER_ART_SIZE) ?? undefined, cacheKey: getArtworkCacheKey(featured.path, PLAYER_ART_SIZE) }} contentFit="cover" style={StyleSheet.absoluteFill} transition={150} /> : <View style={s.featureFallback}><Ionicons name="disc-outline" size={100} color={colors.textMuted} /></View>}

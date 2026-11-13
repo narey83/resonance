@@ -10,6 +10,7 @@ interface PlaybackSections {
   fresh: (tracks: MusicTrack[]) => void;
   history: (plays: PlayRecord[]) => void;
   recent: (tracks: MusicTrack[]) => void;
+  historyFeature: (feature: { track: MusicTrack | null; hasHistory: boolean } | null) => void;
   libraryError: () => void;
 }
 
@@ -35,11 +36,20 @@ export async function loadDiscoveryPlayback(sections: PlaybackSections): Promise
         page.status === 'fulfilled' ? page.value : []).map(track => [track.path, track])).values()]);
     })(),
     (async () => {
-      const plays = await getPlayHistory(20);
-      if (!sections.current()) return;
-      sections.history(plays);
-      const tracks = await resolveTracks([...new Set(plays.map(play => play.path))]);
-      if (sections.current()) sections.recent(tracks);
+      try {
+        const plays = await getPlayHistory(20);
+        if (!sections.current()) return;
+        sections.history(plays);
+        const tracks = await resolveTracks([...new Set(plays.map(play => play.path))]);
+        if (!sections.current()) return;
+        sections.recent(tracks);
+        sections.historyFeature({
+          track: tracks.find(track => track.path === plays[0]?.path) ?? null,
+          hasHistory: plays.length > 0,
+        });
+      } catch {
+        if (sections.current()) sections.historyFeature(null);
+      }
     })(),
   ]);
 }

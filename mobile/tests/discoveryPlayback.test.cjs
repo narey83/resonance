@@ -17,7 +17,7 @@ function setup(overrides = {}) {
     'src/api/discovery.ts': { resolveTracks: () => resolved.promise },
   });
   const sections = { current: () => active };
-  for (const name of ['tracks', 'albums', 'fresh', 'history', 'recent']) {
+  for (const name of ['tracks', 'albums', 'fresh', 'history', 'recent', 'historyFeature']) {
     sections[name] = value => { published[name] = value; };
   }
   sections.libraryError = () => { published.error = true; };
@@ -52,6 +52,7 @@ test('new album tracks start loading immediately and partial failures preserve p
   ui.library.reject(new Error('library unavailable')); await ui.done;
   assert.equal(ui.published.error, true);
   assert.deepEqual(ui.published.fresh, [track]);
+  assert.equal(ui.published.historyFeature, null);
 });
 
 test('a cancelled refresh cannot publish sections or start dependent requests', async () => {
@@ -61,10 +62,20 @@ test('a cancelled refresh cannot publish sections or start dependent requests', 
 });
 
 test('resolved history is published without waiting for library or arrivals', async () => {
-  const ui = setup(); const plays = [{ path: 'played.flac' }];
+  const ui = setup(); const plays = [{ path: 'played.flac' }, { path: 'older.flac' }];
   ui.history.resolve(plays); await tick();
   assert.equal(ui.published.history, plays);
-  const tracks = [{ path: 'played.flac' }]; ui.resolved.resolve(tracks); await tick();
+  assert.equal(ui.published.historyFeature, undefined, 'the cover waits for resolved play history');
+  const tracks = [{ path: 'played.flac' }, { path: 'older.flac' }]; ui.resolved.resolve(tracks); await tick();
   assert.equal(ui.published.recent, tracks);
+  assert.deepEqual(ui.published.historyFeature, { track: tracks[0], hasHistory: true });
+  await ui.finish();
+});
+
+test('missing newest track does not feature an older play', async () => {
+  const ui = setup();
+  ui.history.resolve([{ path: 'missing.flac' }, { path: 'older.flac' }]); await tick();
+  ui.resolved.resolve([{ path: 'older.flac' }]); await tick();
+  assert.deepEqual(ui.published.historyFeature, { track: null, hasHistory: true });
   await ui.finish();
 });
