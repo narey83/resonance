@@ -22,6 +22,21 @@
 
 ---
 
+**Resonance is an actively developed, experimental music platform.**
+
+Resonance is an ongoing project exploring a modern music listening experience, combining music management, playback, audio processing, visualisation and intelligent music analysis.
+
+The project is currently in early development. Features, architecture and interfaces are subject to change, and it is not yet intended for production use.
+
+I'm building Resonance in public to document development, share progress and potentially gather feedback from other developers and music enthusiasts.
+
+### Current status
+
+- 🚧 Active development
+- ⚠️ Not production-ready
+- 🧪 Experimental features
+- 🛠️ Architecture and functionality evolving
+
 Resonance brings together music streaming, a persistent music catalogue, automatic preparation, metadata enrichment and set planning. Its Soulseek integration provides network search, shared-folder browsing, transfers and community features. The web workspace is designed for desktop screens; a separate Expo/React Native app provides mobile access. New installations use SQLite, with PostgreSQL available for existing or explicitly configured deployments.
 
 Documentation updated **21 October 2026**. This is a snapshot of the current source, not a fixed feature commitment. Features, defaults, interfaces and compatibility can change as development continues.
