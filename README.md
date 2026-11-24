@@ -6,9 +6,7 @@
   <p>
     <a href="#what-resonance-does">Features</a> ·
     <a href="#screenshots">Screenshots</a> ·
-    <a href="#quick-start">Quick start</a> ·
-    <a href="#documentation">Documentation</a> ·
-    <a href="#development">Development</a> ·
+    <a href="#architecture">Architecture</a> ·
     <a href="#license">License</a>
   </p>
   <p>
@@ -26,8 +24,7 @@
 > **Pre-beta status:** Resonance is still in development. This GitHub repository
 > shares the project overview, app screenshots and licence. The source code and
 > other project files are kept on private local infrastructure until beta testing
-> is ready. Installation and development instructions below require private source
-> access; there is no public download yet.
+> is ready. There is no public download yet.
 
 **Resonance is an actively developed, experimental music platform.**
 
@@ -43,7 +40,7 @@ I'm sharing development progress here and welcome interest from other developers
 - 🧪 Experimental features
 - 🛠️ Architecture and functionality evolving
 
-Resonance brings together music streaming, a persistent music catalogue, automatic preparation, metadata enrichment and set planning. Its Soulseek integration provides network search, shared-folder browsing, transfers and community features. The web workspace is designed for desktop screens; a separate Expo/React Native app provides mobile access. New installations use SQLite, with PostgreSQL available for existing or explicitly configured deployments.
+Resonance brings together music streaming, a persistent music catalogue, automatic preparation, metadata enrichment and set planning. Its Soulseek integration provides network search, shared-folder browsing, transfers and community features. The web workspace is designed for desktop screens; a separate Expo/React Native app provides mobile access. The application uses SQLite by default, with PostgreSQL also supported.
 
 Documentation updated **21 October 2026**. This is a snapshot of the current source, not a fixed feature commitment. Features, defaults, interfaces and compatibility can change as development continues.
 
@@ -90,7 +87,7 @@ Resonance is a modified version of [slskd](https://github.com/slskd/slskd). It i
 - Prepare classic and OneLibrary databases, playlists, waveforms and beatgrids using the optional export worker.
 - Use one desktop helper for USB transfer and Network Link. Network Link serves the prepared whole library and checks for updates automatically.
 
-These DJ hardware features are **experimental**. Physical player acceptance is still pending; network support depends on the player's LINK EXPORT capabilities. Installer signing and native Windows/Linux validation also remain outstanding. See the Resonance Bridge guide before testing.
+These DJ hardware features are **experimental**. Physical player acceptance is still pending; network support depends on the player's LINK EXPORT capabilities. Installer signing and native Windows/Linux validation also remain outstanding.
 
 ### Take the library mobile
 
@@ -100,7 +97,7 @@ These DJ hardware features are **experimental**. Physical player acceptance is s
 - Choose Light, Dark, AMOLED, Midnight or system appearance, and Automatic, Original or Data saver streaming quality.
 - Android also implements a local audio library, Android Auto, an optional player overlay over other apps and copying local tracks to a chosen folder or USB storage. These have different platform requirements from iOS and from the desktop DJ hardware export.
 
-See the mobile feature guide and platform comparison. The apps are in active development: features and design can change, with more features being added.
+The apps are in active development: features and design can change, with more features being added.
 
 ### Operate it your way
 
@@ -109,8 +106,6 @@ See the mobile feature guide and platform comparison. The apps are in active dev
 - Integrate FTP, webhooks, scripts, Pushbullet, Gluetun, UPnP, Prometheus, and Grafana Loki.
 - Inspect transfer analytics, peer geography, queue health, events, logs, databases, and HTTP captures from the UI.
 - Store logs in the database by default, or select Disk or Both. Migrate PostgreSQL data to a separate SQLite instance using the explicit migration tool.
-
-The full, detailed capability list lives in FEATURES.md.
 
 ## Screenshots
 
@@ -154,61 +149,11 @@ Native development builds captured **21 October 2026** against the same 15-track
 | <a href="docs/screenshots/mobile/android/player.png"><img src="docs/screenshots/mobile/android/player.png" alt="Android full-screen music player with artwork, waveform, BPM, key and LUFS" width="240"></a> | <a href="docs/screenshots/mobile/ios/player.png"><img src="docs/screenshots/mobile/ios/player.png" alt="iOS full-screen music player with artwork, waveform, BPM, key and LUFS" width="240"></a> |
 | **Android player** | **iOS player** |
 
-Explore all mobile screenshots, features and platform differences, including tracks, queue, mixtapes and light-mode preferences. Simulator captures do not imply store availability or verification of vehicle, casting, push or USB hardware integrations.
-
-## Quick start
-
-For a new Linux Docker host using an existing SMB music share, run `python3 docker/bootstrap.py` after cloning this repository. The host needs Python 3 and Docker Compose; the SDKs and analysis tools build inside containers. See the portable stack guide. It builds the tools, installs verified models, configures analysis and uses persistent Docker mounts and reboot startup. Private state export/import carries the existing SQLite instance across separately from Git.
-
-Resonance is currently aimed at self-hosters and developers. A local source setup needs:
-
-- [.NET SDK 10](https://dotnet.microsoft.com/download)
-- [Node.js 20+](https://nodejs.org/) and npm
-- SQLite storage is included; PostgreSQL is optional
-- Linux or macOS for the included shell scripts
-
-```bash
-git clone <private-source-repository-url>
-cd resonance
-
-# Build the web app and backend. An explicit version keeps this working
-# in fresh clones that do not have a release tag yet.
-./bin/build --skip-tests --version 0.1.0-dev
-
-# Start the combined backend and built web UI
-./bin/run
-```
-
-Open the address reported at startup and complete the first-run setup wizard. Configure your shared library locations before expecting tracks to appear or be prepared.
-
-Without database configuration, the backend creates `data/resonance.db` inside its application directory. Keep that directory on persistent storage. Existing PostgreSQL connection strings continue to select PostgreSQL; switching providers does not migrate data automatically. To use PostgreSQL explicitly:
-
-```bash
-export RESONANCE_DATABASE_CONNECTION_STRING='Host=localhost;Database=resonance;Username=resonance;Password=change-me'
-./bin/run
-```
-
-The backend attempts to download its managed `ffmpeg` binary during the first build. Basic BPM/key analysis also needs the configured Essentia Python environment. Enhanced analysis needs separately installed model assets and workers; these are not provisioned by the source build. Metadata providers and other integrations may need credentials.
-
-Basic analysis currently allows BPM/key tag writes by default. Set `analysis.write_to_tags` to `false` to retain those detections in the cache without writing them to the audio files. See automatic preparation for the configuration example and the distinction between indexing, basic analysis and enhanced analysis.
-
-## Documentation
-
-The guides listed here are kept with the private source until beta testing.
-
-| Guide | Contents |
-| --- | --- |
-| Feature inventory | Current capabilities, configuration dependencies and experimental areas |
-| DJ workspace | Library tools, set planning, rehearsal, player controls and worker setup |
-| Automatic preparation | New-track detection, background work, retries and tag-writing behaviour |
-| Database architecture | SQLite/PostgreSQL selection, migration, backups and logging |
-| Resonance Bridge | USB transfer, Network Link, pairing, installation and compatibility limits |
-| Beatgrid verification | Repeatable rendering checks and what those checks establish |
-| Frontend development | Local web development and focused test commands |
-| Mobile apps | Native Android/iOS screenshots, current features and platform differences |
-| Mobile development | Expo SDK requirements, native builds and device connectivity |
+Simulator captures do not imply store availability or verification of vehicle, casting, push or USB hardware integrations.
 
 ## Architecture
+
+Implementation files are kept in the private source repository until beta testing.
 
 | Area | Technology | Responsibility |
 | --- | --- | --- |
@@ -225,100 +170,16 @@ The guides listed here are kept with the private source until beta testing.
 
 Real-time browser and mobile updates travel over SignalR. SQLite or PostgreSQL stores application state, the library catalogue, transfer history, and analytics data; media remains on storage you control. Logging defaults to database storage, with Disk and Both modes available.
 
-## Development
-
-Development continues in a private local source repository. This public GitHub repository carries the overview, screenshots and licence while beta testing is being prepared. Build and development instructions in this section are for people with private source access.
-
-Git synchronization does not deploy a running application. The existing server uses native processes; historical Docker deployment instructions apply only to installations that explicitly use that setup. Before using `bin/dev`, check that private `.dev/config.json` selects a local runtime: historical `remote` and `server` modes invoke remote helpers.
-
-Manage the local backend, web UI and mobile Metro server from the repository root:
-
-```bash
-./bin/dev start
-./bin/dev status
-./bin/dev restart
-./bin/dev stop
-```
-
-You can target one service, for example `./bin/dev restart mobile` or `./bin/dev stop web`. After restarting your computer, run `./bin/dev start` again. This does not install an automatic login service.
-
-The managed backend uses .NET watch with clean process restarts when C# files change. In-process hot reload is disabled to avoid runtime metadata failures during concurrent development builds. It uses port **55450**, the web UI uses **3000**, and Metro uses **8081**. Logs, process state, configuration and persistent backend data live in ignored `.dev/`, rather than temporary storage. Open **http://localhost:3000** for the web UI; mobile clients connect to **http://localhost:55450** in the iOS simulator or **http://10.0.2.2:55450** in the standard Android emulator. A new data directory needs the usual first-run server setup.
-
-Install frontend/mobile dependencies with `npm ci` in each directory first. The script requires Python 3, Node/npm and .NET 10. It finds `dotnet` on PATH or in conventional user installation directories; for a custom SDK, set `"dotnet": "/absolute/path/to/dotnet"` in `.dev/config.json`. You can also change ports or `appDir` there while the services are stopped. The default bind address is loopback. To test physical phones on your trusted local network, set `"bindAddress": "0.0.0.0"`, restart the services, and connect the phone to `http://<your-Mac-LAN-IP>:55450`. This exposes the authenticated dev API and the web dev server to that network; use loopback again afterwards. Stop only affects processes started by this script; occupied ports belonging to other processes are left untouched.
-
-For manual development:
-
-Start the backend from the repository root:
-
-```bash
-# Backend — http://localhost:5030 by default
-dotnet run --project backend/resonance.csproj
-```
-
-In a second terminal, also starting at the repository root:
-
-```bash
-cd frontend
-npm ci
-npm start
-```
-
-The web development server runs on port 3000 and proxies API/SignalR requests to the backend on port 5030. For the separate mobile app, first install a compatible native development build using the mobile development guide, then start Metro from another terminal:
-
-```bash
-cd mobile
-npm ci
-npx expo start --dev-client
-```
-
-Useful checks before submitting a change:
-
-```bash
-dotnet test tests/Resonance.Tests.csproj --configuration Release
-
-cd frontend
-npm run lint
-npm run test-unattended
-
-cd ../mobile
-npx eslint .
-npx tsc --noEmit
-```
-
-For live development in Docker, run `./bin/dev-container build` then `./bin/dev-container start`. The portable stack bind-mounts source, reloads backend/web changes and preserves app data under `.dev/docker/app`; its default web/API ports are 3001/55451. Expo Metro stays on the host for iOS/Android simulators. See docker/README.md for commands, data migration and local configuration. The older server Compose file remains separate and expects the maintainer's existing networks and paths.
-
 ## Security and privacy
 
-Resonance is self-hosted: your database, credentials, catalogue, and media remain on infrastructure you operate. If you expose the service outside a trusted network, configure HTTPS, authentication, restrictive feature permissions, and a properly secured reverse proxy. API keys can be scoped by role and CIDR, and remote configuration and file management are independently opt-in.
-
-Soulseek is a peer-to-peer network. Review the laws that apply where you live and share only material you have the right to distribute.
+Resonance is self-hosted: your database, credentials, catalogue, and media remain on infrastructure you operate. Soulseek is a peer-to-peer network.
 
 ## Project lineage
 
-Resonance is based on slskd and retains its AGPL obligations, attribution, and additional terms. The fork has its own name, visual identity, feature direction, and Soulseek client identifier. If you plan to redistribute or publish your own modified version, read FORKING.md and the complete [LICENSE](LICENSE) first.
+Resonance is based on slskd and retains its AGPL obligations, attribution, and additional terms. The fork has its own name, visual identity, feature direction, and Soulseek client identifier. The complete terms are in the public [LICENSE](LICENSE).
 
-Changes specific to Resonance are tracked in CHANGES.md, and third-party attribution is documented in COPYRIGHT_TREE.md.
+Source-level change history and third-party attribution are kept with the private project files.
 
 ## License
 
 Licensed under the **GNU Affero General Public License v3.0 with Additional Terms**. See [LICENSE](LICENSE) for the complete terms.
-
-### API security and deployment
-
-Deploy the server, web build and mobile client changes together: chat badges use the joined-room counter endpoint, and private playlist artwork uses expiring scoped signatures supplied by authenticated playlist responses. Public playlist artwork continues to use its public sharing token. Diagnostics and HTTP capture exports require an administrator. Logout and role changes revoke persisted sessions and close affected live connections.
-
-Same-origin web hosting and native mobile clients need no CORS configuration. For a separately hosted web UI, explicitly list its origin in `web.cors_origins`; unlisted browser origins cannot open hub connections. For example:
-
-```yaml
-web:
-  cors_origins:
-    - https://music.example.com
-```
-
-Track pages are capped at 10,000 entries; signing requests accept up to 1,000 paths, with clients batching larger selections. Transcoding permits four concurrent FFmpeg processes and returns HTTP 429 with a retry delay when full.
-
-Artwork processing uses SkiaSharp, including Linux native assets, instead of ImageSharp. No Six Labors license key is required. Test native image decoding on each deployment platform when changing runtime packaging.
-
-On macOS, install native FFmpeg and ffprobe with `brew install ffmpeg`, or configure `ffmpeg.path` to the FFmpeg executable with ffprobe alongside it. The managed downloader supplies Windows/Linux builds and deliberately does not install those on macOS. Standard Homebrew bin directories are checked even when a GUI process has a minimal PATH.
-
-Container images bundle verified yt-dlp, Deno, FFmpeg and ffprobe. First startup copies these tools into the writable data volume, so it works without downloading executables at runtime. Missing tools on native installs are downloaded when needed (macOS FFmpeg still uses the native installation described above). Managed tools check for updates at startup and periodically, downloading verified replacements automatically when their auto-update options are enabled. User-configured/system executables are reused rather than overwritten. Keep the app data volume across container recreations; see container dependency setup.
